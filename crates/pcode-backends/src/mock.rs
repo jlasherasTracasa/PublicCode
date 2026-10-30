@@ -3,7 +3,7 @@ use crate::types::*;
 use pcode_sandbox::Sandbox;
 use std::collections::BTreeMap;
 
-/// Escribe `{ruta: contenido}` y devuelve un resultado fijo.
+/// Escribe `{ruta: contenido}` (con `{id}` sustituido por el id del trabajo) y devuelve un resultado fijo.
 pub struct MockBackend {
     /// Archivos a escribir.
     pub files: BTreeMap<String, String>,
@@ -17,8 +17,9 @@ impl Backend for MockBackend {
     fn caps(&self) -> BackendCaps {
         BackendCaps::default()
     }
-    async fn run(&self, _job: &Job, sandbox: &Sandbox) -> Result<BackendResult, BackendError> {
+    async fn run(&self, job: &Job, sandbox: &Sandbox) -> Result<BackendResult, BackendError> {
         for (p, c) in &self.files {
+            let (p, c) = (p.replace("{id}", &job.id), c.replace("{id}", &job.id));
             let script =
                 "mkdir -p \"$(dirname \"$1\")\" && printf '%s' \"$2\" > \"$1\"".to_string();
             let argv = vec![

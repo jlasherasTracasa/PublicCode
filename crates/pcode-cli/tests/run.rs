@@ -228,3 +228,69 @@ fn sandbox_ejecutar_cambios_aplicar() {
         "hola\n"
     );
 }
+
+#[test]
+fn flow_run_integra_tareas_con_dependencias() {
+    if !userns() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let g = |a: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(d.path())
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(a)
+            .output()
+            .unwrap()
+    };
+    g(&["init", "-q", "-b", "main"]);
+    std::fs::write(
+        d.path().join("pcode.toml"),
+        "[backends.glm]\ntipo = \"modelo\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(d.path().join("tareas")).unwrap();
+    std::fs::write(
+        d.path().join("tareas/uno.md"),
+        "<!-- acepta: test -f uno.txt -->\n<!-- modo: aislado -->\n# Uno\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("tareas/dos.md"),
+        "<!-- acepta: test -f dos.txt -->\n<!-- modo: aislado -->\n<!-- depende: uno -->\n# Dos\n",
+    )
+    .unwrap();
+    g(&["add", "-A"]);
+    g(&["commit", "-q", "-m", "init"]);
+    // Cada `pcode run` dentro de la sandbox arranca el guion desde el principio: escribe ambos archivos.
+    let s = script(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"escribir","arguments":{"path":"uno.txt","content":"1"}},
+                            {"id":"2","name":"escribir","arguments":{"path":"dos.txt","content":"2"}}])
+            ),
+            resp("listo", json!([]))
+        ]),
+    );
+    pcode(d.path(), &s)
+        .args(["flow", "run", "--backend", "glm", "--paralelo", "1"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("integradas: 2"));
+    assert!(d.path().join("uno.txt").exists() && d.path().join("dos.txt").exists());
+    let log = String::from_utf8_lossy(&g(&["log", "--format=%s"]).stdout).to_string();
+    assert!(log.contains("uno: Uno"), "{log}");
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .current_dir(d.path())
+        .args(["flow", "estado"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("| uno | integrada | 1 |")
+                .and(predicate::str::contains("| dos | integrada | 1 |")),
+        );
+}

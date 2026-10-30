@@ -1,0 +1,19 @@
+[package]
+name = "pcode-flow"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pcode-backends = { path = "../pcode-backends" }
+pcode-sandbox = { path = "../pcode-sandbox" }
+pcode-store = { path = "../pcode-store" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
