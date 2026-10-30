@@ -11,11 +11,13 @@ escritorio** (Linux y Windows), **navegador**, **móvil** (aprobaciones), **IDE*
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
-> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (255 tests,
+> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (275 tests,
 > `clippy -D warnings` limpio). Funciona hoy:
 >
 > | Parte | Qué hay | Tareas |
 > |---|---|---|
+> | **Chat** | `pcode` / `pcode chat`: conversación multi-turno con el agente en la terminal, con tools a la vista, aprobaciones, `--continuar`, `/modelo` y Ctrl-C; detecta la clave del entorno | F5.29 |
+> | Proveedores | Anthropic (Messages API), Gemini (`generateContent`) y OpenAI-compatible (LiteLLM, vLLM, Ollama, OpenAI) | F1.22, F1.23 |
 > | Núcleo | bucle del agente con política (capacidades por capas, análisis de shell), auditoría con hash encadenado, presupuestos, hook de parada, detector de atasco, compresión de salidas; proveedores OpenAI-compatible (LiteLLM, vLLM, Ollama) con SSE y reparación de tool calls | F1.01–F1.21 |
 > | Tools | `leer`, `escribir`, `editar`, `buscar`, `listar`, `bash` | F1.08–F1.12 |
 > | Mini sandbox | overlay CoW sin privilegios, sin red, aplicar/descartar/diff, `pcode sandbox …` | F2.01–F2.03 |
@@ -27,10 +29,9 @@ se sigue en el escritorio.
 > | CI/CD | CI en Linux y Windows con prueba de humo; release con `.zip` para Windows, `.tar.gz` para Linux, `.apk` para Android y `SHA256SUMS` | F0.07 |
 > | Android | APK cliente del demonio (sesiones y aprobaciones en un WebView); `pcode daemon --escuchar` | F5.28 |
 >
-> **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F1,
-> los proveedores nativos Anthropic y Gemini (F1.22, F1.23; hoy se usan vía LiteLLM); de F2, el Copilot
+> **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F2, el Copilot
 > coding agent (F2.11) y `pcode run --backend` / `pcode flow` en Windows sin WSL (F2.21, nivel N0); de F3, el
-> planificador LLM, la revisión cruzada, la etapa N2 de la aceptación y `pcode bench`; de F5, la API de flujos en el demonio (F5.04). Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
+> planificador LLM, la revisión cruzada, la etapa N2 de la aceptación y `pcode bench`; de F5, la API de flujos en el demonio (F5.04) y la TUI a pantalla completa (F5.07–F5.11; el chat actual es de línea de órdenes, sin streaming de tokens todavía). Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
 > seccomp, proxy de salida y red filtrada, servidor MCP, TUI, UI React y app de
 > escritorio, PWA, ACP, VS Code, GitHub, contexto/memoria/router (F4), aprendizaje de skills (F6) y
 > endurecimiento (F7). Los adaptadores de CLIs de terceros usan fixtures sintéticas hasta que F0.03
@@ -55,7 +56,7 @@ se sigue en el escritorio.
 13. [Hoja de ruta](#hoja-de-ruta)
 14. [Instalación](#instalación)
 15. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
-16. [Configuración prevista](#configuración-prevista)
+16. [Configuración](#configuración)
 17. [Estructura del repositorio](#estructura-del-repositorio)
 18. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
 19. [Decisiones abiertas](#decisiones-abiertas)
@@ -333,7 +334,7 @@ Terminal-Bench) con el mismo modelo abierto en opencode y en PublicCode. Detalle
 | Fase | Qué | Hito verificable |
 |---|---|---|
 | **F0** Fundaciones | workspace Rust, CI, ADRs, banco y línea base, verificar CLIs | `cargo test` en verde; línea base reproducible |
-| **F1** Núcleo | bucle propio, proveedor LiteLLM, tools nativas, política, sesiones, `pcode run` | resuelve tareas aisladas del banco con GLM |
+| **F1** Núcleo | bucle propio, proveedores (LiteLLM, Anthropic, Gemini), tools nativas, política, sesiones, `pcode run` | resuelve tareas aisladas del banco con GLM |
 | **F2** Backends y sandbox | adaptadores para Claude Code, Copilot, Gemini y opencode; mini sandbox en Rust; servidor MCP; skills | la misma tarea corre con cualquier backend |
 | **F3** Flujos | tareas, DAG, aceptación, reintentos, integración, CI | **orquestación completa sin pegamento externo** |
 | **F4** Contexto y memoria | gestión de contexto, caché de prefijos, memoria de archivos, router por histórico | +12 puntos de aceptación y −30 % de tokens |
@@ -389,6 +390,39 @@ Actions con el nombre de la etiqueta.
 
 ## Uso rápido (lo que ya funciona)
 
+### Como agente de programación (alternativa a Claude Code y opencode)
+
+Basta una clave de API en el entorno; sin `pcode.toml`. Se detecta `ANTHROPIC_API_KEY`,
+`GEMINI_API_KEY` (o `GOOGLE_API_KEY`) y `OPENAI_API_KEY` (con `OPENAI_BASE_URL` para LiteLLM, vLLM u Ollama).
+
+```bash
+export ANTHROPIC_API_KEY=...        # en PowerShell: $env:ANTHROPIC_API_KEY = "..."
+cd mi-proyecto
+pcode                               # abre el chat (también: pcode chat)
+```
+
+```bash
+pcode chat "arregla el test que falla"      # primer mensaje desde la línea de órdenes
+pcode chat --continuar                       # retoma la última conversación de este directorio
+pcode chat --modelo claude-opus-5-5          # elige el modelo (o PCODE_MODEL)
+pcode chat --aprobar-todo                    # no preguntar por las acciones que piden confirmación
+echo "resume el repo" | pcode chat           # sin terminal: un mensaje por línea
+```
+
+| En el chat | Qué hace |
+|---|---|
+| texto | lo manda al agente; este lee, busca, edita y ejecuta órdenes con sus tools y te enseña cada paso (`⏺ bash(cargo test)` y las primeras líneas de la salida) |
+| línea que acaba en `\` | continúa en la siguiente línea |
+| `/modelo [nombre]`, `/nuevo`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, ver los tokens, ayuda y salir (Ctrl-D también) |
+| Ctrl-C | interrumpe al agente sin cerrar el chat |
+
+Lo que pide confirmación (según `[politica]`) se pregunta en la terminal: `s` sí, `t` sí y no volver a
+preguntar, cualquier otra cosa no. Lo denegado por la política no se puede aprobar. Las instrucciones del proyecto
+(`AGENTS.md` y `CLAUDE.md`, o las de `[proyecto] instrucciones`) se añaden al prompt, y cada acción queda en
+`.pcode/audit.jsonl`. Las conversaciones se guardan en `.pcode/pcode.db`.
+
+### Mini sandboxes y herramientas del repo
+
 Requisitos: Linux con namespaces de usuario sin privilegios (cualquier distribución moderna),
 Python 3.10 o superior y `git`.
 
@@ -426,13 +460,23 @@ Buscar papers de ACL y EMNLP 2026 sobre skills y sandboxes (la primera vez desca
 tools/papers/buscar_papers.py --tema skills --tema sandbox-seguridad --top 30
 ```
 
-## Configuración prevista
+## Configuración
 
-`pcode.toml` en la raíz del proyecto. Es orientativo: el esquema definitivo sale de la tarea F1.3.
+`pcode.toml` en la raíz del proyecto (opcional: sin él se usan las claves del entorno). El primer proveedor
+de la lista es el que se usa si no pasas `--proveedor`. Tipos: `openai-compatible` (LiteLLM, vLLM, Ollama,
+OpenAI), `anthropic` y `gemini`; a los dos últimos, si no pones `clave`, se les busca `ANTHROPIC_API_KEY` y
+`GEMINI_API_KEY`. Las secciones de backends, roles y `[politica]` son las de F2 y F3.
 
 ```toml
 [proyecto]
 instrucciones = ["AGENTS.md"]
+
+[proveedores.anthropic]
+tipo = "anthropic"
+clave = "{env:ANTHROPIC_API_KEY}"
+
+[proveedores.gemini]
+tipo = "gemini"
 
 [proveedores.litellm]
 tipo = "openai-compatible"

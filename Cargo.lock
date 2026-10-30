@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-backends"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "pcode-models",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1022,13 +1022,14 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+ "tracing",
  "tracing-subscriber",
  "uuid",
 ]
 
 [[package]]
 name = "pcode-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -1037,7 +1038,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "pcode-models",
@@ -1051,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-flow"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures",
  "pcode-backends",
@@ -1067,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-models"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -1080,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-policy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "globset",
  "hex",
@@ -1096,7 +1097,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1105,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-sandbox"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "serde",
@@ -1118,7 +1119,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1136,7 +1137,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-skills"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
  "thiserror",
@@ -1144,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde_json",
@@ -1154,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-tools"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "globset",

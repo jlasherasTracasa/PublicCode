@@ -1,13 +1,11 @@
 //! `pcode run`.
-use anyhow::{Context, bail};
+use crate::provider::{build_provider, pick_model};
 use pcode_config::Config;
 use pcode_core::{Agent, AgentConfig, Budget, Outcome, StopHook};
-use pcode_models::{MockProvider, OpenAiCompatProvider, Provider};
 use pcode_policy::{AuditLog, Capabilities, Policy};
 use pcode_store::Store;
 use pcode_tools::ToolContext;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Argumentos de `pcode run`.
@@ -44,37 +42,12 @@ struct PolicyToml {
     policy: Capabilities,
 }
 
-fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Arc<dyn Provider>> {
-    if let Ok(script) = std::env::var("PCODE_MOCK_SCRIPT") {
-        return Ok(Arc::new(MockProvider::from_script_file(
-            std::path::Path::new(&script),
-        )?));
+/// Capacidades de la sección `[politica]` de `pcode.toml` (vacías si falta o no se entiende).
+pub fn load_capabilities(path: &std::path::Path) -> Capabilities {
+    match std::fs::read_to_string(path) {
+        Ok(s) => toml::from_str::<PolicyToml>(&s).unwrap_or_default().policy,
+        Err(_) => Capabilities::default(),
     }
-    let (n, p) = match name {
-        Some(n) => (
-            n.to_string(),
-            cfg.providers
-                .get(n)
-                .with_context(|| format!("proveedor desconocido: {n}"))?,
-        ),
-        None => cfg
-            .providers
-            .iter()
-            .find(|(_, p)| p.kind == "openai-compatible")
-            .map(|(n, p)| (n.clone(), p))
-            .context("no hay ningún proveedor openai-compatible en pcode.toml")?,
-    };
-    if p.kind != "openai-compatible" {
-        bail!(
-            "el proveedor {n} es de tipo {}; por ahora solo openai-compatible",
-            p.kind
-        );
-    }
-    Ok(Arc::new(OpenAiCompatProvider::new(
-        n,
-        p.url.clone(),
-        p.api_key.clone(),
-    )))
 }
 
 /// Ejecuta la tarea y devuelve el código de salida.
@@ -91,13 +64,11 @@ pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
         )
         .await;
     }
-    let caps: PolicyToml = match std::fs::read_to_string(&a.config) {
-        Ok(s) => toml::from_str(&s).unwrap_or_default(),
-        Err(_) => PolicyToml::default(),
-    };
-    let provider = build_provider(&cfg, a.provider.as_deref())?;
+    let caps = load_capabilities(&a.config);
+    let sel = build_provider(&cfg, a.provider.as_deref())?;
+    let provider = sel.provider.clone();
     let root = std::env::current_dir()?;
-    let model = a.model.clone().unwrap_or_else(|| "default".into());
+    let model = pick_model(a.model.as_deref(), &sel);
     let audit = AuditLog::open(&root.join(".pcode/audit.jsonl"))?;
     let store = Store::open(&root.join(".pcode/pcode.db"))?;
     let sid = store.create_session(&model, &a.task)?;
@@ -110,7 +81,7 @@ pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
     let mut agent = Agent::new(
         provider,
         pcode_tools::native_registry(),
-        Policy::new(caps.policy),
+        Policy::new(caps),
         Some(audit),
         AgentConfig {
             agent_id: format!("s-{sid}"),

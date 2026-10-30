@@ -81,6 +81,32 @@ pub trait Approver: Send + Sync {
     async fn ask(&self, action: &str, reason: &str) -> bool;
 }
 
+/// Algo que ocurre durante la ejecución, para mostrarlo en vivo (terminal, UI).
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentEvent {
+    /// El asistente escribe texto.
+    Text(String),
+    /// El asistente llama a una tool.
+    ToolCall {
+        /// Nombre.
+        name: String,
+        /// Argumentos.
+        arguments: serde_json::Value,
+    },
+    /// Resultado de una tool.
+    ToolResult {
+        /// Nombre.
+        name: String,
+        /// Si falló.
+        is_error: bool,
+        /// Contenido (completo; quien lo muestra decide cuánto).
+        content: String,
+    },
+}
+
+/// Receptor de eventos del agente.
+pub type Observer = Arc<dyn Fn(&AgentEvent) + Send + Sync>;
+
 /// El agente.
 pub struct Agent {
     provider: Arc<dyn Provider>,
@@ -90,6 +116,7 @@ pub struct Agent {
     cfg: AgentConfig,
     ctx: ToolContext,
     approver: Option<Arc<dyn Approver>>,
+    observer: Option<Observer>,
 }
 
 impl Agent {
@@ -110,6 +137,21 @@ impl Agent {
             cfg,
             ctx,
             approver: None,
+            observer: None,
+        }
+    }
+    /// Recibe los eventos (texto, llamadas y resultados de tools) según ocurren.
+    pub fn with_observer(mut self, o: Observer) -> Self {
+        self.observer = Some(o);
+        self
+    }
+    /// Cambia el modelo para las siguientes peticiones.
+    pub fn set_model(&mut self, model: impl Into<String>) {
+        self.cfg.model = model.into();
+    }
+    fn emit(&self, e: AgentEvent) {
+        if let Some(o) = &self.observer {
+            o(&e);
         }
     }
     /// Asigna un aprobador para las decisiones `Ask`.
@@ -198,10 +240,21 @@ impl Agent {
 
     /// Ejecuta una tarea.
     pub async fn run(&mut self, task: &str) -> RunReport {
-        let mut messages = vec![
-            Message::system(self.cfg.system_prompt.clone()),
-            Message::user(task),
-        ];
+        self.run_turn(vec![], task).await
+    }
+
+    /// Continúa una conversación: añade `user` al `history` (el `transcript` de la vuelta
+    /// anterior; vacío para empezar) y ejecuta hasta que el agente responda sin más tools.
+    /// Cada vuelta cuenta con su propio presupuesto.
+    pub async fn run_turn(&mut self, mut history: Vec<Message>, user: &str) -> RunReport {
+        if history.first().is_none_or(|m| m.role != Role::System) {
+            history.insert(0, Message::system(self.cfg.system_prompt.clone()));
+        }
+        history.push(Message::user(user));
+        self.run_messages(history).await
+    }
+
+    async fn run_messages(&mut self, mut messages: Vec<Message>) -> RunReport {
         let mut usage = Usage::default();
         let mut steps = 0;
         let mut rounds = 0;
@@ -243,6 +296,9 @@ impl Agent {
             usage.add(&resp.usage);
             let msg = resp.message;
             let calls = msg.tool_calls.clone();
+            if !msg.content.trim().is_empty() {
+                self.emit(AgentEvent::Text(msg.content.clone()));
+            }
             messages.push(msg.clone());
             if calls.is_empty() {
                 let Some(hook) = self.cfg.stop_hook.clone() else {
@@ -284,6 +340,10 @@ impl Agent {
                 continue;
             }
             for call in calls {
+                self.emit(AgentEvent::ToolCall {
+                    name: call.name.clone(),
+                    arguments: call.arguments.clone(),
+                });
                 let (mut out, wrote) = self.run_call(&call).await;
                 if call.name == "bash"
                     && let Some(c) = call.arguments.get("command").and_then(|v| v.as_str())
@@ -306,6 +366,11 @@ impl Agent {
                     out.content = format!("{}\n[pista] {h}", out.content);
                 }
                 let _ = StuckSignal::NoProgress(0);
+                self.emit(AgentEvent::ToolResult {
+                    name: call.name.clone(),
+                    is_error: out.is_error,
+                    content: out.content.clone(),
+                });
                 messages.push(Message::tool_result(call.id.clone(), out.content));
             }
             let _ = Role::Tool;
@@ -374,6 +439,52 @@ mod tests {
         (a, p)
     }
 
+    #[tokio::test]
+    async fn run_turn_conserva_el_historial_entre_vueltas() {
+        let d = tempfile::tempdir().unwrap();
+        let (mut a, p) = agent(
+            &d,
+            vec![text("uno"), text("dos")],
+            Capabilities::default(),
+            None,
+        );
+        let r1 = a.run_turn(vec![], "primero").await;
+        let r2 = a.run_turn(r1.transcript, "segundo").await;
+        assert!(matches!(r2.outcome, Outcome::Done { .. }));
+        let reqs = p.requests();
+        let last = &reqs[1].messages;
+        // sistema, user, assistant, user: el sistema no se duplica.
+        assert_eq!(last.len(), 4);
+        assert_eq!(last.iter().filter(|m| m.role == Role::System).count(), 1);
+        assert_eq!(last[3].content, "segundo");
+    }
+    #[tokio::test]
+    async fn observador_recibe_texto_y_tools() {
+        let d = tempfile::tempdir().unwrap();
+        let (a, _) = agent(
+            &d,
+            vec![
+                tool("escribir", json!({"path":"x.txt","content":"hi"})),
+                text("listo"),
+            ],
+            Capabilities::default(),
+            None,
+        );
+        let seen = Arc::new(std::sync::Mutex::new(vec![]));
+        let s2 = seen.clone();
+        let mut a = a.with_observer(Arc::new(move |e| s2.lock().unwrap().push(e.clone())));
+        a.run("t").await;
+        let v = seen.lock().unwrap();
+        assert!(matches!(&v[0], AgentEvent::ToolCall { name, .. } if name == "escribir"));
+        assert!(matches!(
+            &v[1],
+            AgentEvent::ToolResult {
+                is_error: false,
+                ..
+            }
+        ));
+        assert_eq!(v[2], AgentEvent::Text("listo".into()));
+    }
     #[tokio::test]
     async fn agente_termina_sin_tools() {
         let d = tempfile::tempdir().unwrap();

@@ -14,7 +14,7 @@ fase = "F0"
 ejecutor = "haiku"
 depende = []
 toca = ["Cargo.toml", "rust-toolchain.toml", "crates/pcode-cli/Cargo.toml", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo build -p pcode-cli && ./target/debug/pcode --version | grep -q 'pcode 0.1.0'"
+acepta = "cargo build -p pcode-cli && ./target/debug/pcode --version | grep -qE 'pcode [0-9]+[.][0-9]+[.][0-9]+'"
 contexto = ["AGENTS.md (convenciones y dependencias permitidas)", "README.md (sección «Estructura del repositorio»)"]
 objetivo = '''
 1. `Cargo.toml` raíz: workspace con `resolver = "3"`, `members = ["crates/*"]`, y
@@ -3189,6 +3189,30 @@ objetivo = '''
    `SHA256SUMS`, firmado con los secretos `PCODE_ANDROID_*` o con la clave de depuración.
 '''
 tests = ["ConexionTest: parseUrlDelDemonio, parseHttpsSinPuertoYConOtrosParametros, parseIpv6, rechazaUrlsInvalidas, mismoOrigen"]
+
+[[tarea]]
+id = "F5.29"
+nombre = "chat"
+titulo = "`pcode chat`: conversación interactiva con el agente (sustituto de Claude Code y opencode)"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F1.16", "F1.22", "F1.23", "F5.28"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/chat.rs"]
+acepta = "cargo test -p pcode-core && cargo test -p pcode-cli"
+contexto = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/run.rs", "README.md (sección «Uso rápido»)"]
+objetivo = '''
+1. `Agent::run_turn(history, user)` continúa una conversación (presupuesto por vuelta; el prompt de
+   sistema no se duplica) y `with_observer` entrega `AgentEvent` (texto, llamada y resultado de tool).
+2. `pcode chat` (y `pcode` sin argumentos en una terminal): bucle de lectura con `/modelo`, `/nuevo`,
+   `/uso`, `/ayuda`, `/salir`, líneas con `\\`, Ctrl-C que interrumpe solo al agente, aprobaciones por
+   terminal (`s`, `t`, `N`) o `--aprobar-todo`, `--continuar` desde SQLite y colores solo en una TTY sin
+   `NO_COLOR`. Sin TTY lee un mensaje por línea.
+3. Proveedor elegido por `--proveedor`, el primero de `pcode.toml` o la clave del entorno
+   (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY`); el prompt de sistema
+   incluye `AGENTS.md` y `CLAUDE.md`.
+'''
+tests = ["run_turn_conserva_el_historial_entre_vueltas", "observador_recibe_texto_y_tools", "chat_dos_mensajes_por_stdin_con_tool_y_comandos", "chat_continuar_retoma_la_conversacion", "chat_sin_modelo_configurado_explica_que_hacer", "chat_deniega_en_no_interactivo_lo_que_pide_confirmacion"]
+
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # F6 — Aprendizaje: skills, subagentes reutilizables y regresión continua

@@ -1,6 +1,8 @@
 //! Binario `pcode`.
 mod backend_run;
+mod chat;
 mod flow_cmd;
+mod provider;
 mod run;
 
 use clap::{Parser, Subcommand};
@@ -15,6 +17,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Cmd {
+    /// Conversación interactiva con el agente (es lo que hace `pcode` solo, en una terminal).
+    Chat(chat::ChatArgs),
     /// Ejecuta una tarea con el bucle del agente.
     Run(run::RunArgs),
     /// Arranca el demonio (API JSON-RPC, eventos y página web); por defecto solo en loopback.
@@ -44,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.command {
+        Some(Cmd::Chat(a)) => std::process::exit(chat::chat(a).await?),
         Some(Cmd::Run(a)) => std::process::exit(run::run(a).await?),
         Some(Cmd::Daemon { puerto, escuchar }) => {
             // Un token fijo (PCODE_DAEMON_TOKEN) evita volver a emparejar el móvil en cada arranque.
@@ -79,6 +84,10 @@ async fn main() -> anyhow::Result<()> {
         Some(Cmd::Flow(c)) => std::process::exit(flow_cmd::flow_cmd(c).await?),
         Some(Cmd::Sandbox(c)) => std::process::exit(backend_run::sandbox_cmd(c).await?),
         None => {
+            use std::io::IsTerminal;
+            if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+                std::process::exit(chat::chat(chat::ChatArgs::default_args()).await?);
+            }
             use clap::CommandFactory;
             Cli::command().print_help()?;
             println!();
