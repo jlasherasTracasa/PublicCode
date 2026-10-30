@@ -1719,6 +1719,34 @@ objetivo = '''
 '''
 tests = ["puente_reenvia", "filtered_permite_dominio (se salta sin userns)", "filtered_deniega_otro (se salta sin userns)"]
 
+
+[[tarea]]
+id = "F2.21"
+nombre = "sandbox-macos"
+titulo = "Mini sandbox en macOS (N1-mac): clon APFS del repo y perfil Seatbelt"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.03"]
+toca = ["crates/pcode-sandbox/src/macos.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox macos"
+contexto = ["docs/mini-sandboxes.md (macOS y Windows)", "crates/pcode-sandbox/src/run.rs"]
+objetivo = '''
+macOS no tiene namespaces ni overlay; el equivalente ligero es:
+1. **Copia CoW**: `cp -c -R <repo> <estado>/vista` (clon APFS, instantáneo y sin duplicar bloques).
+   Los cambios son el diff entre la vista y el repo (reutiliza la lógica de `apply`).
+2. **Perfil Seatbelt** generado (`sandbox_profile(spec)`): `(deny default)` más lectura en todo `/`,
+   escritura solo en la vista, el tmp privado y `--escribible`, ejecución de procesos y red denegada
+   salvo el socket del proxy de F2.19 si `Network::Filtered`. Se ejecuta con
+   `sandbox-exec -f <perfil> <argv>`.
+3. Todo lo testeable es puro (`sandbox_profile`, `clone_argv`) y se prueba en Linux; la ejecución real
+   va tras `#[cfg(target_os = "macos")]` con un test que solo corre en macOS.
+'''
+firmas = '''
+pub fn clone_argv(repo: &std::path::Path, view: &std::path::Path) -> Vec<String>;
+pub fn sandbox_profile(view: &std::path::Path, tmp: &std::path::Path, writable: &[std::path::PathBuf], proxy_socket: Option<&std::path::Path>) -> String;
+'''
+tests = ["perfil_deniega_por_defecto", "perfil_escritura_solo_en_vista", "perfil_red_solo_socket_proxy", "clone_argv_usa_cp_c", "ejecucion_real (solo macOS)"]
+
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # F3 — Flujos: tareas, DAG, aceptación, reintentos, integración, CI (sustituye a orquestador.py)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -2421,87 +2449,671 @@ tests = ["guion_ejecuta_en_orden", "guion_para_en_error", "guion_sigue_si_no_par
 papers = ["Deploying Programmatic Tool Calling (EMNLP 2026 Industry)"]
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
-# F5 — Interfaces
+# F5 — Interfaces: protocolo, demonio, terminal (CLI y TUI), UI común, escritorio, web, PWA, IDE
+# (puede ir en paralelo a F3–F4: solo las vistas de flujos dependen de F3)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 [[tarea]]
 id = "F5.01"
-nombre = "demonio-api"
-titulo = "`pcoded`: API JSON-RPC + SSE en socket Unix y cola de aprobaciones"
+nombre = "protocolo"
+titulo = "`pcode-protocol`: tipos de la API (JSON-RPC y eventos) con exportación a TypeScript"
 fase = "F5"
 ejecutor = "haiku"
-depende = ["F3.10"]
-toca = ["crates/pcode-server/Cargo.toml", "crates/pcode-server/src/lib.rs", "crates/pcode-server/src/approvals.rs", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-server && cargo test -p pcode-cli"
-contexto = ["docs/arquitectura.md (Interfaces)", "crates/pcode-flow/src/runner.rs"]
+depende = ["F0.01"]
+toca = ["crates/pcode-protocol/Cargo.toml", "crates/pcode-protocol/src/lib.rs", ".cargo/config.toml"]
+acepta = "cargo test -p pcode-protocol && test -f apps/ui/src/protocol/SessionInfo.ts && test -f apps/ui/src/protocol/Event.ts"
+contexto = ["docs/interfaces.md", "AGENTS.md (6.2 Protocolo y API)"]
 objetivo = '''
-1. Dependencia permitida: `axum`. Socket Unix `.pcode/pcoded.sock` por defecto; `--tcp 127.0.0.1:PORT`
-   opcional con token en la cabecera.
-2. Métodos JSON-RPC: `run.start`, `run.status`, `flow.status`, `flow.stop`, `sandbox.changes`,
-   `approvals.list` y `approvals.decide{id, permitir}`.
-3. `GET /eventos`: SSE con los eventos de sesión y de flujo.
-4. `ApprovalBroker`: las decisiones `Ask` de la política se convierten en aprobaciones pendientes; el
-   bucle espera (con tiempo máximo) la decisión en lugar de denegar.
-5. `pcode daemon` lo arranca.
+1. Tipos DTO propios (no reexportes los de otros crates): serde con `rename_all = "camelCase"` para
+   los campos y enums etiquetados con `#[serde(tag = "tipo")]`.
+2. Cada tipo deriva `ts_rs::TS` con `#[ts(export)]`. En `.cargo/config.toml`, `[env]` con
+   `TS_RS_EXPORT_DIR = { value = "apps/ui/src/protocol", relative = true }`: al pasar `cargo test`
+   se generan los `.ts`.
+3. Constantes de nombres de método en `pub mod methods` y `PROTOCOL_VERSION = "0.1.0"`.
+4. Un test por tipo que haga ida y vuelta JSON con un ejemplo realista.
 '''
 firmas = '''
-pub struct Approval { pub id: u64, pub session: i64, pub action: String, pub reason: String }
-pub struct ApprovalBroker { /* pendientes + oneshot */ }
-impl ApprovalBroker {
-    pub fn new() -> std::sync::Arc<Self>;
-    pub async fn request(&self, session: i64, action: &str, reason: &str, timeout: std::time::Duration) -> bool;
-    pub fn pending(&self) -> Vec<Approval>;
-    pub fn decide(&self, id: u64, allow: bool) -> bool;
+pub const PROTOCOL_VERSION: &str = "0.1.0";
+
+pub enum SessionState { Running, WaitingApproval, Done, Failed, Stuck, Cancelled }
+pub struct SessionInfo { pub id: i64, pub title: String, pub backend: String, pub model: Option<String>,
+                         pub sandbox: Option<String>, pub state: SessionState, pub parent: Option<i64>, pub created_ms: i64 }
+pub enum TranscriptEntry {                       // #[serde(tag = "tipo")]
+    User { text: String }, Assistant { text: String },
+    ToolCall { call_id: String, name: String, summary: String },
+    ToolResult { call_id: String, output: String, is_error: bool },
+    System { text: String },
+}
+pub struct ChangeDto { pub path: String, pub kind: String, pub additions: u32, pub deletions: u32 }
+pub struct ApprovalDto { pub id: u64, pub session: i64, pub action: String, pub reason: String, pub provenance: String }
+pub struct TaskDto { pub id: String, pub title: String, pub state: String, pub attempts: u32, pub backend: Option<String>, pub mode: String }
+pub struct BackendDto { pub id: String, pub kind: String, pub installed: bool, pub version: Option<String>, pub logged_in: Option<bool> }
+pub enum Event {                                 // #[serde(tag = "tipo")]
+    SessionUpdated { session: SessionInfo },
+    Transcript { session: i64, entry: TranscriptEntry },
+    ApprovalRequested { approval: ApprovalDto },
+    ApprovalResolved { id: u64, allowed: bool },
+    ChangesUpdated { session: i64, changes: Vec<ChangeDto> },
+    TaskUpdated { task: TaskDto },
+    Usage { session: i64, input_tokens: u64, output_tokens: u64 },
+}
+pub struct SessionCreateParams { pub task: String, pub backend: Option<String>, pub model: Option<String>,
+                                 pub sandbox: Option<String>, pub accept: Option<String>, pub parent: Option<i64> }
+pub struct SessionSendParams { pub session: i64, pub text: String }
+pub struct RpcRequest { pub jsonrpc: String, pub id: u64, pub method: String, pub params: serde_json::Value }
+pub struct RpcError { pub code: i32, pub message: String }
+pub struct RpcResponse { pub jsonrpc: String, pub id: u64, pub result: Option<serde_json::Value>, pub error: Option<RpcError> }
+pub mod methods {
+    pub const SESSION_CREATE: &str = "session.create"; pub const SESSION_SEND: &str = "session.send";
+    pub const SESSION_CANCEL: &str = "session.cancel"; pub const SESSION_LIST: &str = "session.list";
+    pub const SESSION_TRANSCRIPT: &str = "session.transcript"; pub const CHANGES_LIST: &str = "changes.list";
+    pub const CHANGES_DIFF: &str = "changes.diff"; pub const CHANGES_APPLY: &str = "changes.apply";
+    pub const CHANGES_DISCARD: &str = "changes.discard"; pub const APPROVALS_LIST: &str = "approvals.list";
+    pub const APPROVALS_DECIDE: &str = "approvals.decide"; pub const BACKENDS_DETECT: &str = "backends.detect";
+    pub const FLOW_STATUS: &str = "flow.status"; pub const FLOW_STOP: &str = "flow.stop";
+    pub const SKILLS_LIST: &str = "skills.list"; pub const SERVER_INFO: &str = "server.info";
 }
 '''
-tests = ["aprobacion_permitida", "aprobacion_vence_y_deniega", "rpc_flow_status", "sse_emite_eventos"]
+tests = ["ida_y_vuelta_de_cada_tipo", "event_lleva_campo_tipo", "campos_camel_case", "genera_ts (comprueba que existe apps/ui/src/protocol/Event.ts tras el test)"]
 
 [[tarea]]
 id = "F5.02"
-nombre = "tui"
-titulo = "TUI con ratatui: sesiones, transcripción en vivo, aprobaciones y diffs"
+nombre = "demonio"
+titulo = "`pcode-server`: demonio `pcoded` con JSON-RPC, eventos SSE y sesiones"
 fase = "F5"
 ejecutor = "haiku"
-depende = ["F5.01"]
-toca = ["crates/pcode-tui/Cargo.toml", "crates/pcode-tui/src/lib.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-tui && cargo test -p pcode-cli"
-contexto = ["crates/pcode-server/src/lib.rs"]
+depende = ["F5.01", "F2.18"]
+toca = ["crates/pcode-server/Cargo.toml", "crates/pcode-server/src/lib.rs", "crates/pcode-server/src/sessions.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-server && cargo test -p pcode-cli"
+contexto = ["docs/interfaces.md (principio y transporte)", "crates/pcode-protocol/src/lib.rs", "crates/pcode-cli/src/run.rs"]
 objetivo = '''
-Dependencias permitidas: `ratatui` y `crossterm`. Cliente del demonio (no lógica propia).
-Paneles: sesiones y flujos, transcripción en vivo (SSE), aprobaciones pendientes (teclas `a`/`d`) y
-diff de la sandbox. El estado de la app es una estructura pura (`App`) con `update(evento)`,
-testeable sin terminal (`ratatui::backend::TestBackend`).
+1. `axum` sobre un socket Unix (`.pcode/pcoded.sock`) o `--tcp 127.0.0.1:PUERTO` con token
+   (cabecera `Authorization: Bearer`; el token se genera al arrancar y se guarda en
+   `.pcode/pcoded.token` con permisos 0600).
+2. `POST /rpc`: JSON-RPC 2.0. Métodos de sesión: `server.info`, `session.create` (lanza en segundo
+   plano un `pcode run` equivalente con backend y sandbox), `session.send` (añade un mensaje de
+   usuario a una sesión del bucle propio), `session.cancel`, `session.list`, `session.transcript`,
+   `changes.list|diff|apply|discard` (sobre la sandbox de la sesión).
+3. `GET /eventos`: SSE con los `Event` del protocolo (`tokio::sync::broadcast`).
+4. Errores JSON-RPC: -32601 método desconocido, -32602 parámetros inválidos, -32000 error interno con mensaje.
+5. `pcode daemon [--tcp …]` arranca el servidor. Un segundo arranque sobre el mismo socket detecta
+   que ya hay uno y sale con un mensaje.
+6. Tests con `tower::ServiceExt::oneshot` y backend `modelo` con `PCODE_MOCK_SCRIPT`.
 '''
-tests = ["app_update_aprobacion", "render_test_backend_tiene_paneles"]
+firmas = '''
+pub struct ServerCfg { pub repo: std::path::PathBuf, pub socket: Option<std::path::PathBuf>, pub tcp: Option<std::net::SocketAddr> }
+pub struct AppState { /* sesiones, broadcast de eventos, config */ }
+pub fn router(state: std::sync::Arc<AppState>) -> axum::Router;
+pub async fn serve(cfg: ServerCfg) -> anyhow::Result<()>;
+'''
+tests = ["rpc_server_info", "rpc_metodo_desconocido", "rpc_sin_token_401 (modo TCP)", "session_create_con_mock_emite_eventos", "changes_list_tras_sesion (se salta sin userns)"]
 
 [[tarea]]
 id = "F5.03"
-nombre = "panel-web"
-titulo = "Panel web estático servido por `pcoded`"
+nombre = "aprobaciones"
+titulo = "Cola de aprobaciones: las decisiones `Ask` esperan a un humano desde cualquier cliente"
 fase = "F5"
 ejecutor = "haiku"
-depende = ["F5.01"]
-toca = ["crates/pcode-server/src/web.rs", "crates/pcode-server/web/index.html", "crates/pcode-server/web/app.js", "crates/pcode-server/src/lib.rs"]
-acepta = "cargo test -p pcode-server web"
-contexto = ["crates/pcode-server/src/lib.rs"]
-objetivo = "HTML + JS sin framework ni build (incluidos con `include_str!`): estado del flujo, árbol de agentes y subagentes, diff por tarea, aprobaciones y métricas del último bench. Consume JSON-RPC y SSE. Modo claro y oscuro."
-tests = ["web_sirve_index", "web_tiene_csp_estricta"]
+depende = ["F5.02"]
+toca = ["crates/pcode-server/src/approvals.rs", "crates/pcode-server/src/lib.rs", "crates/pcode-core/src/agent.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-server approvals && cargo test -p pcode-core"
+contexto = ["crates/pcode-core/src/agent.rs (la rama Ask)", "crates/pcode-protocol/src/lib.rs"]
+objetivo = '''
+1. `pcode-core` gana un trait `Approver` (`async fn ask(action, reason) -> bool`); sin `Approver`,
+   el comportamiento de F1 se mantiene (Ask = no ejecutar).
+2. `ApprovalBroker` implementa `Approver`: crea una aprobación, emite `ApprovalRequested`, espera con
+   `oneshot` y tiempo máximo (por defecto 30 min; vencido = denegar) y emite `ApprovalResolved`.
+3. Métodos `approvals.list` y `approvals.decide {id, allowed, remember?: bool}`. `remember` añade el
+   patrón a una capa de política de la sesión, para no volver a preguntar.
+'''
+firmas = '''
+// pcode-core
+#[async_trait::async_trait]
+pub trait Approver: Send + Sync { async fn ask(&self, action: &str, reason: &str) -> bool; }
+// pcode-server
+pub struct ApprovalBroker { /* pendientes: Mutex<BTreeMap<u64, (ApprovalDto, oneshot::Sender<bool>)>>, eventos */ }
+impl ApprovalBroker {
+    pub fn new(events: tokio::sync::broadcast::Sender<pcode_protocol::Event>, timeout: std::time::Duration) -> std::sync::Arc<Self>;
+    pub fn pending(&self) -> Vec<pcode_protocol::ApprovalDto>;
+    pub fn decide(&self, id: u64, allowed: bool) -> bool;
+}
+'''
+tests = ["aprobacion_permitida_ejecuta", "aprobacion_denegada_no_ejecuta", "aprobacion_vence_y_deniega", "decide_id_inexistente_false", "emite_eventos"]
 
 [[tarea]]
 id = "F5.04"
-nombre = "acp"
-titulo = "Servidor ACP (Agent Client Protocol) para usar PublicCode desde editores"
+nombre = "api-flujo"
+titulo = "Métodos y eventos de flujos en el demonio"
 fase = "F5"
 ejecutor = "haiku"
-depende = ["F5.01"]
-toca = ["crates/pcode-acp/Cargo.toml", "crates/pcode-acp/src/lib.rs", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-acp && cargo test -p pcode-cli"
-contexto = ["docs/backends-verificado.md (ACP en Gemini CLI, Claude Code y opencode)"]
-objetivo = "`pcode acp` habla ACP por stdio: sesión, prompt, actualizaciones de mensajes y tools en streaming, solicitudes de permiso (mapeadas al `ApprovalBroker`) y diffs. Usa el SDK de ACP para Rust si existe en crates.io; si no, JSON-RPC propio sobre stdio con los mensajes mínimos. Tests con un cliente falso."
-tests = ["acp_inicializa", "acp_prompt_devuelve_actualizaciones", "acp_permiso_mapea_a_aprobacion"]
+depende = ["F5.02", "F3.10"]
+toca = ["crates/pcode-server/src/flow_api.rs", "crates/pcode-server/src/lib.rs"]
+acepta = "cargo test -p pcode-server flow_api"
+contexto = ["crates/pcode-flow/src/runner.rs", "crates/pcode-protocol/src/lib.rs"]
+objetivo = "`flow.status` (lista de `TaskDto` + necesita coordinador), `flow.stop`; el `Runner` corre dentro del demonio y cada cambio de estado de tarea emite `TaskUpdated`."
+tests = ["flow_status_lista_tareas", "flow_stop_para_runner", "task_updated_se_emite"]
 
 [[tarea]]
 id = "F5.05"
+nombre = "cliente-rust"
+titulo = "`pcode-client`: cliente Rust del demonio con arranque automático"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.02"]
+toca = ["crates/pcode-client/Cargo.toml", "crates/pcode-client/src/lib.rs"]
+acepta = "cargo test -p pcode-client"
+contexto = ["crates/pcode-server/src/lib.rs", "crates/pcode-protocol/src/lib.rs"]
+objetivo = '''
+1. Conecta por socket Unix (o TCP con token leído de `.pcode/pcoded.token`).
+2. Si no hay demonio, `connect_or_spawn` lanza `pcode daemon` en segundo plano (desacoplado) y
+   reintenta durante como mucho 5 s.
+3. `call::<P, R>(method, params)` tipado y `events()` como `Stream` de `Event` (cliente SSE mínimo
+   sobre `reqwest`).
+'''
+firmas = '''
+pub struct Client { /* transporte */ }
+impl Client {
+    pub async fn connect(repo: &std::path::Path) -> anyhow::Result<Client>;
+    pub async fn connect_or_spawn(repo: &std::path::Path, pcode_bin: &std::path::Path) -> anyhow::Result<Client>;
+    pub async fn call<P: serde::Serialize, R: serde::de::DeserializeOwned>(&self, method: &str, params: &P) -> anyhow::Result<R>;
+    pub async fn events(&self) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = pcode_protocol::Event> + Send>>>;
+}
+'''
+tests = ["conecta_a_servidor_de_prueba", "call_tipado", "eventos_llegan_en_orden", "spawn_si_no_hay_demonio (con un binario falso que arranca un servidor de prueba)"]
+
+[[tarea]]
+id = "F5.06"
+nombre = "cli-maquinas"
+titulo = "CLI: `--formato json|stream-json`, autocompletado y `pcode` sin argumentos abre la TUI"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.05"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/output.rs", "crates/pcode-cli/tests/formato.rs"]
+acepta = "cargo test -p pcode-cli"
+contexto = ["docs/interfaces.md (CLI)", "AGENTS.md (6.3 Terminal)"]
+objetivo = '''
+1. `pcode run --formato texto|json|stream-json`: `json` = un objeto final `{resultado, pasos, uso,
+   cambios, salida_acepta}`; `stream-json` = un `Event` del protocolo por línea mientras corre.
+2. `pcode completions <bash|zsh|fish|powershell>` con `clap_complete`.
+3. `pcode` sin subcomando: si stdin y stdout son TTY → `pcode tui` (si aún no existe, mensaje
+   claro); si no → ayuda.
+4. Sin TTY o con `NO_COLOR` → sin colores ni spinners.
+'''
+tests = ["formato_json_tiene_campos", "stream_json_una_linea_por_evento", "completions_bash_no_vacio", "sin_tty_sin_colores"]
+
+[[tarea]]
+id = "F5.07"
+nombre = "tui-estado"
+titulo = "`pcode-tui`: estado puro `App`, disposición de paneles e i18n"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.05"]
+toca = ["crates/pcode-tui/Cargo.toml", "crates/pcode-tui/src/lib.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui"
+contexto = ["docs/interfaces.md (TUI interactiva: maqueta)", "AGENTS.md (6.3 Terminal)", "crates/pcode-protocol/src/lib.rs"]
+objetivo = '''
+1. `App` guarda TODO el estado de la TUI; `update(Event) -> Vec<Command>` es puro (sin E/S) y
+   `render(&App, &mut Frame)` dibuja la maqueta de docs/interfaces.md: árbol de sesiones a la
+   izquierda, transcripción en el centro, panel lateral (cambios, aprobaciones, tareas o agentes) a
+   la derecha, entrada y barra de estado abajo.
+2. A menos de 100 columnas el panel lateral se pliega; a menos de 70, también el árbol (se abre con atajo).
+3. `i18n`: `t(lang, clave) -> &'static str` con tablas `es` y `en`; ningún literal visible fuera de las tablas.
+4. Tests con `TestBackend` a 80×24 y 120×40 comparando el buffer con un texto esperado.
+'''
+firmas = '''
+pub enum Lang { Es, En }
+pub enum Focus { Tree, Chat, Side, Input }
+pub enum SidePanel { Changes, Approvals, Tasks, Agents }
+pub enum Event { Key(crossterm::event::KeyEvent), Server(pcode_protocol::Event), Resize(u16, u16), Tick }
+pub enum Command { Rpc { method: String, params: serde_json::Value }, Quit, OpenEditor(String) }
+pub struct App {
+    pub lang: Lang, pub focus: Focus, pub side: SidePanel,
+    pub sessions: Vec<pcode_protocol::SessionInfo>, pub current: Option<i64>,
+    pub transcripts: std::collections::BTreeMap<i64, Vec<pcode_protocol::TranscriptEntry>>,
+    pub approvals: Vec<pcode_protocol::ApprovalDto>, pub changes: Vec<pcode_protocol::ChangeDto>,
+    pub input: String, pub status: String,
+}
+impl App { pub fn new(lang: Lang) -> Self; pub fn update(&mut self, ev: Event) -> Vec<Command>; }
+pub fn render(app: &App, f: &mut ratatui::Frame);
+pub fn t(lang: Lang, key: &str) -> &'static str;
+'''
+tests = ["render_80x24", "render_120x40", "panel_lateral_se_pliega", "evento_servidor_actualiza_sesion", "tab_cambia_foco", "i18n_sin_claves_huerfanas (todas las claves de es existen en en)"]
+
+[[tarea]]
+id = "F5.08"
+nombre = "tui-chat"
+titulo = "TUI: chat interactivo con transcripción en vivo, tools plegables y entrada multilínea"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.07"]
+toca = ["crates/pcode-tui/src/chat.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-tui chat && cargo test -p pcode-cli"
+contexto = ["crates/pcode-tui/src/app.rs", "crates/pcode-client/src/lib.rs"]
+objetivo = '''
+1. Transcripción: mensajes del usuario y del asistente con Markdown mínimo (negrita, `código`,
+   bloques de código con fondo distinto y listas); llamadas a tools en una línea plegable
+   (`▸ nombre resumen ✓/✗`; Intro despliega la salida); desplazamiento con PgUp, PgDn y ratón.
+2. Entrada: Intro envía (`session.send` o `session.create` si no hay sesión), Mayús+Intro es una
+   línea nueva, ↑ recorre el historial y Esc cancela la sesión en marcha (`session.cancel`).
+3. `run.rs`: bucle real con `crossterm` (modo raw y pantalla alternativa, restaurados también si hay
+   pánico), una tarea para los eventos del servidor y otra para el teclado, que mandan `Event` por
+   canal a `App`. `pcode tui` lo arranca con `connect_or_spawn`.
+'''
+firmas = '''
+pub fn render_markdown_lines(text: &str, width: u16) -> Vec<ratatui::text::Line<'static>>;
+pub async fn run_tui(repo: &std::path::Path, pcode_bin: &std::path::Path) -> anyhow::Result<()>;
+'''
+tests = ["markdown_bloque_codigo", "markdown_ajusta_ancho", "tool_plegada_y_desplegada", "intro_envia_session_send", "mayus_intro_nueva_linea", "esc_cancela"]
+
+[[tarea]]
+id = "F5.09"
+nombre = "tui-ordenes"
+titulo = "TUI: órdenes `/…`, menciones `@archivo` con autocompletado difuso y `!orden`"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.08"]
+toca = ["crates/pcode-tui/src/commands.rs", "crates/pcode-tui/src/fuzzy.rs", "crates/pcode-tui/src/app.rs"]
+acepta = "cargo test -p pcode-tui commands && cargo test -p pcode-tui fuzzy"
+contexto = ["docs/interfaces.md (lista de órdenes)", "crates/pcode-tui/src/app.rs"]
+objetivo = '''
+1. `parse_command(input)` reconoce las órdenes de docs/interfaces.md y devuelve `Command`s o un error
+   legible. `/ayuda` lista las órdenes con su descripción (i18n).
+2. `@`: popup con los archivos del repo filtrados con `fuzzy_score` (subsecuencia con bonus por
+   inicio de segmento y por coincidencias consecutivas); Tab completa. Al enviar, las menciones viajan
+   como lista de rutas en `session.send`.
+3. `!orden`: ejecuta la orden en la sandbox de la sesión (método del demonio) y adjunta la salida
+   comprimida como mensaje.
+'''
+firmas = '''
+pub enum SlashCommand { New, Sessions, Backend(String), Model(String), Role(String), Sandbox(String), Accept(String),
+                        Changes, Apply, Discard, Compact, Skills, Subagent { role: String, task: String }, Flow, Help, Quit }
+pub fn parse_command(input: &str) -> Result<SlashCommand, String>;
+pub fn fuzzy_score(pattern: &str, candidate: &str) -> Option<i32>;
+pub fn mentions(input: &str) -> Vec<String>;
+'''
+tests = ["parse_backend", "parse_subagente_con_tarea", "orden_desconocida_error_legible", "fuzzy_prefiere_inicio_de_segmento", "fuzzy_sin_subsecuencia_none", "extrae_menciones"]
+
+[[tarea]]
+id = "F5.10"
+nombre = "tui-multiagente"
+titulo = "TUI: árbol de agentes y subagentes, aprobaciones en línea y revisión de cambios"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.08", "F5.03"]
+toca = ["crates/pcode-tui/src/side.rs", "crates/pcode-tui/src/tree.rs", "crates/pcode-tui/src/app.rs"]
+acepta = "cargo test -p pcode-tui side && cargo test -p pcode-tui tree"
+contexto = ["docs/interfaces.md (TUI: multiagente y revisión)", "crates/pcode-tui/src/app.rs"]
+objetivo = '''
+1. Árbol: sesiones con sus subagentes (`parent`), estado con símbolo y color (`⏳ ✓ ✗ ⚠ ⧗`), y
+   contador de aprobaciones pendientes; Intro cambia de sesión.
+2. Aprobaciones: lista con acción, motivo y procedencia; `p` permite, `n` niega y `P` permite y
+   recuerda (`approvals.decide`).
+3. Cambios: lista con `+/-` por archivo; Intro muestra el diff (`changes.diff`) con líneas `+`
+   verdes y `-` rojas, además de los prefijos; `a` aplica y `d` descarta (con confirmación);
+   `e` abre el archivo en `$EDITOR` (`Command::OpenEditor`).
+4. Tareas del flujo (si el demonio tiene flujo): estado e intentos por tarea.
+'''
+tests = ["arbol_anida_subagentes", "aprobar_emite_rpc", "permitir_y_recordar", "diff_colorea_y_prefija", "aplicar_pide_confirmacion"]
+
+[[tarea]]
+id = "F5.11"
+nombre = "tui-atajos-temas"
+titulo = "TUI: atajos configurables, temas claro, oscuro y alto contraste"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.07"]
+toca = ["crates/pcode-tui/src/keys.rs", "crates/pcode-tui/src/theme.rs", "crates/pcode-tui/src/app.rs"]
+acepta = "cargo test -p pcode-tui keys && cargo test -p pcode-tui theme"
+contexto = ["AGENTS.md (6.3 Terminal)", "crates/pcode-tui/src/app.rs"]
+objetivo = '''
+1. `keybindings.toml` (en la configuración del usuario o en `.pcode/`): acción → combinación
+   (`"ctrl+k"`, `"shift+enter"`, `"f1"`); si falta, valores por defecto; un conflicto es un error con
+   las dos acciones nombradas.
+2. Temas: `oscuro`, `claro` y `alto-contraste`; con `NO_COLOR`, sin colores pero con símbolos y
+   negrita. Toda la TUI usa `Theme`, sin colores fijos.
+3. F1 muestra la ayuda de atajos (i18n).
+'''
+firmas = '''
+pub enum Action { Send, NewLine, Cancel, FocusNext, FocusPrev, ToggleSide, Approve, Deny, ApproveRemember, Apply, Discard, OpenEditor, Help, Quit }
+pub struct KeyMap { /* BTreeMap<KeyCombo, Action> */ }
+impl KeyMap { pub fn default_map() -> Self; pub fn from_toml(s: &str) -> Result<Self, String>; pub fn action(&self, ev: &crossterm::event::KeyEvent) -> Option<Action>; }
+pub struct Theme { pub fg: ratatui::style::Color, pub bg: ratatui::style::Color, pub accent: ratatui::style::Color, pub ok: ratatui::style::Color, pub err: ratatui::style::Color, pub warn: ratatui::style::Color, pub use_color: bool }
+impl Theme { pub fn by_name(name: &str, no_color: bool) -> Option<Theme>; }
+'''
+tests = ["atajos_por_defecto", "toml_sobrescribe", "conflicto_es_error", "no_color_sin_colores", "tema_desconocido_none"]
+
+[[tarea]]
+id = "F5.12"
+nombre = "ui-base"
+titulo = "`apps/ui`: base React + TypeScript + Vite, tema, i18n y `Transport` (http y mock)"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.01"]
+toca = ["package.json", "apps/ui/package.json", "apps/ui/src/transport.ts", "apps/ui/src/App.tsx"]
+acepta = "npm ci && npm run -w apps/ui lint && npm run -w apps/ui typecheck && npm run -w apps/ui test && npm run -w apps/ui build"
+toca_extra = ["package-lock.json", "apps/ui/index.html", "apps/ui/vite.config.ts", "apps/ui/tsconfig.json", "apps/ui/eslint.config.js", "apps/ui/src/main.tsx", "apps/ui/src/index.css", "apps/ui/src/i18n/es.json", "apps/ui/src/i18n/en.json", "apps/ui/src/i18n/index.ts", "apps/ui/src/transport.test.ts", ".github/workflows/ci.yml"]
+lenguaje = "typescript"
+contexto = ["AGENTS.md (6.4 UI común y 7 Dependencias)", "docs/interfaces.md", "apps/ui/src/protocol/ (tipos generados en F5.01)"]
+objetivo = '''
+1. `package.json` raíz con `"workspaces": ["apps/*"]` y `"private": true`. `apps/ui/package.json` con
+   las dependencias permitidas en versiones EXACTAS y los scripts `dev`, `build`, `lint`,
+   `typecheck` (`tsc --noEmit`) y `test` (`vitest run`).
+2. Crea también la configuración estándar listada en *Toca* (Vite, tsconfig, ESLint, i18n, lockfile).
+3. `tsconfig` con `strict: true` y `noUncheckedIndexedAccess`.
+4. Tema: variables CSS (`--color-fondo`, `--color-texto`, `--color-acento`, `--color-ok`,
+   `--color-error`, `--color-aviso`) para claro y oscuro (`prefers-color-scheme` + selector manual).
+5. `Transport` y sus dos implementaciones (http: `POST /rpc` y `EventSource('/eventos')` con token;
+   mock: manejadores en memoria y `emit` para tests).
+6. Añade a `.github/workflows/ci.yml` un job `ui` (Node 22): `npm ci` y los cuatro scripts de la aceptación.
+7. `App.tsx`: esqueleto con barra lateral (Inicio, Sesiones, Centro de control, Aprobaciones,
+   Skills, Banco, Ajustes) y ruta activa; textos por i18n.
+'''
+firmas = '''
+import type { Event } from "./protocol/Event";
+
+export interface Transport {
+  call<R>(method: string, params: unknown): Promise<R>;
+  subscribe(onEvent: (e: Event) => void): () => void;
+}
+export function createHttpTransport(baseUrl: string, token: string): Transport;
+export function createMockTransport(handlers: Record<string, (params: unknown) => unknown>): Transport & { emit(e: Event): void };
+export const TransportContext: React.Context<Transport | null>;
+export function useTransport(): Transport;
+'''
+tests = ["transport_http_envia_jsonrpc (fetch simulado)", "transport_http_error_rpc_lanza", "transport_mock_emite", "app_navega_con_teclado (Testing Library: Tab y Enter)", "i18n_mismas_claves_es_en"]
+
+[[tarea]]
+id = "F5.13"
+nombre = "ui-chat"
+titulo = "UI: lista de sesiones y chat con transcripción en vivo"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.12", "F5.02"]
+toca = ["apps/ui/src/views/Sesion.tsx", "apps/ui/src/views/Sesion.test.tsx", "apps/ui/src/store/sessions.ts", "apps/ui/src/components/Transcript.tsx"]
+acepta = "npm run -w apps/ui typecheck && npm run -w apps/ui test -- Sesion && npm run -w apps/ui lint"
+lenguaje = "typescript"
+contexto = ["docs/interfaces.md (Escritorio: pantalla Sesión)", "apps/ui/src/transport.ts", "apps/ui/src/protocol/"]
+objetivo = '''
+1. Store `zustand`: sesiones y transcripciones; se alimenta de `session.list`, `session.transcript`
+   y de los eventos `SessionUpdated` y `Transcript`.
+2. Transcripción: usuario y asistente con `react-markdown` (sin HTML crudo); tools como `<details>`
+   con resumen y salida en `<pre>`; desplazamiento automático salvo que el usuario haya subido.
+3. Entrada: textarea (Intro envía, Mayús+Intro es salto de línea), selector de backend y modelo, y
+   botón cancelar mientras corre. `aria-live="polite"` en la transcripción.
+'''
+firmas = '''
+export interface SessionsState {
+  sessions: SessionInfo[]; transcripts: Record<number, TranscriptEntry[]>; current: number | null;
+  load(t: Transport): Promise<void>; apply(e: Event): void; select(id: number): void;
+}
+export const useSessions: import("zustand").UseBoundStore<import("zustand").StoreApi<SessionsState>>;
+export function Sesion(): JSX.Element;
+'''
+tests = ["muestra_transcripcion_con_mock", "evento_transcript_anade_entrada", "intro_envia_session_send", "tool_plegable_accesible", "markdown_sin_html_crudo"]
+
+[[tarea]]
+id = "F5.14"
+nombre = "ui-revision"
+titulo = "UI: revisión de cambios (diff unificado y lado a lado) y cola de aprobaciones"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.13", "F5.03"]
+toca = ["apps/ui/src/views/Revision.tsx", "apps/ui/src/views/Aprobaciones.tsx", "apps/ui/src/components/Diff.tsx", "apps/ui/src/views/Revision.test.tsx"]
+acepta = "npm run -w apps/ui typecheck && npm run -w apps/ui test -- Revision && npm run -w apps/ui lint"
+lenguaje = "typescript"
+contexto = ["docs/interfaces.md (pantallas Revisión y Aprobaciones)", "apps/ui/src/protocol/"]
+objetivo = '''
+1. `Diff`: parsea un diff unificado (cabeceras `@@`) y lo pinta unificado o lado a lado, con números
+   de línea, prefijos `+`/`-` además del color y texto siempre como texto (nunca HTML).
+2. Revisión: lista de `ChangeDto` con `+/-`; aplicar y descartar con diálogo de confirmación;
+   resultado de la revisión cruzada si existe.
+3. Aprobaciones: cola con acción, motivo y procedencia; botones permitir, permitir y recordar, y denegar.
+'''
+firmas = '''
+export interface DiffLine { kind: "ctx" | "add" | "del"; oldNo: number | null; newNo: number | null; text: string }
+export interface DiffHunk { header: string; lines: DiffLine[] }
+export function parseUnifiedDiff(diff: string): DiffHunk[];
+export function Diff(props: { diff: string; mode: "unified" | "split" }): JSX.Element;
+'''
+tests = ["parse_diff_numeros_de_linea", "split_empareja_lineas", "aplicar_pide_confirmacion", "aprobar_llama_decide", "diff_no_interpreta_html"]
+
+[[tarea]]
+id = "F5.15"
+nombre = "ui-centro-control"
+titulo = "UI: centro de control multiagente (tablero de tareas, árbol de agentes, registro en vivo)"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.13", "F5.04"]
+toca = ["apps/ui/src/views/CentroControl.tsx", "apps/ui/src/views/CentroControl.test.tsx", "apps/ui/src/store/flow.ts", "apps/ui/src/components/AgentTree.tsx"]
+acepta = "npm run -w apps/ui typecheck && npm run -w apps/ui test -- CentroControl && npm run -w apps/ui lint"
+lenguaje = "typescript"
+contexto = ["docs/interfaces.md (pantalla Centro de control)", "apps/ui/src/protocol/"]
+objetivo = '''
+1. Tablero con columnas pendiente, en marcha, aceptada, integrada y bloqueada; tarjetas con id,
+   título, backend, intento y tokens; se actualiza con `TaskUpdated`.
+2. Árbol de agentes (sesiones con `parent`) con estado y salto a la sesión.
+3. Panel «Requiere coordinador» y botón parar flujo (`flow.stop`, con confirmación).
+4. Navegación por teclado entre columnas y tarjetas (flechas) con `aria-` adecuados.
+'''
+tests = ["tablero_coloca_por_estado", "task_updated_mueve_tarjeta", "arbol_anida", "parar_pide_confirmacion", "teclado_entre_columnas"]
+
+[[tarea]]
+id = "F5.16"
+nombre = "ui-ajustes"
+titulo = "UI y demonio: ajustes de backends (detección e inicio de sesión), proveedores, tema e idioma"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.13"]
+toca = ["apps/ui/src/views/Ajustes.tsx", "apps/ui/src/views/Ajustes.test.tsx", "crates/pcode-server/src/backends_api.rs", "crates/pcode-server/src/lib.rs"]
+acepta = "cargo test -p pcode-server backends_api && npm run -w apps/ui test -- Ajustes && npm run -w apps/ui typecheck"
+lenguaje = "typescript"
+contexto = ["docs/backends-verificado.md (cómo saber versión y sesión de cada CLI)", "docs/interfaces.md (pantalla Ajustes)"]
+objetivo = '''
+1. Demonio: `backends.detect` → `BackendDto` por cada backend de la configuración y por cada CLI
+   conocida en el PATH (`claude`, `copilot`, `gemini`, `opencode`): instalado, versión y, si la CLI
+   lo permite sin efectos, si la sesión está iniciada. Cada comprobación con tiempo máximo de 5 s.
+2. UI: tabla de backends con su estado y botón «iniciar sesión» (en escritorio abre una terminal con
+   la orden de login; en web muestra la orden para copiar); rol por defecto de cada backend; URL de
+   LiteLLM; tema (sistema, claro, oscuro); idioma.
+3. Las credenciales NO se editan aquí en modo web (ver F5.20).
+'''
+tests = ["detect_cli_inexistente_installed_false", "detect_timeout", "ajustes_muestra_backends", "cambiar_tema_persiste"]
+
+[[tarea]]
+id = "F5.17"
+nombre = "ui-skills-banco"
+titulo = "UI: gestor de skills y gráficas del banco"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.13", "F2.14"]
+toca = ["apps/ui/src/views/Skills.tsx", "apps/ui/src/views/Banco.tsx", "apps/ui/src/views/Skills.test.tsx", "crates/pcode-server/src/skills_api.rs"]
+acepta = "cargo test -p pcode-server skills_api && npm run -w apps/ui test -- Skills && npm run -w apps/ui typecheck"
+lenguaje = "typescript"
+contexto = ["docs/adr/ADR-0004-skills-formato-unico.md", "docs/evaluacion.md"]
+objetivo = '''
+1. Demonio: `skills.list` (activas, en cuarentena con su `EVIDENCIA.md` si existe, y retiradas) y
+   `skills.export {target}`.
+2. Skills: tres pestañas; ver el `SKILL.md` renderizado (sin HTML crudo); exportar a cada agente.
+3. Banco: tabla y barras SVG simples (sin librería de gráficos) de aceptación a la primera y tokens
+   por backend a partir de `bench/resultados/*.jsonl` (método `bench.summary`, en el mismo archivo
+   del demonio). Accesible: tabla de datos además del gráfico.
+'''
+tests = ["skills_list_tres_estados", "exportar_llama_rpc", "banco_tabla_y_grafico"]
+
+[[tarea]]
+id = "F5.18"
+nombre = "escritorio-base"
+titulo = "`apps/desktop`: Tauri 2 con `apps/ui`, `pcoded` como sidecar y transporte Tauri"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.12", "F5.05"]
+toca = ["apps/desktop/src-tauri/Cargo.toml", "apps/desktop/src-tauri/src/lib.rs", "apps/desktop/src-tauri/tauri.conf.json", "apps/ui/src/transport_tauri.ts"]
+acepta = "cargo clippy -p pcode-desktop -- -D warnings && cargo test -p pcode-desktop && npm run -w apps/ui typecheck"
+toca_extra = ["Cargo.toml", "apps/ui/src/main.tsx", "apps/desktop/package.json", "apps/desktop/src-tauri/build.rs", "apps/desktop/src-tauri/src/main.rs", "apps/desktop/src-tauri/capabilities/default.json", "apps/desktop/src-tauri/icons/"]
+lenguaje = "rust"
+contexto = ["AGENTS.md (6.5 Escritorio)", "docs/adr/ADR-0005-interfaces.md", "crates/pcode-client/src/lib.rs"]
+objetivo = '''
+1. Crate `pcode-desktop` en `apps/desktop/src-tauri` (añádelo a `members` del `Cargo.toml` raíz, que
+   está en *Toca* como configuración).
+2. Al arrancar: `pcode_client::Client::connect_or_spawn` (el binario `pcode` va como sidecar);
+   reintenta y muestra un error claro si no puede.
+3. Comando Tauri `rpc(method, params)` que llama al cliente; tarea que reenvía cada `Event` del
+   demonio con `app.emit("pcode://evento", ev)`.
+4. `capabilities/default.json` MÍNIMO: solo `core:default`, `core:event:default` y el comando `rpc`.
+   Sin `shell` ni `fs`.
+5. CSP: `default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self'`.
+6. `transport_tauri.ts`: `Transport` sobre `invoke("rpc")` y `listen("pcode://evento")`. `main.tsx`
+   elige transporte según `window.__TAURI_INTERNALS__`.
+7. Plugins: `single-instance` y `window-state`.
+'''
+firmas = '''
+#[tauri::command]
+async fn rpc(method: String, params: serde_json::Value, state: tauri::State<'_, DesktopState>) -> Result<serde_json::Value, String>;
+pub struct DesktopState { /* pcode_client::Client */ }
+pub fn run();
+// apps/ui/src/transport_tauri.ts
+// export function createTauriTransport(): Transport;
+'''
+tests = ["rpc_reenvia_al_cliente (cliente falso)", "capabilities_minimas (lee el JSON y comprueba que no hay shell ni fs)", "csp_estricta (lee tauri.conf.json)"]
+
+[[tarea]]
+id = "F5.19"
+nombre = "escritorio-sistema"
+titulo = "Escritorio: bandeja con estado, notificaciones nativas, enlaces `pcode://` y arranque con el sistema"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.18", "F5.03"]
+toca = ["apps/desktop/src-tauri/src/tray.rs", "apps/desktop/src-tauri/src/notify.rs", "apps/desktop/src-tauri/src/lib.rs", "apps/desktop/src-tauri/Cargo.toml"]
+acepta = "cargo test -p pcode-desktop && cargo clippy -p pcode-desktop -- -D warnings"
+contexto = ["docs/interfaces.md (Escritorio: integración con el sistema)", "apps/desktop/src-tauri/src/lib.rs"]
+objetivo = '''
+1. Bandeja: icono y tooltip según el estado (`inactivo`, `N agentes en marcha`, `N aprobaciones
+   pendientes`), con menú Abrir, Pausar flujo y Salir.
+2. Notificaciones (`notification`): tarea aceptada o fallida, aprobación necesaria y sesión
+   terminada. Respetan un ajuste «no molestar».
+3. Enlaces profundos (`deep-link`): `pcode://sesion/<id>` y `pcode://tarea/<id>` abren la vista
+   correspondiente.
+4. `autostart` opcional (ajuste).
+5. La lógica de «qué estado y qué notificación» es una función pura testeable; lo nativo queda en
+   llamadas finas.
+'''
+firmas = '''
+pub enum TrayState { Idle, Running(u32), NeedsApproval(u32) }
+pub fn tray_state(sessions: &[pcode_protocol::SessionInfo], approvals: usize) -> TrayState;
+pub struct Notice { pub title: String, pub body: String, pub link: Option<String> }
+pub fn notice_for(ev: &pcode_protocol::Event, lang: &str) -> Option<Notice>;
+pub fn parse_deep_link(url: &str) -> Option<(String, String)>;
+'''
+tests = ["estado_bandeja_prioriza_aprobaciones", "notifica_aprobacion", "no_notifica_transcript", "deep_link_sesion", "deep_link_invalido_none"]
+
+[[tarea]]
+id = "F5.20"
+nombre = "escritorio-credenciales"
+titulo = "Credenciales en el llavero del sistema y referencias `{llavero:…}` en la configuración"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.18", "F1.01"]
+toca = ["apps/desktop/src-tauri/src/secrets.rs", "apps/desktop/src-tauri/src/lib.rs", "crates/pcode-config/src/lib.rs", "apps/ui/src/views/Credenciales.tsx"]
+acepta = "cargo test -p pcode-config && cargo test -p pcode-desktop secrets && npm run -w apps/ui typecheck"
+contexto = ["AGENTS.md (reglas duras 4; 6.5)", "crates/pcode-config/src/lib.rs"]
+objetivo = '''
+1. `pcode-config`: además de `{env:X}`, admite `{llavero:nombre}`, resuelto con `keyring` (servicio
+   `publiccode`). Si el llavero no está disponible → error claro (nunca vacío silencioso).
+2. Escritorio: comandos `secret_set(nombre, valor)`, `secret_delete(nombre)` y `secret_list()`
+   (solo nombres, nunca valores).
+3. Vista Credenciales (solo en escritorio): nombre más campo de contraseña; tras guardar, el valor
+   no se vuelve a mostrar.
+4. Tests del llavero con un almacén en memoria (trait `SecretStore` con implementación `keyring` y otra falsa).
+'''
+firmas = '''
+pub trait SecretStore: Send + Sync { fn get(&self, name: &str) -> Result<Option<String>, String>; fn set(&self, name: &str, value: &str) -> Result<(), String>; fn delete(&self, name: &str) -> Result<(), String>; fn list(&self) -> Result<Vec<String>, String>; }
+pub struct KeyringStore;
+pub struct MemoryStore;
+'''
+tests = ["llavero_sustituye_en_config (MemoryStore)", "llavero_falta_es_error", "list_no_devuelve_valores", "delete_borra"]
+
+[[tarea]]
+id = "F5.21"
+nombre = "escritorio-empaquetado"
+titulo = "Empaquetado del escritorio para Linux, macOS y Windows, y actualizaciones firmadas"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.19", "F5.20"]
+toca = [".github/workflows/escritorio.yml", "apps/desktop/src-tauri/tauri.conf.json", "docs/interfaces.md"]
+acepta = "grep -q 'macos' .github/workflows/escritorio.yml && grep -q 'windows' .github/workflows/escritorio.yml && grep -q 'ubuntu' .github/workflows/escritorio.yml"
+contexto = ["docs/interfaces.md (Plataformas y empaquetado)", "docs/adr/ADR-0005-interfaces.md"]
+objetivo = '''
+1. Matriz de CI: `ubuntu-22.04` (.deb, .rpm, AppImage), `macos-latest` (.dmg universal) y
+   `windows-latest` (.msi); prueba de humo en cada una (arrancar y comprobar `server.info`).
+2. Firma: claves del actualizador de Tauri y certificados de macOS y Windows como secretos de CI;
+   nunca en el repo.
+3. `updater` apuntando a las releases de GitHub con firma obligatoria.
+'''
+tests = ["(manual): instalar cada paquete en una máquina limpia y abrir una sesión con el backend mock"]
+
+[[tarea]]
+id = "F5.22"
+nombre = "web-servida"
+titulo = "El demonio sirve `apps/ui` con token de un solo uso y CSP estricta"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.13"]
+toca = ["crates/pcode-server/src/web.rs", "crates/pcode-server/src/lib.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-server web && cargo test -p pcode-cli"
+contexto = ["docs/interfaces.md (Web)", "crates/pcode-server/src/lib.rs"]
+objetivo = '''
+1. `pcode web [--puerto P] [--ui-dir D]`: el demonio sirve la UI compilada desde `D` (por defecto
+   `apps/ui/dist`) en `127.0.0.1`.
+2. Imprime una URL con un token de un solo uso (`/?t=<token>`) que se canjea por una cookie de sesión
+   `HttpOnly`, `SameSite=Strict`; después, la cookie autoriza `/rpc` y `/eventos`.
+3. Cabeceras: CSP `default-src 'self'`, `X-Content-Type-Options: nosniff` y `Referrer-Policy: no-referrer`.
+4. Documenta el acceso por túnel SSH (`ssh -L`) en la ayuda de la orden.
+'''
+tests = ["sirve_index", "token_un_solo_uso", "rpc_sin_cookie_401", "cabeceras_de_seguridad"]
+
+[[tarea]]
+id = "F5.23"
+nombre = "pwa-movil"
+titulo = "PWA para el móvil: estado y aprobaciones"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.22", "F5.14"]
+toca = ["apps/ui/public/manifest.webmanifest", "apps/ui/src/sw.ts", "apps/ui/src/views/Movil.tsx", "apps/ui/src/views/Movil.test.tsx"]
+acepta = "npm run -w apps/ui typecheck && npm run -w apps/ui test -- Movil && npm run -w apps/ui build"
+lenguaje = "typescript"
+contexto = ["docs/interfaces.md (Móvil)", "apps/ui/src/views/Aprobaciones.tsx"]
+objetivo = "Manifest e iconos; service worker mínimo (solo la carcasa de la app, nunca datos de la API en caché); vista `Movil` a una columna: sesiones y flujos con su estado, y aprobaciones con botones grandes (≥ 44 px). Se elige automáticamente en pantallas estrechas."
+tests = ["movil_lista_aprobaciones", "botones_tactiles_grandes", "sw_no_cachea_api"]
+
+[[tarea]]
+id = "F5.24"
+nombre = "acp"
+titulo = "Servidor ACP (Agent Client Protocol) para editores"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.03", "F5.05"]
+toca = ["crates/pcode-acp/Cargo.toml", "crates/pcode-acp/src/lib.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-acp && cargo test -p pcode-cli"
+contexto = ["docs/backends-verificado.md (ACP)", "crates/pcode-client/src/lib.rs"]
+objetivo = "`pcode acp` habla ACP por stdio y traduce al demonio: sesión, prompt, actualizaciones en streaming (mensajes, tools y diffs) y solicitudes de permiso (mapeadas a `approvals.decide`). Implementa JSON-RPC propio sobre stdio con los mensajes mínimos de ACP (sin dependencias nuevas); si existe un SDK oficial de ACP para Rust, menciónalo en *Pendiente* para que el coordinador valore migrar. Tests con un cliente falso."
+tests = ["acp_inicializa", "acp_prompt_devuelve_actualizaciones", "acp_permiso_mapea_a_aprobacion"]
+
+[[tarea]]
+id = "F5.25"
+nombre = "vscode"
+titulo = "Extensión fina de VS Code: webview con `apps/ui` y órdenes contextuales"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.22"]
+toca = ["apps/vscode/package.json", "apps/vscode/src/extension.ts", "apps/vscode/src/extension.test.ts"]
+acepta = "npm run -w apps/vscode typecheck && npm run -w apps/vscode test"
+lenguaje = "typescript"
+contexto = ["docs/interfaces.md (IDE)", "apps/ui/src/transport.ts"]
+objetivo = "Dependencias permitidas en esta tarea: `@types/vscode` y `@vscode/test-electron` (solo dev). Órdenes: «PublicCode: abrir panel» (webview con la UI servida por `pcode web` con su token), «PublicCode: tarea con la selección» (crea una sesión con el texto seleccionado y la ruta del archivo) y «PublicCode: ver cambios de la sandbox». La lógica de construir los parámetros es pura y testeable sin VS Code."
+tests = ["parametros_desde_seleccion", "url_con_token"]
+
+[[tarea]]
+id = "F5.26"
 nombre = "github"
 titulo = "GitHub: PR del trabajo integrado, comentarios con resultados y checks"
 fase = "F5"
@@ -2512,6 +3124,33 @@ acepta = "cargo test -p pcode-flow github"
 contexto = ["crates/pcode-backends/src/copilot_github.rs (trait GitHubApi)"]
 objetivo = "Modo «PR por tarea» opcional: en lugar de avanzar main, abrir un PR con el diff, el informe y la salida de `acepta`; comentar la revisión cruzada; check run con el resultado. Reutiliza `GitHubApi` y la amplía (create_pr, create_check_run). Tests con la API falsa. Nunca fusiona sin aprobación humana."
 tests = ["pr_lleva_informe_y_acepta", "check_run_refleja_resultado", "no_fusiona"]
+
+[[tarea]]
+id = "F5.27"
+nombre = "windows-wsl"
+titulo = "Windows: detectar WSL2 y ejecutar el demonio con sandbox N1 dentro de WSL"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.18"]
+toca = ["crates/pcode-client/src/wsl.rs", "crates/pcode-client/src/lib.rs"]
+acepta = "cargo test -p pcode-client wsl"
+contexto = ["docs/interfaces.md (Plataformas)", "docs/mini-sandboxes.md (Windows)"]
+objetivo = '''
+1. `parse_wsl_list(out)`: interpreta la salida de `wsl.exe -l -v` (UTF-16LE en Windows: conviértela
+   antes) y devuelve las distribuciones con su versión.
+2. `wsl_daemon_command(distro, repo_win)`: orden para lanzar `pcode daemon --tcp 127.0.0.1:P` dentro
+   de la distribución, con la ruta del repo traducida (`C:\\x\\y` → `/mnt/c/x/y`).
+3. En Windows (`cfg(windows)`), `connect_or_spawn` prefiere WSL2 si existe; si no, demonio nativo
+   con sandbox N2.
+4. Todo lo testeable es puro y se prueba en Linux.
+'''
+firmas = '''
+pub struct WslDistro { pub name: String, pub version: u8, pub default: bool }
+pub fn parse_wsl_list(out: &str) -> Vec<WslDistro>;
+pub fn windows_to_wsl_path(p: &str) -> Option<String>;
+pub fn wsl_daemon_command(distro: &str, repo_win: &str, port: u16) -> Vec<String>;
+'''
+tests = ["parse_lista_wsl", "ruta_windows_a_wsl", "ruta_unc_none", "orden_demonio"]
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # F6 — Aprendizaje: skills, subagentes reutilizables y regresión continua
@@ -2688,7 +3327,7 @@ nombre = "release"
 titulo = "Release 1.0: build reproducible, firma, instalación y documentación de usuario"
 fase = "F7"
 ejecutor = "coordinador"
-depende = ["F7.02", "F5.03", "F6.04"]
+depende = ["F7.02", "F5.21", "F5.22", "F6.04"]
 toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "install.sh"]
 acepta = "test -s docs/usuario.md && test -s CHANGELOG.md && grep -q sha256 .github/workflows/release.yml"
 contexto = ["docs/PLAN.md (decisiones abiertas: licencia, nombre)"]

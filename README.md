@@ -6,6 +6,11 @@
 comparte las mismas **skills** y **tools** y responde ante un **criterio de aceptación ejecutable**.
 Todo se audita y se mide.
 
+Se usa desde donde trabajes: **terminal** (CLI para scripts y TUI interactiva), **aplicación de
+escritorio** (Linux, macOS y Windows), **navegador**, **móvil** (aprobaciones), **IDE** (ACP, VS Code
+y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
+se sigue en el escritorio.
+
 > **Estado: diseño, fase 0.** Este repositorio contiene el plan completo, el plan de implementación
 > desgranado para agentes pequeños (Haiku 5.5), las skills y las primeras tools que ya funcionan:
 > el prototipo de [mini sandbox](tools/minisandbox/) (9 tests en verde) y el buscador de
@@ -20,19 +25,20 @@ Todo se audita y se mide.
 2. [Qué hace mejor que opencode](#qué-hace-mejor-que-opencode)
 3. [Agentes y modelos que integra](#agentes-y-modelos-que-integra)
 4. [Cómo funciona](#cómo-funciona)
-5. [Conceptos](#conceptos)
-6. [Mini sandboxes](#mini-sandboxes)
-7. [Skills compartidas entre todos los agentes](#skills-compartidas-entre-todos-los-agentes)
-8. [Tools propias](#tools-propias)
-9. [Políticas de seguridad aplicadas por el motor](#políticas-de-seguridad-aplicadas-por-el-motor)
-10. [Base científica: ACL y EMNLP 2026](#base-científica-acl-y-emnlp-2026)
-11. [Cómo se mide que es mejor](#cómo-se-mide-que-es-mejor)
-12. [Hoja de ruta](#hoja-de-ruta)
-13. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
-14. [Configuración prevista](#configuración-prevista)
-15. [Estructura del repositorio](#estructura-del-repositorio)
-16. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
-17. [Decisiones abiertas](#decisiones-abiertas)
+5. [Interfaces: terminal, escritorio, web, móvil e IDE](#interfaces-terminal-escritorio-web-móvil-e-ide)
+6. [Conceptos](#conceptos)
+7. [Mini sandboxes](#mini-sandboxes)
+8. [Skills compartidas entre todos los agentes](#skills-compartidas-entre-todos-los-agentes)
+9. [Tools propias](#tools-propias)
+10. [Políticas de seguridad aplicadas por el motor](#políticas-de-seguridad-aplicadas-por-el-motor)
+11. [Base científica: ACL y EMNLP 2026](#base-científica-acl-y-emnlp-2026)
+12. [Cómo se mide que es mejor](#cómo-se-mide-que-es-mejor)
+13. [Hoja de ruta](#hoja-de-ruta)
+14. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
+15. [Configuración prevista](#configuración-prevista)
+16. [Estructura del repositorio](#estructura-del-repositorio)
+17. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
+18. [Decisiones abiertas](#decisiones-abiertas)
 
 ---
 
@@ -81,6 +87,7 @@ lo que sé de opencode hasta mediados de 2026 y se verificará contra la versió
 | Elegir el mejor agente para cada tarea | un modelo por sesión | **enrutado** por tipo de tarea, coste y resultados históricos del banco |
 | Medir mejoras | — | **SinapsisBench**: re-ejecuta tareas reales de SO_IA y compara agentes |
 | Auditoría | logs de sesión | registro **append-only con hash encadenado** de cada efecto |
+| Dónde se usa | TUI y modo servidor | **TUI + CLI + app de escritorio (Linux, macOS, Windows) + web + PWA móvil + ACP/VS Code**, todos sobre el mismo demonio: el trabajo multiagente se ve y se controla desde cualquiera |
 
 ## Agentes y modelos que integra
 
@@ -109,7 +116,7 @@ Nada de endpoints no documentados ni de compartir suscripciones.
 ## Cómo funciona
 
 ```
- tarea (Markdown + criterio `acepta`)          clientes: CLI · TUI · panel web · IDE (ACP) · GitHub
+ tarea (Markdown + criterio `acepta`)   clientes: CLI · TUI · escritorio · web · móvil · IDE · GitHub
         │                                                   │
         ▼                                                   ▼
 ┌──────────────────────────────── pcoded (demonio local) ─────────────────────────────────┐
@@ -145,6 +152,34 @@ Ciclo de una tarea:
 6. **Integrar**: se aplica el diff, se regeneran lockfiles, se re-valida tras el merge y se hace push.
 7. **Aprender**: si la tarea costó (2 o más intentos), se destila una skill candidata desde la traza.
    Entra en cuarentena hasta pasar sus evals.
+
+## Interfaces: terminal, escritorio, web, móvil e IDE
+
+Toda la lógica vive en el demonio `pcoded`; los clientes solo presentan y envían intenciones por una
+API única (`pcode-protocol`). Diseño completo en [docs/interfaces.md](docs/interfaces.md) y
+[ADR-0005](docs/adr/ADR-0005-interfaces.md).
+
+| Cliente | Qué es | Para qué |
+|---|---|---|
+| **CLI** `pcode …` | órdenes con `--formato json\|stream-json` y autocompletado | scripts, CI, uso rápido |
+| **TUI** `pcode` | terminal interactiva (ratatui): chat, `@archivo`, `/órdenes`, `!shell`, árbol de agentes y subagentes, aprobaciones en línea, diff por archivo, atajos y temas configurables | trabajo diario en terminal, también por SSH |
+| **Escritorio** | app Tauri 2 para Linux, macOS y Windows: centro de control multiagente, revisión de diffs, aprobaciones con notificaciones nativas, skills, banco, ajustes con **llavero del sistema**, icono en la bandeja | supervisar varios agentes en paralelo y revisar con calma |
+| **Web** | la misma UI servida por el demonio con token | servidores sin escritorio (por túnel SSH o Tailscale) |
+| **Móvil** | PWA de estado y aprobaciones | no bloquear a los agentes cuando no estás delante |
+| **IDE** | `pcode acp` (editores con ACP), extensión fina de VS Code, `pcode mcp` | trabajar desde el editor |
+| **GitHub** | PR por tarea, comentarios, checks; Copilot coding agent como backend | flujo de equipo |
+
+```
+┌ Sesiones / agentes ────┬ Sesión: «arreglar test de sinvirtio» ──────────┬ Cambios (sandbox s-12) ─┐
+│ ● s-12 GLM   ⏳ paso 7  │ tú › arregla el test que falla en sinvirtio     │ M lib/sinvirtio/src/q.rs │
+│   └ explorador ✓        │ glm › leo lib/sinvirtio/src/queue.rs …          │ [a] aplicar [d] descartar│
+│ ⚠ s-10 Copilot ⧗ aprob. │   ▸ bash cargo test -p sinvirtio  ✗ exit=101    ├ Aprobaciones (1) ────────┤
+│ Flujo SO_IA: 3 ⏳ 41 ✓  │   ▸ editar queue.rs  ✓                          │ s-10 git push … [p] [n]  │
+├─────────────────────────┴─────────────────────────────────────────────────┴──────────────────────────┤
+│ › /backend claude  @lib/sinvirtio/src/queue.rs  explica por qué falla_                                │
+│ GLM-5.3-Flash · sandbox N1 sin red · 41k↑ 3k↓ tokens · acepta: cargo test -p sinvirtio · F1 ayuda     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Conceptos
 
@@ -296,7 +331,7 @@ Terminal-Bench) con el mismo modelo abierto en opencode y en PublicCode. Detalle
 | **F2** Backends y sandbox | adaptadores para Claude Code, Copilot, Gemini y opencode; mini sandbox en Rust; servidor MCP; skills | la misma tarea corre con cualquier backend |
 | **F3** Flujos | tareas, DAG, aceptación, reintentos, integración, CI | **sustituye a `orquestador.py` en SO_IA** |
 | **F4** Contexto y memoria | gestión de contexto, caché de prefijos, memoria de archivos, router por histórico | +12 puntos de aceptación y −30 % de tokens |
-| **F5** Interfaces | TUI, panel web, ACP para IDE, GitHub | uso diario sin terminal |
+| **F5** Interfaces | protocolo y demonio; terminal (CLI para máquinas, TUI con chat, órdenes, multiagente y temas); UI común (sesión, revisión, centro de control, ajustes, skills); escritorio Tauri (bandeja, notificaciones, llavero, paquetes para Linux, macOS y Windows); web, PWA, ACP, VS Code y GitHub. **En paralelo a F3–F4** | uso diario desde terminal, escritorio, web e IDE |
 | **F6** Aprendizaje | skills destiladas con cuarentena y evals continuos | regresión nocturna automática |
 | **F7** Endurecimiento | red teaming de skills y tools, publicación | release firmada |
 
@@ -407,8 +442,15 @@ PublicCode/
 │   ├── evaluacion.md         ← SinapsisBench, métricas y protocolo
 │   ├── papers.md             ← ACL/EMNLP 2026 adaptados al plan
 │   ├── implementacion.md     ← plan de implementación desgranado para Haiku 5.5
+│   ├── interfaces.md         ← terminal, escritorio, web, móvil, IDE y GitHub
 │   └── adr/                  ← decisiones de arquitectura
-├── tareas/                   ← una tarea por archivo, lista para un agente pequeño
+├── crates/                   ← (desde F0.01) núcleo en Rust: pcode-core, -models, -tools, -policy, -sandbox, -backends,
+│                               -skills, -flow, -memory, -mcp, -protocol, -server, -client, -tui, -acp, -cli
+├── apps/                     ← (desde F5.12)
+│   ├── ui/                   ← UI común React + TypeScript (web, escritorio, PWA, VS Code)
+│   ├── desktop/              ← aplicación de escritorio Tauri 2
+│   └── vscode/               ← extensión fina de VS Code
+├── tareas/                   ← plan.toml y una tarea por archivo, lista para un agente pequeño
 ├── tools/
 │   ├── minisandbox/          ← mini sandbox N1 (prototipo + tests)
 │   ├── papers/               ← buscador de papers en la ACL Anthology
@@ -419,7 +461,7 @@ PublicCode/
 ## Desarrollar PublicCode con agentes
 
 PublicCode se construye como SO_IA: con agentes. El plan de implementación está partido en
-**87 tareas** (81 para **Claude Haiku 5.5** y 6 para el coordinador), todas generadas desde
+**110 tareas** (103 para **Claude Haiku 5.5** y 7 para el coordinador), todas generadas desde
 [`tareas/plan.toml`](tareas/plan.toml) y validadas por `tools/tareas/generar.py`. Cada tarea toca 1–3 archivos, da las firmas
 exactas, los tests que hay que escribir y una única orden de aceptación. Reglas en
 [AGENTS.md](AGENTS.md); procedimiento en la skill `tarea-haiku`.

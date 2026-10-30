@@ -73,7 +73,10 @@ F0.01 ─► F1.01 config ──────────────────
                                                                                      │
   F2: sandbox (F2.01–05) ∥ backends (F2.06–12) ∥ skills (F2.13–15) ∥ MCP (F2.16) ◄───┘
                                                                                      │
-  F3: flujos ─► sustituye a orquestador.py en SO_IA (hito) ─► F4 ∥ F5 ─► F6 ─► F7 ◄──┘
+  F3: flujos ─► sustituye a orquestador.py en SO_IA (hito) ─► F4 ─► F6 ─► F7 ◄──────┘
+  F5 (en paralelo desde F2.18): protocolo ─► demonio ─► cliente ─┬─► terminal (CLI, TUI)
+                                                                ├─► UI común ─► escritorio Tauri
+                                                                └─► web, PWA, ACP, VS Code
 ```
 
 Dentro de cada fase, las tareas que solo dependen de algo ya hecho pueden ir en paralelo: tools
@@ -88,7 +91,7 @@ nativas, proveedores, backends y exportadores de skills.
 | F2 | la misma tarea corre con Claude Code, Copilot, Gemini, opencode y modelo propio, cada una en mini sandbox | `pcode run --backend X` con los 5 backends sobre una tarea de prueba |
 | F3 | `pcode flow` sustituye a `orquestador.py` | una semana en sombra en SO_IA sin integraciones fallidas por lockfiles ni CI fantasma |
 | F4 | +12 puntos de aceptación a la primera y −30 % de tokens frente a la línea base | SinapsisBench completo |
-| F5 | uso diario desde TUI, web e IDE | demo grabada |
+| F5 | uso diario desde terminal (TUI), escritorio (Linux, macOS, Windows), web, móvil e IDE | paquetes de escritorio instalables en las 3 plataformas; la misma sesión se abre en la TUI y en el escritorio; aprobación resuelta desde el móvil |
 | F6 | skills aprendidas sin regresiones | regresión nocturna verde 7 días |
 | F7 | release firmada y red teaming superado | checklist de F7.03 |
 
@@ -175,6 +178,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F2.18-cli-backend-sandbox](../tareas/F2.18-cli-backend-sandbox.md) | CLI: `pcode run --backend X --sandbox N1` y `pcode sandbox …` | haiku | F2.07, F2.08, F2.09, F2.10, F2.12 | pendiente |
 | [F2.19-proxy-salida](../tareas/F2.19-proxy-salida.md) | `pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría | haiku | F1.15 | pendiente |
 | [F2.20-puente-sandbox](../tareas/F2.20-puente-sandbox.md) | Puente TCP→Unix dentro de la sandbox y red `Filtered` | haiku | F2.19, F2.04 | pendiente |
+| [F2.21-sandbox-macos](../tareas/F2.21-sandbox-macos.md) | Mini sandbox en macOS (N1-mac): clon APFS del repo y perfil Seatbelt | haiku | F2.03 | pendiente |
 
 ### F3
 
@@ -215,11 +219,33 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 
 | Tarea | Qué | Ejecutor | Depende | Estado |
 |---|---|---|---|---|
-| [F5.01-demonio-api](../tareas/F5.01-demonio-api.md) | `pcoded`: API JSON-RPC + SSE en socket Unix y cola de aprobaciones | haiku | F3.10 | pendiente |
-| [F5.02-tui](../tareas/F5.02-tui.md) | TUI con ratatui: sesiones, transcripción en vivo, aprobaciones y diffs | haiku | F5.01 | pendiente |
-| [F5.03-panel-web](../tareas/F5.03-panel-web.md) | Panel web estático servido por `pcoded` | haiku | F5.01 | pendiente |
-| [F5.04-acp](../tareas/F5.04-acp.md) | Servidor ACP (Agent Client Protocol) para usar PublicCode desde editores | haiku | F5.01 | pendiente |
-| [F5.05-github](../tareas/F5.05-github.md) | GitHub: PR del trabajo integrado, comentarios con resultados y checks | haiku | F3.10, F2.11 | pendiente |
+| [F5.01-protocolo](../tareas/F5.01-protocolo.md) | `pcode-protocol`: tipos de la API (JSON-RPC y eventos) con exportación a TypeScript | haiku | F0.01 | pendiente |
+| [F5.02-demonio](../tareas/F5.02-demonio.md) | `pcode-server`: demonio `pcoded` con JSON-RPC, eventos SSE y sesiones | haiku | F5.01, F2.18 | pendiente |
+| [F5.03-aprobaciones](../tareas/F5.03-aprobaciones.md) | Cola de aprobaciones: las decisiones `Ask` esperan a un humano desde cualquier cliente | haiku | F5.02 | pendiente |
+| [F5.04-api-flujo](../tareas/F5.04-api-flujo.md) | Métodos y eventos de flujos en el demonio | haiku | F5.02, F3.10 | pendiente |
+| [F5.05-cliente-rust](../tareas/F5.05-cliente-rust.md) | `pcode-client`: cliente Rust del demonio con arranque automático | haiku | F5.02 | pendiente |
+| [F5.06-cli-maquinas](../tareas/F5.06-cli-maquinas.md) | CLI: `--formato json|stream-json`, autocompletado y `pcode` sin argumentos abre la TUI | haiku | F5.05 | pendiente |
+| [F5.07-tui-estado](../tareas/F5.07-tui-estado.md) | `pcode-tui`: estado puro `App`, disposición de paneles e i18n | haiku | F5.05 | pendiente |
+| [F5.08-tui-chat](../tareas/F5.08-tui-chat.md) | TUI: chat interactivo con transcripción en vivo, tools plegables y entrada multilínea | haiku | F5.07 | pendiente |
+| [F5.09-tui-ordenes](../tareas/F5.09-tui-ordenes.md) | TUI: órdenes `/…`, menciones `@archivo` con autocompletado difuso y `!orden` | haiku | F5.08 | pendiente |
+| [F5.10-tui-multiagente](../tareas/F5.10-tui-multiagente.md) | TUI: árbol de agentes y subagentes, aprobaciones en línea y revisión de cambios | haiku | F5.08, F5.03 | pendiente |
+| [F5.11-tui-atajos-temas](../tareas/F5.11-tui-atajos-temas.md) | TUI: atajos configurables, temas claro, oscuro y alto contraste | haiku | F5.07 | pendiente |
+| [F5.12-ui-base](../tareas/F5.12-ui-base.md) | `apps/ui`: base React + TypeScript + Vite, tema, i18n y `Transport` (http y mock) | haiku | F5.01 | pendiente |
+| [F5.13-ui-chat](../tareas/F5.13-ui-chat.md) | UI: lista de sesiones y chat con transcripción en vivo | haiku | F5.12, F5.02 | pendiente |
+| [F5.14-ui-revision](../tareas/F5.14-ui-revision.md) | UI: revisión de cambios (diff unificado y lado a lado) y cola de aprobaciones | haiku | F5.13, F5.03 | pendiente |
+| [F5.15-ui-centro-control](../tareas/F5.15-ui-centro-control.md) | UI: centro de control multiagente (tablero de tareas, árbol de agentes, registro en vivo) | haiku | F5.13, F5.04 | pendiente |
+| [F5.16-ui-ajustes](../tareas/F5.16-ui-ajustes.md) | UI y demonio: ajustes de backends (detección e inicio de sesión), proveedores, tema e idioma | haiku | F5.13 | pendiente |
+| [F5.17-ui-skills-banco](../tareas/F5.17-ui-skills-banco.md) | UI: gestor de skills y gráficas del banco | haiku | F5.13, F2.14 | pendiente |
+| [F5.18-escritorio-base](../tareas/F5.18-escritorio-base.md) | `apps/desktop`: Tauri 2 con `apps/ui`, `pcoded` como sidecar y transporte Tauri | haiku | F5.12, F5.05 | pendiente |
+| [F5.19-escritorio-sistema](../tareas/F5.19-escritorio-sistema.md) | Escritorio: bandeja con estado, notificaciones nativas, enlaces `pcode://` y arranque con el sistema | haiku | F5.18, F5.03 | pendiente |
+| [F5.20-escritorio-credenciales](../tareas/F5.20-escritorio-credenciales.md) | Credenciales en el llavero del sistema y referencias `{llavero:…}` en la configuración | haiku | F5.18, F1.01 | pendiente |
+| [F5.21-escritorio-empaquetado](../tareas/F5.21-escritorio-empaquetado.md) | Empaquetado del escritorio para Linux, macOS y Windows, y actualizaciones firmadas | coordinador | F5.19, F5.20 | pendiente |
+| [F5.22-web-servida](../tareas/F5.22-web-servida.md) | El demonio sirve `apps/ui` con token de un solo uso y CSP estricta | haiku | F5.13 | pendiente |
+| [F5.23-pwa-movil](../tareas/F5.23-pwa-movil.md) | PWA para el móvil: estado y aprobaciones | haiku | F5.22, F5.14 | pendiente |
+| [F5.24-acp](../tareas/F5.24-acp.md) | Servidor ACP (Agent Client Protocol) para editores | haiku | F5.03, F5.05 | pendiente |
+| [F5.25-vscode](../tareas/F5.25-vscode.md) | Extensión fina de VS Code: webview con `apps/ui` y órdenes contextuales | haiku | F5.22 | pendiente |
+| [F5.26-github](../tareas/F5.26-github.md) | GitHub: PR del trabajo integrado, comentarios con resultados y checks | haiku | F3.10, F2.11 | pendiente |
+| [F5.27-windows-wsl](../tareas/F5.27-windows-wsl.md) | Windows: detectar WSL2 y ejecutar el demonio con sandbox N1 dentro de WSL | haiku | F5.18 | pendiente |
 
 ### F6
 
@@ -237,5 +263,5 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 |---|---|---|---|---|
 | [F7.01-redteam-skills](../tareas/F7.01-redteam-skills.md) | Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas | haiku | F6.02, F2.20 | pendiente |
 | [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | haiku | F7.01, F3.13 | pendiente |
-| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.03, F6.04 | pendiente |
+| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.21, F5.22, F6.04 | pendiente |
 <!-- tabla:fin -->

@@ -32,7 +32,11 @@ Pensada para Claude Haiku 5.5, pero vale para cualquier modelo. Sigue los pasos 
 - Escribe cada test de la lista **Tests** con su nombre exacto.
 - Nada de red, nada de `sleep` de más de 100 ms y nada de bucles sin cota.
 
-## 4. Limpiar
+## 4. Comprobar según el área
+
+Usa la tabla de la sección 4 de `AGENTS.md`. Lo más habitual:
+
+- **Rust** (crates, TUI, escritorio):
 
 ```bash
 cargo fmt --all
@@ -41,6 +45,14 @@ cargo fmt --all
 ```bash
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+- **UI** (`apps/ui`):
+
+```bash
+npm run -w apps/ui lint && npm run -w apps/ui typecheck && npm run -w apps/ui test
+```
+
+Si la tarea es de interfaz (TUI, UI, escritorio), lee también la skill `interfaces`.
 
 ## 5. Aceptar (una vez)
 

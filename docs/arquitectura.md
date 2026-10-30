@@ -5,14 +5,16 @@ responsabilidad, tipos clave, decisiones y tareas. Los nombres de crate son los 
 [AGENTS.md](../AGENTS.md#estructura).
 
 ```
-pcode-cli ─┬─ pcode-flow ─┬─ pcode-backends ─┬─ pcode-core ─┬─ pcode-models
-           │              │                  │              ├─ pcode-tools
-           │              │                  │              └─ pcode-policy
-           │              │                  └─ pcode-sandbox
-           │              └─ pcode-store
-           ├─ pcode-skills
-           ├─ pcode-mcp
-           └─ pcode-config
+clientes: pcode-cli · pcode-tui · apps/desktop (Tauri) · apps/ui (web, PWA, VS Code) · pcode-acp
+              │  pcode-client / Transport (http | tauri)
+              ▼  API: pcode-protocol (JSON-RPC + eventos)
+pcode-server (pcoded) ─┬─ pcode-flow ─┬─ pcode-backends ─┬─ pcode-core ─┬─ pcode-models
+                       │              │                  │              ├─ pcode-tools
+                       │              │                  │              └─ pcode-policy
+                       │              │                  └─ pcode-sandbox
+                       │              └─ pcode-store
+                       ├─ pcode-skills · pcode-memory · pcode-mcp
+                       └─ pcode-config
 ```
 
 ## Configuración
@@ -172,8 +174,23 @@ el esquema y el transporte (*ProMCP*).
 
 ## Interfaces
 
-`pcode-cli` desde F1; demonio `pcoded` con API JSON-RPC más SSE (F5.01); TUI (F5.02); panel web
-(F5.03); ACP para IDEs (F5.04); GitHub: PR, comentarios y checks (F5.05).
+Diseño completo en [interfaces.md](interfaces.md) y [ADR-0005](adr/ADR-0005-interfaces.md).
+
+* **Demonio** `pcoded` (`pcode-server`, F5.02): toda la lógica; JSON-RPC 2.0 en `/rpc`, eventos SSE
+  en `/eventos`; socket Unix o TCP en loopback con token. Aprobaciones (F5.03): las decisiones `Ask`
+  esperan a un humano desde cualquier cliente.
+* **Protocolo** (`pcode-protocol`, F5.01): DTOs con serde y exportación a TypeScript (`ts-rs`) en
+  `apps/ui/src/protocol/`. La UI nunca define tipos de la API a mano.
+* **Cliente Rust** (`pcode-client`, F5.05): lo usan la CLI, la TUI, el escritorio y ACP; arranca el
+  demonio si no está.
+* **Terminal**: `pcode-cli` (F1.20, F5.06: formatos para máquinas y autocompletado) y `pcode-tui`
+  (F5.07–F5.11): estado puro `App::update` y `render` sin efectos, probados con `TestBackend`.
+* **UI común** `apps/ui` (F5.12–F5.17): React + TS estricto, `Transport` abstracto (`http` | `tauri`),
+  zustand, i18n (es, en), tema claro y oscuro, accesible por teclado.
+* **Escritorio** `apps/desktop` (F5.18–F5.21, F5.27): Tauri 2 con `pcoded` como sidecar, capacidades
+  mínimas, bandeja, notificaciones, enlaces `pcode://`, llavero del sistema y actualizaciones firmadas.
+* **Web y móvil** (F5.22–F5.23): la misma UI servida por el demonio con token de un solo uso, y PWA.
+* **IDE** (F5.24–F5.25): ACP por stdio y extensión fina de VS Code. **GitHub** (F5.26).
 
 ## Telemetría
 

@@ -23,12 +23,15 @@ por tarea y nada de pegamento escrito a mano alrededor.
 * Skills (formato único exportado a cada agente) y tools propias (nativas, MCP y WASM).
 * Contexto, memoria y caché pensados para modelos pequeños.
 * Evaluación continua (SinapsisBench) y telemetría.
-* Interfaces: CLI, TUI, panel web, ACP para IDE y GitHub.
+* Interfaces sobre un demonio único: **terminal** (CLI para scripts y TUI interactiva), **aplicación
+  de escritorio** (Tauri 2 en Linux, macOS y Windows), **web**, **PWA móvil** de aprobaciones,
+  **IDE** (ACP, VS Code y MCP) y **GitHub** ([interfaces.md](interfaces.md)).
 
 **Fuera (no-objetivos)**
 
 * Entrenar modelos propios. Se dejan trazas listas para hacerlo (F6.05), nada más.
-* Un IDE propio.
+* Un IDE propio (la app de escritorio es un centro de control de agentes, no un editor: abre los
+  archivos en tu editor).
 * Reimplementar los 75+ proveedores de opencode: LiteLLM ya lo hace; aquí van nativos solo
   OpenAI-compatible, Anthropic y Gemini.
 * Un servicio en la nube. PublicCode es local-first: un demonio en tu máquina o en tu servidor.
@@ -73,11 +76,11 @@ coordinando y agentes (Haiku 5.5 o GLM) implementando.
 | **F2** Backends, sandbox, skills, MCP | 4 | mini sandbox en Rust (overlay, namespaces, Landlock, seccomp, proxy de salida); backends Claude Code, Copilot CLI, Copilot coding agent, Gemini CLI, opencode y modelo propio; skills (registro, contrato, exportación); servidor MCP; sincronización de instrucciones | la misma tarea corre con los 5 backends |
 | **F3** Flujos | 4 | tareas, DAG, eventos, planificador de ejecución, aceptación en dos etapas, reintentos con relevo, cola de integración con lockfiles, clasificador de CI, planificador LLM, revisión cruzada, `pcode bench`, modo SO_IA | **sustituye a `orquestador.py`** |
 | **F4** Contexto, memoria, router | 3–4 | contexto como tool, compactación con prefijo estable, memoria por facetas, tree-sitter, búsqueda híbrida y bibliotecario, contexto por rol, router por histórico, puerta de incertidumbre, memoria episódica verificada, búsqueda de tools, `preguntar`, modo guion | +12 pp de aceptación a la primera y −30 % de tokens |
-| **F5** Interfaces | 3 | API del demonio, TUI, panel web, ACP, GitHub | uso diario sin terminal |
+| **F5** Interfaces | 6–8 (en paralelo a F3–F4) | protocolo con tipos TS generados, demonio, aprobaciones, cliente Rust; terminal: CLI para máquinas y TUI (chat, órdenes, `@`, multiagente, atajos y temas); UI común React (sesión, revisión, centro de control, ajustes, skills y banco); escritorio Tauri (bandeja, notificaciones, enlaces, llavero, paquetes para las 3 plataformas, WSL); web servida, PWA, ACP, VS Code y GitHub | uso diario desde terminal, escritorio, web e IDE |
 | **F6** Aprendizaje | 3 | destilador de skills, puerta de regresión, gobierno, regresión nocturna, calidad de trayectorias | skills aprendidas sin regresiones |
 | **F7** Endurecimiento | 2 | red teaming de skills y tools, evals de inyección y envenenamiento, release firmada | release 1.0 |
 
-Total: unas 23–26 semanas. Si se usan varios agentes en paralelo (tareas independientes en
+Total: unas 26–30 semanas (F5 se solapa con F3–F4). Si se usan varios agentes en paralelo (tareas independientes en
 mini sandboxes), la F1 y la F2 pueden comprimirse a la mitad.
 
 ## 6. Métricas de éxito
@@ -105,6 +108,8 @@ Ver [evaluacion.md](evaluacion.md). Resumen frente a la línea base de SO_IA (co
 | Las skills aprendidas envenenan el sistema | media | alto | cuarentena, puerta de regresión, procedencia y red teaming (F6.02, F7.01) |
 | Alcance enorme | alta | alto | orden por valor: F1→F3 entrega lo que más falta en SO_IA; F5 (interfaces) puede esperar |
 | Haiku se sale del guion (toca archivos de más) | media | bajo | eval de reglas (F0.06), `toca` en cada tarea y revisión de la integración |
+| Diferencias entre webviews (WebKitGTK, WKWebView, WebView2) | media | medio | CI de empaquetado con prueba de humo en las tres plataformas (F5.21); UI sin APIs exóticas |
+| Dos pilas (Rust y TypeScript) | alta | bajo | AGENTS.md fija convenciones y comprobaciones por área; tipos de la API generados desde Rust (`ts-rs`) |
 | Dependencia de un solo coordinador humano | media | medio | tareas `coordinador` mínimas (3 en F0–F1); el resto, autónomas |
 
 ## 8. Decisiones abiertas

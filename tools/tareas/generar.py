@@ -3,7 +3,9 @@
 
 plan.toml es la ÚNICA fuente de verdad del plan de implementación. Cada [[tarea]] tiene:
   id, nombre, titulo, fase, ejecutor (haiku | coordinador), depende, toca, acepta,
-  contexto, objetivo, firmas (opcional), tests, notas (opcional), papers (opcional).
+  contexto, objetivo, firmas (opcional), lenguaje (de las firmas; por defecto rust),
+  toca_extra (opcional: configuración estándar que no cuenta para el límite de 4), tests,
+  notas (opcional), papers (opcional).
 
 Uso:
   tools/tareas/generar.py              # valida y escribe tareas/*.md + tabla de implementacion.md
@@ -81,7 +83,8 @@ def render(t, ids):
         "",
         "## Toca (los únicos archivos que puedes crear o modificar, más tu informe)",
         "",
-        lista([f"`{p}`" for p in t["toca"]] + [f"`informes/{fid(t)}.md`"]),
+        lista([f"`{p}`" for p in t["toca"]] + [f"`{p}` (configuración)" for p in t.get("toca_extra", [])]
+              + [f"`informes/{fid(t)}.md`"]),
         "",
         "## Contexto (lee esto y nada más)",
         "",
@@ -93,7 +96,7 @@ def render(t, ids):
         "",
     ]
     if t.get("firmas"):
-        partes += ["## Firmas (cópialas tal cual)", "", "```rust", t["firmas"].strip(), "```", ""]
+        partes += ["## Firmas (cópialas tal cual)", "", f"```{t.get('lenguaje', 'rust')}", t["firmas"].strip(), "```", ""]
     partes += ["## Tests (con estos nombres)", "", lista([f"`{x.split(':', 1)[0].strip()}`:"
                                                         f"{x.split(':', 1)[1] if ':' in x else ''}"
                                                         for x in t["tests"]]), ""]
