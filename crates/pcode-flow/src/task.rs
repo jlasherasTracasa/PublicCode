@@ -69,6 +69,9 @@ fn mode(s: &str) -> Mode {
 
 /// Parsea una tarea. Si hay frontmatter, manda sobre las cabeceras HTML.
 pub fn parse_task(id: &str, text: &str) -> Result<TaskDef, String> {
+    // En Windows git puede entregar los archivos con CRLF.
+    let normalized = text.replace("\r\n", "\n");
+    let text = normalized.as_str();
     let (mut accept, mut m, mut deps) = (
         header(text, "acepta"),
         header(text, "modo"),

@@ -48,6 +48,8 @@ fn list_value(v: &str) -> Vec<String> {
 /// Parsea un `SKILL.md`.
 pub fn parse_skill_md(text: &str, dir: &Path) -> Result<Skill, SkillError> {
     let d = dir.display().to_string();
+    // En Windows git puede entregar los archivos con CRLF.
+    let text = text.replace("\r\n", "\n");
     let rest = text
         .strip_prefix("---\n")
         .ok_or_else(|| SkillError::Invalid(d.clone(), "falta el frontmatter".into()))?;
@@ -239,6 +241,12 @@ mod tests {
             .collect();
         assert_eq!(n, ["c", "b", "a"]);
         assert!(r.index().contains("- a: hace a"));
+    }
+    #[test]
+    fn parsea_skill_con_crlf() {
+        let t = "---\r\nname: x\r\ndescription: y\r\n---\r\ncuerpo\r\n";
+        let s = parse_skill_md(t, Path::new("x")).unwrap();
+        assert_eq!(s.name, "x");
     }
     #[test]
     fn ciclo_es_error() {
