@@ -154,6 +154,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F1.22-anthropic](../tareas/F1.22-anthropic.md) | Proveedor Anthropic (Messages API): formato y cliente HTTP | haiku | F1.05 | hecha |
 | [F1.23-gemini](../tareas/F1.23-gemini.md) | Proveedor Gemini (generateContent): formato y cliente HTTP | haiku | F1.05 | hecha |
 | [F1.24-shell-portable](../tareas/F1.24-shell-portable.md) | Shell portable (sh en Linux, cmd en Windows) y política que entra en cmd y PowerShell | coordinador | F1.12, F1.14 | hecha |
+| [F1.25-streaming](../tareas/F1.25-streaming.md) | Streaming de texto en los proveedores y en el agente | coordinador | F1.06, F1.22, F1.23 | hecha |
 
 ### F2
 
@@ -248,6 +249,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F5.27-windows-wsl](../tareas/F5.27-windows-wsl.md) | Windows: detectar WSL2 y ejecutar el demonio con sandbox N1 dentro de WSL | haiku | F5.18 | pendiente |
 | [F5.28-apk-android](../tareas/F5.28-apk-android.md) | APK de Android: cliente fino de pcoded (WebView) y demonio accesible desde la red | coordinador | F5.02, F0.07 | hecha |
 | [F5.29-chat](../tareas/F5.29-chat.md) | `pcode chat`: conversación interactiva con el agente (sustituto de Claude Code y opencode) | coordinador | F1.16, F1.22, F1.23, F5.28 | hecha |
+| [F5.30-tui-local](../tareas/F5.30-tui-local.md) | TUI a pantalla completa con el agente en proceso (`pcode`, `pcode tui`) | coordinador | F5.29, F1.25 | hecha |
 
 ### F6
 

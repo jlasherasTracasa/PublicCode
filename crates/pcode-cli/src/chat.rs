@@ -240,16 +240,22 @@ fn load_last(store: &Store) -> Option<(i64, Vec<Message>)> {
     Some((row.id, msgs))
 }
 
-/// Ejecuta el chat y devuelve el código de salida.
-pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
+/// Lo común a `pcode chat` y `pcode tui`: agente (sin observador ni aprobador), modelo,
+/// historial (si `--continuar`) y persistencia.
+struct Prepared {
+    agent: Agent,
+    model: String,
+    history: Vec<Message>,
+    persist: Persist,
+    resumed: Option<(i64, usize)>,
+}
+
+fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
     let cfg = Config::load(&a.config)?;
     let sel = build_provider(&cfg, a.provider.as_deref())?;
     let model = pick_model(a.model.as_deref(), &sel);
     let root = std::env::current_dir()?;
-    let style = Style::detect();
-    let interactive = std::io::stdin().is_terminal();
     let sys = system_prompt(&cfg, &root);
-
     std::fs::create_dir_all(root.join(".pcode")).context("no se pudo crear .pcode")?;
     let audit = AuditLog::open(&root.join(".pcode/audit.jsonl"))?;
     let store = Store::open(&root.join(".pcode/pcode.db"))?;
@@ -260,41 +266,23 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
         model: model.clone(),
     };
     let mut history: Vec<Message> = vec![];
-    if a.resume {
-        match load_last(&persist.store) {
-            Some((sid, mut msgs)) if !msgs.is_empty() => {
-                if msgs.first().is_some_and(|m| m.role == Role::System) {
-                    msgs[0] = Message::system(sys.clone());
-                }
-                println!(
-                    "{}",
-                    style.dim(&format!(
-                        "Retomando la sesión {sid} ({} mensajes)",
-                        msgs.len()
-                    ))
-                );
-                persist.session = Some(sid);
-                persist.saved = msgs.len();
-                history = msgs;
-            }
-            _ => println!(
-                "{}",
-                style.dim("No hay conversación previa: empiezo una nueva.")
-            ),
+    let mut resumed = None;
+    if a.resume
+        && let Some((sid, mut msgs)) = load_last(&persist.store)
+        && !msgs.is_empty()
+    {
+        if msgs.first().is_some_and(|m| m.role == Role::System) {
+            msgs[0] = Message::system(sys.clone());
         }
+        persist.session = Some(sid);
+        persist.saved = msgs.len();
+        resumed = Some((sid, msgs.len()));
+        history = msgs;
     }
-
-    let caps = crate::run::load_capabilities(&a.config);
-    let approver = Arc::new(TerminalApprover {
-        always: AtomicBool::new(a.approve_all),
-        interactive,
-        style,
-    });
-    let observer_style = style;
-    let mut agent = Agent::new(
+    let agent = Agent::new(
         sel.provider.clone(),
         pcode_tools::native_registry(),
-        Policy::new(caps),
+        Policy::new(crate::run::load_capabilities(&a.config)),
         Some(audit),
         AgentConfig {
             agent_id: "chat".into(),
@@ -310,9 +298,76 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
             root,
             timeout: Duration::from_secs(600),
         },
+    );
+    Ok(Prepared {
+        agent,
+        model,
+        history,
+        persist,
+        resumed,
+    })
+}
+
+/// `pcode tui`: la interfaz a pantalla completa.
+pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
+    let p = prepare(&a)?;
+    let mut persist = p.persist;
+    let on_turn: pcode_tui::OnTurn = Box::new(move |turn| match turn {
+        Some((user, transcript)) => persist.save(user, transcript),
+        None => {
+            if let Some(sid) = persist.session.take() {
+                let _ = persist.store.finish_session(sid, "chat");
+            }
+            persist.saved = 0;
+        }
+    });
+    pcode_tui::run_tui(
+        p.agent,
+        pcode_tui::TuiOptions {
+            model: p.model,
+            history: p.history,
+            approve_all: a.approve_all,
+            lang: pcode_tui::Lang::from_env(),
+            theme: pcode_tui::Theme::from_env(),
+        },
+        on_turn,
     )
-    .with_approver(approver)
-    .with_observer(Arc::new(move |e| render(observer_style, e)));
+    .await?;
+    Ok(0)
+}
+
+/// Ejecuta el chat y devuelve el código de salida.
+pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
+    let style = Style::detect();
+    let interactive = std::io::stdin().is_terminal();
+    let Prepared {
+        agent,
+        model,
+        mut history,
+        mut persist,
+        resumed,
+    } = prepare(&a)?;
+    if a.resume {
+        match resumed {
+            Some((sid, n)) => println!(
+                "{}",
+                style.dim(&format!("Retomando la sesión {sid} ({n} mensajes)"))
+            ),
+            None => println!(
+                "{}",
+                style.dim("No hay conversación previa: empiezo una nueva.")
+            ),
+        }
+    }
+    let approver = Arc::new(TerminalApprover {
+        always: AtomicBool::new(a.approve_all),
+        interactive,
+        style,
+    });
+    let observer_style = style;
+    let mut agent = agent
+        .with_approver(approver)
+        .with_observer(Arc::new(move |e| render(observer_style, e)));
 
     if interactive {
         println!(

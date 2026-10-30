@@ -11,12 +11,14 @@ escritorio** (Linux y Windows), **navegador**, **móvil** (aprobaciones), **IDE*
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
-> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (275 tests,
+> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (296 tests,
 > `clippy -D warnings` limpio). Funciona hoy:
 >
 > | Parte | Qué hay | Tareas |
 > |---|---|---|
-> | **Chat** | `pcode` / `pcode chat`: conversación multi-turno con el agente en la terminal, con tools a la vista, aprobaciones, `--continuar`, `/modelo` y Ctrl-C; detecta la clave del entorno | F5.29 |
+> | **TUI** | `pcode`: interfaz a pantalla completa con el texto en streaming, tools con estado (`✓ ✗` y salida plegable con Ctrl+O), Markdown, aprobaciones en ventana, historial, desplazamiento y temas | F5.30 |
+> | **Chat** | `pcode chat`: el mismo agente en modo línea (también por stdin), con `--continuar`, `/modelo` y Ctrl-C; detecta la clave del entorno | F5.29 |
+> | Streaming | el texto llega token a token desde Anthropic, Gemini y OpenAI-compatible | F1.25 |
 > | Proveedores | Anthropic (Messages API), Gemini (`generateContent`) y OpenAI-compatible (LiteLLM, vLLM, Ollama, OpenAI) | F1.22, F1.23 |
 > | Núcleo | bucle del agente con política (capacidades por capas, análisis de shell), auditoría con hash encadenado, presupuestos, hook de parada, detector de atasco, compresión de salidas; proveedores OpenAI-compatible (LiteLLM, vLLM, Ollama) con SSE y reparación de tool calls | F1.01–F1.21 |
 > | Tools | `leer`, `escribir`, `editar`, `buscar`, `listar`, `bash` | F1.08–F1.12 |
@@ -31,7 +33,7 @@ se sigue en el escritorio.
 >
 > **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F2, el Copilot
 > coding agent (F2.11) y `pcode run --backend` / `pcode flow` en Windows sin WSL (F2.21, nivel N0); de F3, el
-> planificador LLM, la revisión cruzada, la etapa N2 de la aceptación y `pcode bench`; de F5, la API de flujos en el demonio (F5.04) y la TUI a pantalla completa (F5.07–F5.11; el chat actual es de línea de órdenes, sin streaming de tokens todavía). Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
+> planificador LLM, la revisión cruzada, la etapa N2 de la aceptación y `pcode bench`; de F5, la API de flujos en el demonio (F5.04) y la TUI conectada al demonio con árbol de sesiones, panel de cambios, `@archivo` y atajos configurables (F5.07–F5.11; la TUI actual lleva el agente en el propio proceso). Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
 > seccomp, proxy de salida y red filtrada, servidor MCP, TUI, UI React y app de
 > escritorio, PWA, ACP, VS Code, GitHub, contexto/memoria/router (F4), aprendizaje de skills (F6) y
 > endurecimiento (F7). Los adaptadores de CLIs de terceros usan fixtures sintéticas hasta que F0.03
@@ -398,26 +400,33 @@ Basta una clave de API en el entorno; sin `pcode.toml`. Se detecta `ANTHROPIC_AP
 ```bash
 export ANTHROPIC_API_KEY=...        # en PowerShell: $env:ANTHROPIC_API_KEY = "..."
 cd mi-proyecto
-pcode                               # abre el chat (también: pcode chat)
+pcode                               # abre la TUI a pantalla completa (también: pcode tui)
 ```
 
 ```bash
-pcode chat "arregla el test que falla"      # primer mensaje desde la línea de órdenes
+pcode tui --continuar                        # la TUI retomando la última conversación
+pcode chat "arregla el test que falla"      # modo línea, con el primer mensaje en la orden
 pcode chat --continuar                       # retoma la última conversación de este directorio
 pcode chat --modelo claude-opus-5-5          # elige el modelo (o PCODE_MODEL)
 pcode chat --aprobar-todo                    # no preguntar por las acciones que piden confirmación
 echo "resume el repo" | pcode chat           # sin terminal: un mensaje por línea
 ```
 
-| En el chat | Qué hace |
+| En la TUI | Qué hace |
 |---|---|
-| texto | lo manda al agente; este lee, busca, edita y ejecuta órdenes con sus tools y te enseña cada paso (`⏺ bash(cargo test)` y las primeras líneas de la salida) |
-| línea que acaba en `\` | continúa en la siguiente línea |
-| `/modelo [nombre]`, `/nuevo`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, ver los tokens, ayuda y salir (Ctrl-D también) |
-| Ctrl-C | interrumpe al agente sin cerrar el chat |
+| texto e Intro | lo manda al agente; su respuesta llega en streaming y cada tool aparece con su estado (`◐` en marcha, `✓`, `✗`) y las primeras líneas de la salida |
+| Alt+Intro o `\` al final | nueva línea en el mensaje (pegar texto con varias líneas también funciona) |
+| ↑ / ↓ · PgUp / PgDn | historial de mensajes · desplazar la transcripción |
+| Ctrl+O | despliega o pliega la salida completa de las tools |
+| Esc | interrumpe al agente; Ctrl+C también y, con el agente parado, sale |
+| `s` / `t` / `n` en la ventana de aprobación | permitir, permitir sin volver a preguntar, negar |
+| `/modelo [nombre]`, `/nuevo`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, ver los tokens, ayuda y salir (también en `pcode chat`) |
 
-Lo que pide confirmación (según `[politica]`) se pregunta en la terminal: `s` sí, `t` sí y no volver a
-preguntar, cualquier otra cosa no. Lo denegado por la política no se puede aprobar. Las instrucciones del proyecto
+Temas: `PCODE_TEMA=oscuro|claro|alto-contraste`; con `NO_COLOR` no hay colores, pero sí símbolos. El idioma
+de la interfaz sale de `LANG` (español o inglés).
+
+Lo que pide confirmación (según `[politica]`) se pregunta: `s` sí, `t` sí y no volver a preguntar,
+cualquier otra cosa no. Lo denegado por la política no se puede aprobar. Las instrucciones del proyecto
 (`AGENTS.md` y `CLAUDE.md`, o las de `[proyecto] instrucciones`) se añaden al prompt, y cada acción queda en
 `.pcode/audit.jsonl`. Las conversaciones se guardan en `.pcode/pcode.db`.
 

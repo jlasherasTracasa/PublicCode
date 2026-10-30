@@ -1201,6 +1201,25 @@ pub fn shell_command(cmd: &str) -> tokio::process::Command;
 '''
 tests = ["shell_argv_segun_plataforma", "cmd_y_powershell_recursivos: `cmd /C 'git push'` y `pwsh -Command 'git push'` contienen `git push`"]
 
+[[tarea]]
+id = "F1.25"
+nombre = "streaming"
+titulo = "Streaming de texto en los proveedores y en el agente"
+fase = "F1"
+ejecutor = "coordinador"
+depende = ["F1.06", "F1.22", "F1.23"]
+toca = ["crates/pcode-models/src/provider.rs", "crates/pcode-models/src/stream.rs", "crates/pcode-models/src/sse.rs", "crates/pcode-models/src/openai_http.rs", "crates/pcode-models/src/anthropic.rs", "crates/pcode-models/src/gemini.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-models stream && cargo test -p pcode-core observador"
+contexto = ["crates/pcode-models/src/sse.rs", "crates/pcode-models/src/provider.rs"]
+objetivo = '''
+1. `Provider::chat_stream(req, on_text)`: por defecto llama a `chat` y entrega el texto entero.
+2. OpenAI-compatible (`stream` + `include_usage`), Anthropic (`AnthropicStream`: `text_delta` e
+   `input_json_delta`) y Gemini (`GeminiStream`, `streamGenerateContent?alt=sse`) leen el SSE por trozos.
+3. El agente emite `AgentEvent::TextDelta` por cada trozo y `AgentEvent::Text` al completar el mensaje.
+'''
+tests = ["openai_http_stream_entrega_trozos_y_une_la_respuesta", "anthropic_stream_acumula_texto_y_tool_use", "anthropic_http_stream", "gemini_stream_une_texto_y_llamadas", "gemini_http_stream_usa_alt_sse", "observador_recibe_texto_y_tools"]
+
+
 # F2 — Backends, mini sandbox en Rust, skills, MCP
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -3212,6 +3231,29 @@ objetivo = '''
    incluye `AGENTS.md` y `CLAUDE.md`.
 '''
 tests = ["run_turn_conserva_el_historial_entre_vueltas", "observador_recibe_texto_y_tools", "chat_dos_mensajes_por_stdin_con_tool_y_comandos", "chat_continuar_retoma_la_conversacion", "chat_sin_modelo_configurado_explica_que_hacer", "chat_deniega_en_no_interactivo_lo_que_pide_confirmacion"]
+
+[[tarea]]
+id = "F5.30"
+nombre = "tui-local"
+titulo = "TUI a pantalla completa con el agente en proceso (`pcode`, `pcode tui`)"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.29", "F1.25"]
+toca = ["crates/pcode-tui/", "crates/pcode-cli/src/chat.rs", "crates/pcode-cli/src/main.rs", "docs/adr/ADR-0007-tui-local.md"]
+acepta = "cargo test -p pcode-tui && cargo test -p pcode-cli"
+contexto = ["AGENTS.md (§6.3, TUI)", "tareas/F5.07-tui-estado.md", "tareas/F5.08-tui-chat.md"]
+objetivo = '''
+Base de F5.07, F5.08 y F5.11 sin esperar al demonio (F5.05): mismo diseño, con el agente en el proceso.
+1. `App` con todo el estado; `update(Event) -> Vec<Command>` puro; `render(&App, &mut Frame)` sin efectos.
+2. Transcripción con streaming, Markdown mínimo, tools con estado (`◐ ✓ ✗`) y salida plegable (Ctrl+O),
+   desplazamiento (PgUp/PgDn), entrada multilínea (Alt+Intro, `\\`, pegar), historial (↑/↓), Esc o Ctrl+C
+   interrumpen, aprobaciones en ventana (`s`, `t`, `n`), `/modelo`, `/nuevo`, `/uso`, `/ayuda`, `/salir`.
+3. Temas `oscuro`, `claro` y `alto-contraste` (`PCODE_TEMA`), `NO_COLOR` y textos en `es`/`en`.
+4. `run_tui`: modo raw y pantalla alternativa restaurados también con pánico (`ratatui::init`),
+   teclado en un hilo con `poll` acotado, agente en una tarea que se aborta al interrumpir.
+'''
+tests = ["render_80x24_transcripcion_entrada_y_estado", "render_120x40_despliega_salidas_y_muestra_aprobacion", "render_sigue_el_final_y_scroll_sube", "chat_streaming_une_trozos_y_tools_cambian_de_estado", "chat_aprobacion_bloquea_el_teclado_hasta_responder", "chat_esc_y_ctrl_c_cancelan_o_salen", "theme_no_color_quita_colores_pero_no_negrita", "i18n_las_dos_tablas_tienen_las_mismas_claves"]
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════

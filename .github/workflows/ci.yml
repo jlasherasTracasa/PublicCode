@@ -34,7 +34,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests portables (sin shell de Unix)
-        run: cargo test -p pcode-config -p pcode-models -p pcode-policy -p pcode-protocol -p pcode-skills -p pcode-store -p pcode-server && cargo test -p pcode-cli --test chat
+        run: cargo test -p pcode-config -p pcode-models -p pcode-policy -p pcode-protocol -p pcode-skills -p pcode-store -p pcode-server -p pcode-tui && cargo test -p pcode-cli --test chat
       - run: cargo build --release -p pcode-cli
       - name: Prueba de humo de pcode.exe
         shell: pwsh

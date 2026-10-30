@@ -17,7 +17,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Cmd {
-    /// Conversación interactiva con el agente (es lo que hace `pcode` solo, en una terminal).
+    /// Interfaz de terminal a pantalla completa (es lo que abre `pcode` solo, en una terminal).
+    Tui(chat::ChatArgs),
+    /// Conversación con el agente en modo línea (sirve también sin terminal, por stdin).
     Chat(chat::ChatArgs),
     /// Ejecuta una tarea con el bucle del agente.
     Run(run::RunArgs),
@@ -48,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.command {
+        Some(Cmd::Tui(a)) => std::process::exit(chat::tui(a).await?),
         Some(Cmd::Chat(a)) => std::process::exit(chat::chat(a).await?),
         Some(Cmd::Run(a)) => std::process::exit(run::run(a).await?),
         Some(Cmd::Daemon { puerto, escuchar }) => {
@@ -86,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
         None => {
             use std::io::IsTerminal;
             if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-                std::process::exit(chat::chat(chat::ChatArgs::default_args()).await?);
+                std::process::exit(chat::tui(chat::ChatArgs::default_args()).await?);
             }
             use clap::CommandFactory;
             Cli::command().print_help()?;

@@ -1,0 +1,14 @@
+[package]
+name = "pcode-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pcode-core = { path = "../pcode-core" }
+pcode-models = { path = "../pcode-models" }
+ratatui = "0.30.2"
+tokio.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

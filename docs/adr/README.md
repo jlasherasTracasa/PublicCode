@@ -10,3 +10,4 @@ Formato y procedimiento: skill [`adr`](../../.claude/skills/adr/SKILL.md).
 | [0004](ADR-0004-skills-formato-unico.md) | Un único formato de skills (`SKILL.md`) exportado a cada agente, con cuarentena para las aprendidas | aceptado |
 | [0005](ADR-0005-interfaces.md) | Interfaces centradas en el demonio: escritorio con Tauri 2, UI común React/TS (web, PWA, VS Code), TUI con ratatui | aceptado |
 | [0006](ADR-0006-apk-android.md) | APK de Android como cliente fino (WebView) de pcoded, publicado en cada release | aceptado |
+| [0007](ADR-0007-tui-local.md) | TUI con el agente en proceso (`pcode-tui`, ratatui) antes de conectarla al demonio | aceptado |
