@@ -96,3 +96,135 @@ fn version_se_imprime() {
         .success()
         .stdout(predicate::str::contains("pcode 0.1.0"));
 }
+
+fn userns() -> bool {
+    std::process::Command::new("unshare")
+        .args(["--user", "--map-root-user", "--mount", "true"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn backend_modelo_en_sandbox_no_toca_el_repo_hasta_aplicar() {
+    if !userns() {
+        eprintln!("sin namespaces de usuario: test omitido");
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(
+        d.path().join("pcode.toml"),
+        "[backends.glm]\ntipo = \"modelo\"\nmodelo = \"m\"\n",
+    )
+    .unwrap();
+    let s = script(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"escribir","arguments":{"path":"nuevo.txt","content":"hi"}}])
+            ),
+            resp("hecho en sandbox", json!([]))
+        ]),
+    );
+    // sin --aplicar-si-acepta: el repo real no cambia
+    pcode(d.path(), &s)
+        .args(["run", "x", "--backend", "glm"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hecho en sandbox"))
+        .stderr(predicate::str::contains("nuevo.txt"));
+    assert!(!d.path().join("nuevo.txt").exists());
+}
+
+#[test]
+fn backend_con_aceptacion_aplica_los_cambios() {
+    if !userns() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(
+        d.path().join("pcode.toml"),
+        "[backends.glm]\ntipo = \"modelo\"\n",
+    )
+    .unwrap();
+    let s = script(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"escribir","arguments":{"path":"ok.txt","content":"1"}}])
+            ),
+            resp("listo", json!([]))
+        ]),
+    );
+    pcode(d.path(), &s)
+        .args([
+            "run",
+            "x",
+            "--backend",
+            "glm",
+            "--acepta",
+            "test -f ok.txt",
+            "--aplicar-si-acepta",
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("ok.txt")).unwrap(),
+        "1"
+    );
+}
+
+#[test]
+fn backend_desconocido_es_error() {
+    let d = tempfile::tempdir().unwrap();
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .current_dir(d.path())
+        .args(["run", "x", "--backend", "nada"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("backend desconocido"));
+}
+
+#[test]
+fn sandbox_ejecutar_cambios_aplicar() {
+    if !userns() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let st = tempfile::tempdir().unwrap();
+    let est = st.path().join("e");
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .current_dir(d.path())
+        .args([
+            "sandbox",
+            "ejecutar",
+            "--estado",
+            est.to_str().unwrap(),
+            "--",
+            "sh",
+            "-c",
+            "echo hola > f.txt",
+        ])
+        .assert()
+        .success();
+    assert!(!d.path().join("f.txt").exists());
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .args(["sandbox", "cambios", est.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("f.txt"));
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .args(["sandbox", "aplicar", est.to_str().unwrap()])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("f.txt")).unwrap(),
+        "hola\n"
+    );
+}

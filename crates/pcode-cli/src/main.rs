@@ -1,4 +1,5 @@
 //! Binario `pcode`.
+mod backend_run;
 mod run;
 
 use clap::{Parser, Subcommand};
@@ -15,6 +16,9 @@ struct Cli {
 enum Cmd {
     /// Ejecuta una tarea con el bucle del agente.
     Run(run::RunArgs),
+    /// Mini sandboxes (overlay copy-on-write sin privilegios).
+    #[command(subcommand)]
+    Sandbox(backend_run::SandboxCmd),
 }
 
 #[tokio::main]
@@ -28,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Some(Cmd::Run(a)) => std::process::exit(run::run(a).await?),
+        Some(Cmd::Sandbox(c)) => std::process::exit(backend_run::sandbox_cmd(c).await?),
         None => {
             use clap::CommandFactory;
             Cli::command().print_help()?;

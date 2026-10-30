@@ -15,6 +15,9 @@ pcode-tools = { path = "../pcode-tools" }
 pcode-policy = { path = "../pcode-policy" }
 pcode-core = { path = "../pcode-core" }
 pcode-store = { path = "../pcode-store" }
+pcode-sandbox = { path = "../pcode-sandbox" }
+pcode-backends = { path = "../pcode-backends" }
+async-trait.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 tokio.workspace = true

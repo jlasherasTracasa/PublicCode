@@ -888,16 +888,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcode-backends"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "pcode-models",
+ "pcode-sandbox",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "pcode-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "async-trait",
  "clap",
+ "pcode-backends",
  "pcode-config",
  "pcode-core",
  "pcode-models",
  "pcode-policy",
+ "pcode-sandbox",
  "pcode-store",
  "pcode-tools",
  "predicates",
@@ -959,6 +976,19 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "pcode-sandbox"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "similar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1432,6 +1462,12 @@ dependencies = [
  "errno",
  "libc",
 ]
+
+[[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "slab"

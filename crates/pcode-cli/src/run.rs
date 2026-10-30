@@ -27,6 +27,12 @@ pub struct RunArgs {
     /// Pasos máximos.
     #[arg(long = "max-pasos", default_value_t = 50)]
     pub max_steps: u32,
+    /// Backend de `[backends.*]` (si falta, se usa el bucle propio con el proveedor).
+    #[arg(long = "backend")]
+    pub backend: Option<String>,
+    /// Aplica los cambios de la sandbox si `--acepta` pasa dentro de ella.
+    #[arg(long = "aplicar-si-acepta")]
+    pub apply_if_accepted: bool,
     /// Archivo de configuración.
     #[arg(long = "config", default_value = "pcode.toml")]
     pub config: PathBuf,
@@ -74,6 +80,17 @@ fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Arc<dyn Pr
 /// Ejecuta la tarea y devuelve el código de salida.
 pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
     let cfg = Config::load(&a.config)?;
+    if let Some(b) = &a.backend {
+        return crate::backend_run::run_with_backend(
+            &cfg,
+            b,
+            &a.task,
+            a.accept.as_deref(),
+            a.model.as_deref(),
+            a.apply_if_accepted,
+        )
+        .await;
+    }
     let caps: PolicyToml = match std::fs::read_to_string(&a.config) {
         Ok(s) => toml::from_str(&s).unwrap_or_default(),
         Err(_) => PolicyToml::default(),

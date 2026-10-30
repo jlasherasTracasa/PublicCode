@@ -1,0 +1,16 @@
+[package]
+name = "pcode-sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+similar.workspace = true
+tracing.workspace = true
+libc = "0.2"
+
+[dev-dependencies]
+tempfile.workspace = true

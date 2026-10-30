@@ -96,6 +96,7 @@ ni red filtrada.
 | Ubuntu 24.04 o superior con `kernel.apparmor_restrict_unprivileged_userns=1` | los namespaces de usuario quedan sin capacidades | perfil AppArmor para `pcode` o `sysctl` a 0; si no, N2 |
 | Dentro de Docker con el seccomp por defecto | `unshare(CLONE_NEWUSER)` denegado | N1 fuera del contenedor, o perfil seccomp propio; si no, N2 |
 | Kernel < 5.11 | sin overlay en namespaces de usuario | `fuse-overlayfs` o N2 |
+| Borrar un **directorio entero** dentro de la sandbox (`rm -r d`) | con overlay sin privilegios en kernels recientes devuelve `EIO` (borrar archivos sí funciona; medido en Linux 6.18) | borrar los archivos uno a uno; si hace falta mover directorios, N2 |
 | Cambios en `.git/` dentro de la sandbox | se aplican también | no hacer commits dentro; en F3 los commits los hace la integración |
 | QEMU/KVM (tareas `kernel` de SO_IA) | requiere `/dev/kvm` | N2 con `--device /dev/kvm`, como hoy |
 
