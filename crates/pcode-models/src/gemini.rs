@@ -154,6 +154,61 @@ pub fn from_response_body(body: &Value) -> Result<ChatResponse, ModelError> {
     })
 }
 
+/// Acumula los trozos de `streamGenerateContent?alt=sse` (cada evento es una respuesta parcial).
+#[derive(Debug, Default)]
+pub struct GeminiStream {
+    parts: Vec<Value>,
+    usage: Value,
+    finish: Option<String>,
+}
+
+impl GeminiStream {
+    /// Procesa un evento; devuelve el texto nuevo si lo trae.
+    pub fn push(&mut self, e: &crate::sse::SseEvent) -> Result<Option<String>, ModelError> {
+        if e.data.trim().is_empty() {
+            return Ok(None);
+        }
+        let v: Value = serde_json::from_str(&e.data)
+            .map_err(|x| ModelError::InvalidResponse(x.to_string()))?;
+        if v.get("candidates").is_none()
+            && let Some(why) = v["promptFeedback"]["blockReason"].as_str()
+        {
+            return Err(ModelError::InvalidResponse(why.to_string()));
+        }
+        if v.get("usageMetadata").is_some() {
+            self.usage = v["usageMetadata"].clone();
+        }
+        let cand = &v["candidates"][0];
+        if let Some(f) = cand["finishReason"].as_str() {
+            self.finish = Some(f.to_string());
+        }
+        let mut new_text = String::new();
+        for p in cand["content"]["parts"].as_array().into_iter().flatten() {
+            if let Some(t) = p["text"].as_str() {
+                new_text.push_str(t);
+                match self.parts.last_mut() {
+                    Some(last) if last.get("text").is_some() => {
+                        let prev = last["text"].as_str().unwrap_or_default().to_string();
+                        last["text"] = json!(prev + t);
+                    }
+                    _ => self.parts.push(json!({"text": t})),
+                }
+            } else {
+                self.parts.push(p.clone());
+            }
+        }
+        Ok((!new_text.is_empty()).then_some(new_text))
+    }
+
+    /// Respuesta completa.
+    pub fn finish(self) -> Result<ChatResponse, ModelError> {
+        from_response_body(&json!({
+            "candidates": [{"content": {"parts": self.parts}, "finishReason": self.finish}],
+            "usageMetadata": self.usage,
+        }))
+    }
+}
+
 /// Proveedor Gemini.
 pub struct GeminiProvider {
     name: String,
@@ -215,6 +270,32 @@ impl Provider for GeminiProvider {
         let v: Value =
             serde_json::from_str(&text).map_err(|e| ModelError::InvalidResponse(e.to_string()))?;
         from_response_body(&v)
+    }
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_text: &(dyn for<'s> Fn(&'s str) + Send + Sync),
+    ) -> Result<ChatResponse, ModelError> {
+        let url = format!(
+            "{}/v1beta/models/{}:streamGenerateContent?alt=sse",
+            self.base_url.trim_end_matches('/'),
+            req.model
+        );
+        let rb = self
+            .client
+            .post(url)
+            .header("x-goog-api-key", &self.api_key)
+            .json(&to_request_body(req));
+        let resp = crate::stream::send_checked(rb).await?;
+        let mut acc = GeminiStream::default();
+        crate::stream::read_sse(resp, |e| {
+            if let Some(t) = acc.push(&e)? {
+                on_text(&t);
+            }
+            Ok(())
+        })
+        .await?;
+        acc.finish()
     }
 }
 
@@ -283,6 +364,56 @@ mod tests {
         let e =
             from_response_body(&json!({"promptFeedback": {"blockReason": "SAFETY"}})).unwrap_err();
         assert!(e.to_string().contains("SAFETY"));
+    }
+
+    fn chunks() -> Vec<String> {
+        [
+            json!({"candidates":[{"content":{"parts":[{"text":"Ho"}]}}]}),
+            json!({"candidates":[{"content":{"parts":[{"text":"la"}]}}]}),
+            json!({"candidates":[{"content":{"parts":[{"functionCall":{"name":"leer","args":{"path":"a"}}}]},"finishReason":"STOP"}],
+                   "usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":6}}),
+        ]
+        .iter()
+        .map(|v| format!("data: {v}\r\n\r\n"))
+        .collect()
+    }
+
+    #[test]
+    fn gemini_stream_une_texto_y_llamadas() {
+        let mut acc = GeminiStream::default();
+        let mut p = crate::sse::SseParser::new();
+        let mut text = String::new();
+        for c in chunks() {
+            for e in p.push(c.as_bytes()) {
+                if let Some(t) = acc.push(&e).unwrap() {
+                    text.push_str(&t);
+                }
+            }
+        }
+        let r = acc.finish().unwrap();
+        assert_eq!(text, "Hola");
+        assert_eq!(r.message.content, "Hola");
+        assert_eq!(r.message.tool_calls[0].name, "leer");
+        assert_eq!(r.stop_reason, StopReason::ToolUse);
+        assert_eq!(r.usage.output_tokens, 6);
+    }
+
+    #[tokio::test]
+    async fn gemini_http_stream_usa_alt_sse() {
+        let (url, h) = crate::stream::fake::sse_server(chunks()).await;
+        let p = GeminiProvider::new("g", url, "k");
+        let got = std::sync::Mutex::new(String::new());
+        let r = p
+            .chat_stream(&req(), &|t| got.lock().unwrap().push_str(t))
+            .await
+            .unwrap();
+        assert_eq!(*got.lock().unwrap(), "Hola");
+        assert_eq!(r.message.tool_calls.len(), 1);
+        assert!(
+            h.await
+                .unwrap()
+                .starts_with("post /v1beta/models/gemini-x:streamgeneratecontent?alt=sse")
+        );
     }
 
     #[tokio::test]

@@ -56,6 +56,16 @@ impl SseParser {
     }
 }
 
+/// Texto nuevo de un evento de un stream OpenAI (`choices[0].delta.content`), si lo hay.
+pub fn openai_delta_text(e: &SseEvent) -> Option<String> {
+    if e.data.trim() == "[DONE]" {
+        return None;
+    }
+    let v: Value = serde_json::from_str(&e.data).ok()?;
+    let t = v["choices"][0]["delta"]["content"].as_str()?;
+    (!t.is_empty()).then(|| t.to_string())
+}
+
 /// Une los chunks de un stream OpenAI.
 pub fn accumulate_openai_stream(events: &[SseEvent]) -> Result<ChatResponse, ModelError> {
     let mut text = String::new();

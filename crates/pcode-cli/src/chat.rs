@@ -108,7 +108,11 @@ fn brief(args: &serde_json::Value) -> String {
 /// Muestra un evento del agente.
 fn render(st: Style, e: &AgentEvent) {
     match e {
-        AgentEvent::Text(t) => println!("\n{}\n", t.trim()),
+        AgentEvent::TextDelta(t) => {
+            print!("{t}");
+            let _ = std::io::stdout().flush();
+        }
+        AgentEvent::Text(_) => println!("\n"),
         AgentEvent::ToolCall { name, arguments } => {
             println!(
                 "{} {}",

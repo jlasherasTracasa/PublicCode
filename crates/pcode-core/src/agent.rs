@@ -84,7 +84,9 @@ pub trait Approver: Send + Sync {
 /// Algo que ocurre durante la ejecución, para mostrarlo en vivo (terminal, UI).
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentEvent {
-    /// El asistente escribe texto.
+    /// Trozo de texto del asistente según llega (streaming).
+    TextDelta(String),
+    /// Mensaje de texto del asistente completo (tras sus trozos).
     Text(String),
     /// El asistente llama a una tool.
     ToolCall {
@@ -288,7 +290,13 @@ impl Agent {
                 tools: specs,
                 ..Default::default()
             };
-            let resp = match self.provider.chat(&req).await {
+            let obs = self.observer.clone();
+            let on_text = move |t: &str| {
+                if let Some(o) = &obs {
+                    o(&AgentEvent::TextDelta(t.to_string()));
+                }
+            };
+            let resp = match self.provider.chat_stream(&req, &on_text).await {
                 Ok(r) => r,
                 Err(e) => finish!(Outcome::Failed(e.to_string())),
             };
@@ -483,7 +491,8 @@ mod tests {
                 ..
             }
         ));
-        assert_eq!(v[2], AgentEvent::Text("listo".into()));
+        assert_eq!(v[2], AgentEvent::TextDelta("listo".into()));
+        assert_eq!(v[3], AgentEvent::Text("listo".into()));
     }
     #[tokio::test]
     async fn agente_termina_sin_tools() {

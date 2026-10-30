@@ -67,11 +67,64 @@ impl Provider for OpenAiCompatProvider {
             serde_json::from_str(&text).map_err(|e| ModelError::InvalidResponse(e.to_string()))?;
         openai::from_response_body(&v)
     }
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_text: &(dyn for<'s> Fn(&'s str) + Send + Sync),
+    ) -> Result<ChatResponse, ModelError> {
+        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let mut body = openai::to_request_body(req);
+        body["stream"] = serde_json::json!(true);
+        body["stream_options"] = serde_json::json!({"include_usage": true});
+        let mut rb = self.client.post(url).json(&body);
+        if let Some(k) = &self.api_key {
+            rb = rb.bearer_auth(k);
+        }
+        let resp = crate::stream::send_checked(rb).await?;
+        let mut events = vec![];
+        crate::stream::read_sse(resp, |e| {
+            if let Some(t) = crate::sse::openai_delta_text(&e) {
+                on_text(&t);
+            }
+            events.push(e);
+            Ok(())
+        })
+        .await?;
+        crate::sse::accumulate_openai_stream(&events)
+    }
 }
 
 #[cfg(test)]
 mod openai_http_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn openai_http_stream_entrega_trozos_y_une_la_respuesta() {
+        let (url, h) = crate::stream::fake::sse_server(vec![
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ho\"}}]}\n\n".into(),
+            "data: {\"choices\":[{\"delta\":{\"content\":\"la\"},\"finish_reason\":\"stop\"}]}\n\n".into(),
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n".into(),
+        ])
+        .await;
+        let p = OpenAiCompatProvider::new("o", url, None);
+        let got = std::sync::Mutex::new(vec![]);
+        let r = p
+            .chat_stream(
+                &ChatRequest {
+                    model: "m".into(),
+                    messages: vec![Message::user("hola")],
+                    ..Default::default()
+                },
+                &|t| got.lock().unwrap().push(t.to_string()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(*got.lock().unwrap(), vec!["ho", "la"]);
+        assert_eq!(r.message.content, "hola");
+        assert_eq!(r.usage.input_tokens, 5);
+        let req = h.await.unwrap();
+        assert!(req.contains("\"stream\":true"), "{req}");
+    }
     use crate::types::Message;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;

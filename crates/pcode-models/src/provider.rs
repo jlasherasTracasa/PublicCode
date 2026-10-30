@@ -25,4 +25,17 @@ pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
     /// Una petición de chat.
     async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, ModelError>;
+    /// Igual que [`Provider::chat`], pero entrega el texto a `on_text` según llega. Por defecto
+    /// (proveedores sin streaming) lo entrega entero al final.
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_text: &(dyn for<'s> Fn(&'s str) + Send + Sync),
+    ) -> Result<ChatResponse, ModelError> {
+        let r = self.chat(req).await?;
+        if !r.message.content.is_empty() {
+            on_text(&r.message.content);
+        }
+        Ok(r)
+    }
 }

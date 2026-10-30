@@ -7,6 +7,7 @@ pub mod openai_http;
 pub mod provider;
 pub mod repair;
 pub mod sse;
+mod stream;
 pub mod types;
 
 pub use anthropic::AnthropicProvider;

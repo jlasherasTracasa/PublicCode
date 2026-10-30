@@ -120,6 +120,93 @@ pub fn from_response_body(body: &Value) -> Result<ChatResponse, ModelError> {
     })
 }
 
+/// Acumula los eventos SSE de una respuesta en streaming (`"stream": true`).
+#[derive(Debug, Default)]
+pub struct AnthropicStream {
+    blocks: std::collections::BTreeMap<u64, Value>,
+    json: std::collections::BTreeMap<u64, String>,
+    usage: serde_json::Map<String, Value>,
+    stop_reason: Option<String>,
+}
+
+impl AnthropicStream {
+    /// Procesa un evento; devuelve el texto nuevo si lo trae.
+    pub fn push(&mut self, e: &crate::sse::SseEvent) -> Result<Option<String>, ModelError> {
+        if e.data.trim().is_empty() {
+            return Ok(None);
+        }
+        let v: Value = serde_json::from_str(&e.data)
+            .map_err(|x| ModelError::InvalidResponse(x.to_string()))?;
+        let idx = v["index"].as_u64().unwrap_or(0);
+        match v["type"].as_str().unwrap_or_default() {
+            "message_start" => {
+                if let Some(u) = v["message"]["usage"].as_object() {
+                    self.usage.extend(u.clone());
+                }
+            }
+            "content_block_start" => {
+                self.blocks.insert(idx, v["content_block"].clone());
+            }
+            "content_block_delta" => {
+                let d = &v["delta"];
+                match d["type"].as_str() {
+                    Some("text_delta") => {
+                        let t = d["text"].as_str().unwrap_or_default().to_string();
+                        let b = self
+                            .blocks
+                            .entry(idx)
+                            .or_insert_with(|| json!({"type": "text", "text": ""}));
+                        let prev = b["text"].as_str().unwrap_or_default().to_string();
+                        b["text"] = json!(prev + &t);
+                        return Ok((!t.is_empty()).then_some(t));
+                    }
+                    Some("input_json_delta") => self
+                        .json
+                        .entry(idx)
+                        .or_default()
+                        .push_str(d["partial_json"].as_str().unwrap_or_default()),
+                    _ => {}
+                }
+            }
+            "message_delta" => {
+                if let Some(r) = v["delta"]["stop_reason"].as_str() {
+                    self.stop_reason = Some(r.to_string());
+                }
+                if let Some(u) = v["usage"].as_object() {
+                    self.usage.extend(u.clone());
+                }
+            }
+            "error" => {
+                let m = v["error"]["message"]
+                    .as_str()
+                    .unwrap_or("error en el stream");
+                return Err(ModelError::Http(m.to_string()));
+            }
+            _ => {}
+        }
+        Ok(None)
+    }
+
+    /// Respuesta completa.
+    pub fn finish(mut self) -> Result<ChatResponse, ModelError> {
+        for (i, raw) in std::mem::take(&mut self.json) {
+            if let Some(b) = self.blocks.get_mut(&i) {
+                b["input"] = if raw.trim().is_empty() {
+                    json!({})
+                } else {
+                    crate::repair::repair_json_arguments(&raw).unwrap_or(Value::String(raw))
+                };
+            }
+        }
+        let content: Vec<Value> = self.blocks.into_values().collect();
+        from_response_body(&json!({
+            "content": content,
+            "stop_reason": self.stop_reason,
+            "usage": Value::Object(self.usage),
+        }))
+    }
+}
+
 /// Proveedor Anthropic.
 pub struct AnthropicProvider {
     name: String,
@@ -178,6 +265,31 @@ impl Provider for AnthropicProvider {
         let v: Value =
             serde_json::from_str(&text).map_err(|e| ModelError::InvalidResponse(e.to_string()))?;
         from_response_body(&v)
+    }
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_text: &(dyn for<'s> Fn(&'s str) + Send + Sync),
+    ) -> Result<ChatResponse, ModelError> {
+        let url = format!("{}/v1/messages", self.base_url.trim_end_matches('/'));
+        let mut body = to_request_body(req);
+        body["stream"] = json!(true);
+        let rb = self
+            .client
+            .post(url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", API_VERSION)
+            .json(&body);
+        let resp = crate::stream::send_checked(rb).await?;
+        let mut acc = AnthropicStream::default();
+        crate::stream::read_sse(resp, |e| {
+            if let Some(t) = acc.push(&e)? {
+                on_text(&t);
+            }
+            Ok(())
+        })
+        .await?;
+        acc.finish()
     }
 }
 
@@ -270,6 +382,93 @@ mod tests {
         };
         let b = to_request_body(&r);
         assert_eq!(b["messages"][1]["content"][0]["text"], ".");
+    }
+
+    fn sse(data: Value) -> String {
+        format!(
+            "event: {}\ndata: {}\n\n",
+            data["type"].as_str().unwrap(),
+            data
+        )
+    }
+
+    fn stream_events() -> Vec<String> {
+        vec![
+            sse(
+                json!({"type":"message_start","message":{"usage":{"input_tokens":12,"cache_read_input_tokens":3}}}),
+            ),
+            sse(
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            ),
+            sse(
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Mi"}}),
+            ),
+            sse(
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ro"}}),
+            ),
+            sse(
+                json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu1","name":"bash","input":{}}}),
+            ),
+            sse(
+                json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"command\": "}}),
+            ),
+            sse(
+                json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"ls\"}"}}),
+            ),
+            sse(
+                json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}),
+            ),
+            sse(json!({"type":"message_stop"})),
+        ]
+    }
+
+    #[test]
+    fn anthropic_stream_acumula_texto_y_tool_use() {
+        let mut acc = AnthropicStream::default();
+        let mut text = vec![];
+        let mut p = crate::sse::SseParser::new();
+        for chunk in stream_events() {
+            for e in p.push(chunk.as_bytes()) {
+                if let Some(t) = acc.push(&e).unwrap() {
+                    text.push(t);
+                }
+            }
+        }
+        assert_eq!(text, vec!["Mi", "ro"]);
+        let r = acc.finish().unwrap();
+        assert_eq!(r.message.content, "Miro");
+        assert_eq!(r.message.tool_calls[0].arguments["command"], "ls");
+        assert_eq!(r.stop_reason, StopReason::ToolUse);
+        assert_eq!((r.usage.input_tokens, r.usage.output_tokens), (15, 9));
+    }
+
+    #[test]
+    fn anthropic_stream_error_es_error_http() {
+        let mut acc = AnthropicStream::default();
+        let e = crate::sse::SseEvent {
+            event: Some("error".into()),
+            data: json!({"type":"error","error":{"message":"sobrecargado"}}).to_string(),
+        };
+        assert!(
+            acc.push(&e)
+                .unwrap_err()
+                .to_string()
+                .contains("sobrecargado")
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_http_stream() {
+        let (url, h) = crate::stream::fake::sse_server(stream_events()).await;
+        let p = AnthropicProvider::new("a", url, "k");
+        let got = std::sync::Mutex::new(String::new());
+        let r = p
+            .chat_stream(&req(), &|t| got.lock().unwrap().push_str(t))
+            .await
+            .unwrap();
+        assert_eq!(*got.lock().unwrap(), "Miro");
+        assert_eq!(r.message.tool_calls.len(), 1);
+        assert!(h.await.unwrap().contains("\"stream\":true"));
     }
 
     #[tokio::test]
