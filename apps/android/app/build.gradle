@@ -1,0 +1,52 @@
+plugins {
+    id "com.android.application"
+}
+
+// Firma de release: si no hay keystore en el entorno (CI sin secretos), se firma con la clave de
+// depuración para que el APK siga siendo instalable.
+def ks = System.getenv("PCODE_ANDROID_KEYSTORE")
+
+android {
+    namespace "dev.publiccode.app"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "dev.publiccode.app"
+        minSdk 26
+        targetSdk 35
+        versionCode Integer.parseInt(System.getenv("PCODE_VERSION_CODE") ?: "1")
+        versionName System.getenv("PCODE_VERSION_NAME") ?: "0.1.0"
+    }
+
+    signingConfigs {
+        if (ks) {
+            release {
+                storeFile file(ks)
+                storePassword System.getenv("PCODE_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("PCODE_ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("PCODE_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ks ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError true
+        warningsAsErrors false
+    }
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+}

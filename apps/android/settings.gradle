@@ -1,0 +1,17 @@
+// App Android de PublicCode: cliente fino de pcoded (WebView sobre la web del demonio).
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "publiccode"
+include(":app")

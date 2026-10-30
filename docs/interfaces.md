@@ -119,6 +119,10 @@ La web como PWA instalable, con vistas adaptadas: estado de flujos y sesiones, *
 notificaciones. Sin edición ni diffs largos: el móvil sirve para no bloquear a los agentes cuando no
 estás delante del ordenador.
 
+**APK de Android** (`apps/android`, [ADR-0006](adr/ADR-0006-apk-android.md)): mientras la PWA no tenga
+TLS, la release publica un APK que muestra la web del demonio en un WebView. Arranca el demonio con
+`pcode daemon --escuchar 0.0.0.0` (o la IP del túnel) y pega en la app la URL que imprime.
+
 ## IDE
 
 * **ACP** (Agent Client Protocol): `pcode acp` convierte a PublicCode en un agente para los editores

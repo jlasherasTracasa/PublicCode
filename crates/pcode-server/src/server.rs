@@ -349,7 +349,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-/// Sirve en TCP (loopback).
+/// Sirve en TCP en la dirección indicada (loopback por defecto en la CLI).
 pub async fn serve(state: Arc<AppState>, addr: std::net::SocketAddr) -> anyhow::Result<()> {
     let l = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("pcoded escuchando en http://{}", l.local_addr()?);
@@ -435,6 +435,8 @@ mod tests {
             StatusCode::OK
         );
     }
+    // Usa `/bin/echo` como binario de pcode: solo existe en Unix.
+    #[cfg(unix)]
     #[tokio::test]
     async fn sesion_con_proceso_emite_eventos_y_termina() {
         // `echo` hace de pcode: imprime sus argumentos y sale con 0.

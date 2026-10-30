@@ -3169,6 +3169,27 @@ pub fn wsl_daemon_command(distro: &str, repo_win: &str, port: u16) -> Vec<String
 '''
 tests = ["parse_lista_wsl", "ruta_windows_a_wsl", "ruta_unc_none", "orden_demonio"]
 
+[[tarea]]
+id = "F5.28"
+nombre = "apk-android"
+titulo = "APK de Android: cliente fino de pcoded (WebView) y demonio accesible desde la red"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.02", "F0.07"]
+toca = ["apps/android/", "crates/pcode-cli/src/main.rs", ".github/workflows/ci.yml", ".github/workflows/release.yml", "docs/adr/ADR-0006-apk-android.md"]
+acepta = "gradle -p apps/android -q testDebugUnitTest assembleRelease && test -s apps/android/app/build/outputs/apk/release/app-release.apk && cargo build -q -p pcode-cli && ./target/debug/pcode daemon --help | grep -q -- --escuchar"
+contexto = ["docs/adr/ADR-0006-apk-android.md", "docs/interfaces.md (sección «Móvil»)", "crates/pcode-server/src/server.rs (index y cookie)"]
+objetivo = '''
+1. `pcode daemon --escuchar <IP>` (por defecto `127.0.0.1`) con aviso si no es loopback; token fijo
+   opcional con `PCODE_DAEMON_TOKEN` (32 caracteres o más).
+2. `apps/android` (Java, sin AndroidX): `Conexion` (lógica pura: interpretar la URL con `?t=`, origen,
+   mismo origen) y `MainActivity` (formulario de emparejamiento, WebView limitado al origen, menú
+   recargar/cambiar servidor, 401 ⇒ volver a emparejar). Textos en `values` y `values-en`.
+3. CI: job `android` (tests JUnit, lint y APK). Release: `pcode-<versión>-android.apk` en
+   `SHA256SUMS`, firmado con los secretos `PCODE_ANDROID_*` o con la clave de depuración.
+'''
+tests = ["ConexionTest: parseUrlDelDemonio, parseHttpsSinPuertoYConOtrosParametros, parseIpv6, rechazaUrlsInvalidas, mismoOrigen"]
+
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # F6 — Aprendizaje: skills, subagentes reutilizables y regresión continua
 # ═══════════════════════════════════════════════════════════════════════════════════════════════

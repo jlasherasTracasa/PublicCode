@@ -24,7 +24,8 @@ se sigue en el escritorio.
 > | Flujos | tareas con criterio de aceptación, DAG, estado por eventos, planificador, integración sin conflictos de lockfile, clasificador de CI, `pcode flow run` | F3.01–F3.08, F3.10 |
 > | Demonio | API JSON-RPC + eventos SSE + página web + cola de aprobaciones, tipos TypeScript generados, `pcode daemon` | F5.01–F5.03 |
 > | Windows | el núcleo, `pcode run` y `pcode daemon` funcionan en Windows (shell `cmd`, política que entiende cmd y PowerShell); la sandbox N1 es solo de Linux | F1.24 |
-> | CI/CD | CI en Linux y Windows con prueba de humo; release con `.zip` para Windows, `.tar.gz` para Linux y `SHA256SUMS` | F0.07 |
+> | CI/CD | CI en Linux y Windows con prueba de humo; release con `.zip` para Windows, `.tar.gz` para Linux, `.apk` para Android y `SHA256SUMS` | F0.07 |
+> | Android | APK cliente del demonio (sesiones y aprobaciones en un WebView); `pcode daemon --escuchar` | F5.28 |
 >
 > **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F1,
 > los proveedores nativos Anthropic y Gemini (F1.22, F1.23; hoy se usan vía LiteLLM); de F2, el Copilot
@@ -353,6 +354,7 @@ con el binario `pcode` y `SHA256SUMS` (workflow [release.yml](.github/workflows/
 |---|---|---|
 | Windows 10/11 x64 | `pcode-<versión>-x86_64-pc-windows-msvc.zip` | descomprimir y ejecutar `install.ps1` |
 | Linux x86_64 | `pcode-<versión>-x86_64-unknown-linux-gnu.tar.gz` | descomprimir y ejecutar `install.sh` |
+| Android 8+ | `pcode-<versión>-android.apk` | instalar el APK (permitir orígenes desconocidos); es un cliente del demonio |
 
 En Windows (PowerShell, sin permisos de administrador; instala en `%LOCALAPPDATA%\PublicCode\bin` y lo
 añade al PATH del usuario):
@@ -368,6 +370,11 @@ En Linux (instala en `~/.local/bin`):
 ```bash
 tar xzf pcode-v0.1.0-x86_64-unknown-linux-gnu.tar.gz && ./pcode-v0.1.0-x86_64-unknown-linux-gnu/install.sh
 ```
+
+**Android**: la app no ejecuta agentes; muestra sesiones y aprobaciones de un `pcoded` de tu red.
+En el equipo, `pcode daemon --escuchar 0.0.0.0` (con `PCODE_DAEMON_TOKEN` para un token fijo) y pega
+en la app la URL `http://IP:7878/?t=…` que imprime. Sin TLS todavía: úsalo en tu red local o tras un
+túnel (WireGuard, Tailscale).
 
 Desde el código: `cargo install --path crates/pcode-cli --locked` (Rust según `rust-toolchain.toml`).
 

@@ -63,9 +63,46 @@ jobs:
             pcode-*.zip
             pcode-*.tar.gz
 
+  android:
+    name: APK de Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Keystore de firma (si hay secretos)
+        env:
+          KEYSTORE_B64: ${{ secrets.PCODE_ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/pcode.jks"
+            echo "PCODE_ANDROID_KEYSTORE=$RUNNER_TEMP/pcode.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Sin PCODE_ANDROID_KEYSTORE_B64: el APK se firma con la clave de depuración"
+          fi
+      - name: Compilar el APK
+        env:
+          PCODE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.PCODE_ANDROID_KEYSTORE_PASSWORD }}
+          PCODE_ANDROID_KEY_ALIAS: ${{ secrets.PCODE_ANDROID_KEY_ALIAS }}
+          PCODE_ANDROID_KEY_PASSWORD: ${{ secrets.PCODE_ANDROID_KEY_PASSWORD }}
+          PCODE_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          export PCODE_VERSION_NAME="${TAG#v}"
+          gradle -p apps/android --no-daemon testDebugUnitTest assembleRelease
+          cp apps/android/app/build/outputs/apk/release/app-release.apk "pcode-$TAG-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcode-android
+          path: pcode-*-android.apk
+
   publish:
     name: Publicar la release
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

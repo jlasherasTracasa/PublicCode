@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PublicCode</string>
+    <string name="conectar_titulo">Conectar con pcoded</string>
+    <string name="conectar_ayuda">En el equipo, ejecuta «pcode daemon --escuchar 0.0.0.0» y pega aquí la URL que imprime (http://IP:7878/?t=…).</string>
+    <string name="conectar_pista">http://192.168.1.10:7878/?t=…</string>
+    <string name="conectar_boton">Conectar</string>
+    <string name="cambiar_servidor">Cambiar servidor</string>
+    <string name="recargar">Recargar</string>
+    <string name="error_url">URL no válida: usa http:// o https://, con host y el parámetro t=</string>
+    <string name="error_carga">No se puede conectar con pcoded. ¿Está arrancado y en la misma red?</string>
+</resources>

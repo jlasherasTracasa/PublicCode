@@ -56,6 +56,25 @@ jobs:
           if (-not (Test-Path .pcode\audit.jsonl)) { Write-Error "falta la auditoría"; exit 1 }
           Pop-Location
 
+  android:
+    name: Android (tests, lint y APK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Tests, lint y APK
+        run: gradle -p apps/android --no-daemon testDebugUnitTest lintDebug assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcode-android-apk
+          path: apps/android/app/build/outputs/apk/release/app-release.apk
+
   python:
     name: Tools de Python
     runs-on: ubuntu-latest

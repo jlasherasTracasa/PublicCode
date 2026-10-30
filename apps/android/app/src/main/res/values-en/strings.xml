@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PublicCode</string>
+    <string name="conectar_titulo">Connect to pcoded</string>
+    <string name="conectar_ayuda">On your computer, run “pcode daemon --escuchar 0.0.0.0” and paste the URL it prints (http://IP:7878/?t=…).</string>
+    <string name="conectar_pista">http://192.168.1.10:7878/?t=…</string>
+    <string name="conectar_boton">Connect</string>
+    <string name="cambiar_servidor">Change server</string>
+    <string name="recargar">Reload</string>
+    <string name="error_url">Invalid URL: use http:// or https://, with a host and the t= parameter</string>
+    <string name="error_carga">Cannot reach pcoded. Is it running and on the same network?</string>
+</resources>
