@@ -120,7 +120,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F0.02-ci](../tareas/F0.02-ci.md) | CI de GitHub: Rust, tools de Python y plan de tareas | haiku | F0.01 | pendiente |
 | [F0.03-verificar-clis](../tareas/F0.03-verificar-clis.md) | Verificar las CLIs de Claude Code, Copilot, Gemini y opencode (modo no interactivo) | coordinador | — | pendiente |
 | [F0.04-bench-smoke](../tareas/F0.04-bench-smoke.md) | Línea base y banco smoke de SinapsisBench (20 tareas) | coordinador | — | pendiente |
-| [F0.05-adrs](../tareas/F0.05-adrs.md) | ADRs iniciales: lenguaje, backends, sandbox, skills | coordinador | — | pendiente |
+| [F0.05-adrs](../tareas/F0.05-adrs.md) | ADRs iniciales: lenguaje, backends, sandbox, skills | coordinador | — | hecha |
 | [F0.06-eval-reglas](../tareas/F0.06-eval-reglas.md) | Eval de cumplimiento de reglas: archivos fuera de `toca` y órdenes git prohibidas | haiku | — | pendiente |
 
 ### F1
