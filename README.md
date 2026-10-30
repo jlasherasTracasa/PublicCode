@@ -428,7 +428,7 @@ exactas, los tests que hay que escribir y una única orden de aceptación. Regla
 2. Lánzala con el agente que prefieras, por ejemplo Claude Code con Haiku 5.5:
 
 ```bash
-claude --model claude-haiku-5-5 -p "Ejecuta la tarea tareas/F1.01-workspace.md siguiendo AGENTS.md"
+claude --model claude-haiku-5-5 -p "Ejecuta la tarea tareas/F0.01-workspace.md siguiendo AGENTS.md"
 ```
 
 3. Si la orden `acepta` de la tarea pasa, se integra. Desde la fase F3, PublicCode se construye a sí mismo.
