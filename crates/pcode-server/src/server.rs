@@ -471,6 +471,7 @@ mod tests {
         let (_, l) = call(&a, "session.list", serde_json::json!({}), None).await;
         assert_eq!(l["result"][0]["state"], "done");
     }
+    #[cfg(unix)]
     #[tokio::test]
     async fn sesion_cancelable() {
         use std::os::unix::fs::PermissionsExt;

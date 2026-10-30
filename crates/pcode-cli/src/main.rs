@@ -43,9 +43,11 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Some(Cmd::Run(a)) => std::process::exit(run::run(a).await?),
         Some(Cmd::Daemon { puerto }) => {
-            let mut b = [0u8; 16];
-            std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
-            let token: String = b.iter().map(|x| format!("{x:02x}")).collect();
+            let token = format!(
+                "{}{}",
+                uuid::Uuid::new_v4().simple(),
+                uuid::Uuid::new_v4().simple()
+            );
             let st = pcode_server::AppState::new(
                 std::env::current_dir()?,
                 std::env::current_exe()?,

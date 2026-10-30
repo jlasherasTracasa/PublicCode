@@ -1,5 +1,13 @@
 //! Aceptación en dos etapas: rápida (N1) y completa (contenedor o N1).
 use std::path::{Path, PathBuf};
+
+fn shell_argv(cmd: &str) -> Vec<String> {
+    if cfg!(windows) {
+        vec!["cmd".into(), "/C".into(), cmd.into()]
+    } else {
+        vec!["sh".into(), "-c".into(), cmd.into()]
+    }
+}
 use std::time::Duration;
 
 /// Especificación de la aceptación.
@@ -103,7 +111,7 @@ pub async fn run_accept(spec: &AcceptSpec, tree: &Path, report: &Path) -> Accept
         }
     };
     if let Some(q) = &spec.quick {
-        let (ok, out) = sh(&["sh".into(), "-c".into(), q.clone()], tree, spec.timeout).await;
+        let (ok, out) = sh(&shell_argv(q), tree, spec.timeout).await;
         all.push_str(&format!("=== rápida ===\n{out}\n"));
         if !ok {
             return finish(false, "rápida", &all);
@@ -111,7 +119,7 @@ pub async fn run_accept(spec: &AcceptSpec, tree: &Path, report: &Path) -> Accept
     }
     let argv = match &spec.image {
         Some(img) => docker_argv(img, tree, &spec.full),
-        None => vec!["sh".into(), "-c".into(), spec.full.clone()],
+        None => shell_argv(&spec.full),
     };
     let (ok, out) = sh(&argv, tree, spec.timeout).await;
     all.push_str(&format!("=== completa ===\n{out}\n"));

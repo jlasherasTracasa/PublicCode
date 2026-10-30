@@ -6,7 +6,7 @@ pub mod registry;
 pub mod search;
 pub mod write;
 
-pub use bash::{Bash, head_tail};
+pub use bash::{Bash, head_tail, shell_argv, shell_command};
 pub use edit::EditFile;
 pub use read::ReadFile;
 pub use registry::*;

@@ -4,6 +4,23 @@ use pcode_models::ToolSpec;
 use serde_json::{Value, json};
 use std::time::Duration;
 
+/// Argumentos para ejecutar `cmd` con el shell del sistema (`sh -c` en Unix, `cmd /C` en Windows).
+pub fn shell_argv(cmd: &str) -> Vec<String> {
+    if cfg!(windows) {
+        vec!["cmd".into(), "/C".into(), cmd.into()]
+    } else {
+        vec!["sh".into(), "-c".into(), cmd.into()]
+    }
+}
+
+/// `Command` de tokio que ejecuta `cmd` con el shell del sistema.
+pub fn shell_command(cmd: &str) -> tokio::process::Command {
+    let a = shell_argv(cmd);
+    let mut c = tokio::process::Command::new(&a[0]);
+    c.args(&a[1..]);
+    c
+}
+
 /// Primeras `head` y últimas `tail` líneas, con aviso en medio.
 pub fn head_tail(text: &str, head: usize, tail: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
@@ -42,9 +59,7 @@ impl Tool for Bash {
             .and_then(Value::as_u64)
             .map(Duration::from_secs)
             .map_or(ctx.timeout, |t| t.min(ctx.timeout));
-        let child = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
+        let child = shell_command(cmd)
             .current_dir(&ctx.root)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -109,6 +124,12 @@ mod tests {
         let o = Bash.call(json!({"command":"pwd"}), &ctx(&d)).await;
         let real = std::fs::canonicalize(d.path()).unwrap();
         assert!(o.content.contains(real.to_str().unwrap()));
+    }
+    #[test]
+    fn shell_argv_segun_plataforma() {
+        let a = shell_argv("echo x");
+        assert_eq!(a.last().unwrap(), "echo x");
+        assert_eq!(a[0], if cfg!(windows) { "cmd" } else { "sh" });
     }
     #[test]
     fn head_tail_recorta() {

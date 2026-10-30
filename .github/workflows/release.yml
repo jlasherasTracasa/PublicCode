@@ -1,0 +1,84 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Etiqueta de la release (p. ej. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: Binario ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe: pcode.exe
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            exe: pcode
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install; rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Compilar
+        shell: bash
+        run: cargo build --release --locked -p pcode-cli --target ${{ matrix.target }}
+      - name: Prueba de humo
+        shell: bash
+        run: target/${{ matrix.target }}/release/${{ matrix.exe }} --version
+      - name: Empaquetar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = "pcode-$env:TAG-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item target/${{ matrix.target }}/release/pcode.exe, README.md, install.ps1 -Destination $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+      - name: Empaquetar (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          name="pcode-$TAG-${{ matrix.target }}"
+          mkdir "$name" && cp target/${{ matrix.target }}/release/pcode README.md install.sh "$name/"
+          tar czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pcode-${{ matrix.target }}
+          path: |
+            pcode-*.zip
+            pcode-*.tar.gz
+
+  publish:
+    name: Publicar la release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Sumas SHA-256
+        run: cd dist && sha256sum pcode-* > SHA256SUMS && cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: PublicCode ${{ env.TAG }}
+          generate_release_notes: true
+          files: |
+            dist/pcode-*
+            dist/SHA256SUMS

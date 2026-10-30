@@ -1,5 +1,4 @@
 //! Lectura de la capa superior del overlay como lista de cambios.
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 
 /// Tipo de cambio.
@@ -24,6 +23,24 @@ pub struct Change {
     pub kind: ChangeKind,
 }
 
+/// ¿Es una marca de borrado del overlay (dispositivo de caracteres 0/0)?
+#[cfg(unix)]
+fn is_whiteout(md: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    md.file_type().is_char_device() && md.rdev() == 0
+}
+
+#[cfg(not(unix))]
+fn is_whiteout(_md: &std::fs::Metadata) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_opaque(_p: &Path) -> bool {
+    false
+}
+
+#[cfg(target_os = "linux")]
 fn is_opaque(p: &Path) -> bool {
     let Ok(c) = std::ffi::CString::new(p.as_os_str().as_encoded_bytes()) else {
         return false;
@@ -58,7 +75,7 @@ fn walk(up: &Path, lower: &Path, dir: &Path, out: &mut Vec<Change>) -> std::io::
         let md = std::fs::symlink_metadata(&p)?;
         let ft = md.file_type();
         let exists = std::fs::symlink_metadata(lower.join(&rel)).is_ok();
-        if ft.is_char_device() && md.rdev() == 0 {
+        if is_whiteout(&md) {
             out.push(Change {
                 path: rel,
                 kind: ChangeKind::Deleted,

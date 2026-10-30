@@ -118,6 +118,24 @@ fn collect(cmd: &str, depth: usize, out: &mut Vec<String>) -> Result<(), String>
         if words.is_empty() {
             continue;
         }
+        // Windows: `cmd /C …` y `powershell -Command …` también ocultan órdenes.
+        let w0 = words[0].to_ascii_lowercase();
+        if matches!(w0.as_str(), "cmd" | "cmd.exe")
+            && let Some(p) = words.iter().position(|w| w.eq_ignore_ascii_case("/c"))
+        {
+            collect(&words[p + 1..].join(" "), depth + 1, out)?;
+            continue;
+        }
+        if matches!(
+            w0.as_str(),
+            "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe"
+        ) && let Some(p) = words
+            .iter()
+            .position(|w| w.eq_ignore_ascii_case("-command") || w.eq_ignore_ascii_case("-c"))
+        {
+            collect(&words[p + 1..].join(" "), depth + 1, out)?;
+            continue;
+        }
         if matches!(words[0].as_str(), "sh" | "bash" | "zsh")
             && let Some(p) = words.iter().position(|w| w == "-c")
             && let Some(script) = words.get(p + 1)
@@ -157,6 +175,14 @@ mod tests {
             ["rm -rf x"]
         );
         assert_eq!(simple_commands("A=1 make").unwrap(), ["make"]);
+    }
+    #[test]
+    fn cmd_y_powershell_recursivos() {
+        assert_eq!(simple_commands("cmd /C git stash").unwrap(), ["git stash"]);
+        assert_eq!(
+            simple_commands("powershell -Command \"git push origin main\"").unwrap(),
+            ["git push origin main"]
+        );
     }
     #[test]
     fn respeta_comillas() {

@@ -1,23 +1,70 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  rust:
+  linux:
+    name: Linux (fmt, clippy, tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Toolchain de rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  windows:
+    name: Windows (build, tests portables, humo)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain de rust-toolchain.toml
+        run: rustup show active-toolchain; if ($LASTEXITCODE -ne 0) { rustup toolchain install }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests portables (sin shell de Unix)
+        run: cargo test -p pcode-config -p pcode-models -p pcode-policy -p pcode-protocol -p pcode-skills -p pcode-store -p pcode-server
+      - run: cargo build --release -p pcode-cli
+      - name: Prueba de humo de pcode.exe
+        shell: pwsh
+        run: |
+          $exe = "$PWD\target\release\pcode.exe"
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $d = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "humo")
+          $script = @'
+          [{"message":{"role":"assistant","content":"","tool_calls":[{"id":"1","name":"escribir","arguments":{"path":"hola.txt","content":"desde Windows"}}]},"usage":{"input_tokens":1,"output_tokens":1,"cached_input_tokens":0},"stop_reason":"ToolUse"},
+           {"message":{"role":"assistant","content":"listo","tool_calls":[]},"usage":{"input_tokens":1,"output_tokens":1,"cached_input_tokens":0},"stop_reason":"EndTurn"}]
+          '@
+          Set-Content -Path (Join-Path $d "guion.json") -Value $script -Encoding utf8NoBOM
+          Push-Location $d
+          $env:PCODE_MOCK_SCRIPT = Join-Path $d "guion.json"
+          & $exe run "crea hola.txt"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ((Get-Content hola.txt) -ne "desde Windows") { Write-Error "hola.txt no tiene el contenido esperado"; exit 1 }
+          if (-not (Test-Path .pcode\audit.jsonl)) { Write-Error "falta la auditoría"; exit 1 }
+          Pop-Location
+
   python:
+    name: Tools de Python
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m unittest tools/minisandbox/test_minisandbox.py -v
+
   plan:
+    name: Plan de tareas
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

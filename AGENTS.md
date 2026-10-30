@@ -261,7 +261,7 @@ git add <archivos de Toca> informes/<id>.md && git commit -m "<id>: <resumen en 
 
 - `tools/minisandbox/minisandbox.py ejecutar -- <orden>`: prueba algo sin tocar el repo (skill `mini-sandbox`).
 - `tools/papers/buscar_papers.py`: papers de ACL/EMNLP. Nunca cites uno que no salga de aquí (skill `papers-acl-emnlp`).
-- `tools/bench/linea_base.py` y `tools/bench/reglas.py`: métricas y cumplimiento de reglas.
+- `tools/bench/reglas.py` (lo crea F0.06): cumplimiento de reglas. El banco PublicBench lo monta la skill `banco` (F0.04).
 - `tools/tareas/generar.py`: regenerar y validar el plan (solo el coordinador cambia `plan.toml`).
 
 ## 12. Para el coordinador (no aplica a agentes de tarea)

@@ -17,9 +17,7 @@ pub struct StopHook {
 
 /// Ejecuta la aceptación; devuelve (éxito, salida).
 pub async fn run_acceptance(command: &str, root: &Path, timeout: Duration) -> (bool, String) {
-    let child = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
+    let child = pcode_tools::shell_command(command)
         .current_dir(root)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())

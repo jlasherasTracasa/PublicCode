@@ -9,7 +9,10 @@ fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     if md.file_type().is_symlink() {
         let t = std::fs::read_link(src)?;
         let _ = std::fs::remove_file(dst);
-        std::os::unix::fs::symlink(t, dst)
+        #[cfg(unix)]
+        return std::os::unix::fs::symlink(t, dst);
+        #[cfg(windows)]
+        return std::os::windows::fs::symlink_file(t, dst);
     } else if md.is_dir() {
         std::fs::create_dir_all(dst)?;
         for e in std::fs::read_dir(src)? {
@@ -57,6 +60,9 @@ impl Sandbox {
     }
     /// Borra la capa sin tocar el repo.
     pub fn discard(self) -> Result<(), SandboxError> {
+        #[cfg(not(unix))]
+        fn fix(_p: &Path) {}
+        #[cfg(unix)]
         fn fix(p: &Path) {
             use std::os::unix::fs::PermissionsExt;
             if let Ok(rd) = std::fs::read_dir(p) {

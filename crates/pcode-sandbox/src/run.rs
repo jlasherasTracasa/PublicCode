@@ -59,6 +59,9 @@ pub enum SandboxError {
 
 /// Directorio temporal absoluto (`TMPDIR` si es válido; si no, `/tmp`).
 pub fn tmp_base() -> PathBuf {
+    if cfg!(windows) {
+        return std::env::temp_dir();
+    }
     match std::env::var("TMPDIR") {
         Ok(v) if Path::new(&v).is_absolute() => PathBuf::from(v),
         _ => PathBuf::from("/tmp"),
@@ -67,6 +70,9 @@ pub fn tmp_base() -> PathBuf {
 
 /// ¿Se pueden crear namespaces de usuario?
 pub fn userns_available() -> bool {
+    if !cfg!(target_os = "linux") {
+        return false;
+    }
     static OK: OnceLock<bool> = OnceLock::new();
     *OK.get_or_init(|| {
         std::process::Command::new("unshare")
