@@ -18,6 +18,7 @@ pcode-store = { path = "../pcode-store" }
 pcode-sandbox = { path = "../pcode-sandbox" }
 pcode-backends = { path = "../pcode-backends" }
 pcode-flow = { path = "../pcode-flow" }
+pcode-server = { path = "../pcode-server" }
 async-trait.workspace = true
 clap.workspace = true
 anyhow.workspace = true

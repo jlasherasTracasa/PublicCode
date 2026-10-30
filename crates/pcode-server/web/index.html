@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PublicCode</title>
+<style>
+  :root { --fondo:#fff; --texto:#1b1f24; --acento:#0b5fff; --ok:#1a7f37; --error:#cf222e; --aviso:#9a6700; --borde:#d0d7de; --panel:#f6f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --fondo:#0d1117; --texto:#e6edf3; --acento:#4c8dff; --ok:#3fb950; --error:#ff7b72; --aviso:#d29922; --borde:#30363d; --panel:#161b22; } }
+  body { margin:0; font:14px/1.5 system-ui,sans-serif; background:var(--fondo); color:var(--texto); }
+  header { padding:12px 16px; border-bottom:1px solid var(--borde); font-weight:600; }
+  main { display:grid; grid-template-columns:minmax(220px,300px) 1fr; gap:0; min-height:calc(100vh - 50px); }
+  @media (max-width:700px) { main { grid-template-columns:1fr; } }
+  aside { border-right:1px solid var(--borde); padding:12px; background:var(--panel); }
+  section { padding:12px 16px; }
+  textarea,input { width:100%; box-sizing:border-box; font:inherit; color:inherit; background:var(--fondo); border:1px solid var(--borde); border-radius:6px; padding:8px; }
+  button { font:inherit; border:1px solid var(--borde); background:var(--acento); color:#fff; border-radius:6px; padding:6px 12px; cursor:pointer; margin-top:6px; }
+  button:focus-visible, li:focus-visible { outline:2px solid var(--acento); outline-offset:2px; }
+  ul { list-style:none; padding:0; margin:12px 0 0; }
+  li { padding:6px 8px; border:1px solid var(--borde); border-radius:6px; margin-bottom:6px; cursor:pointer; background:var(--fondo); }
+  li[aria-current="true"] { border-color:var(--acento); }
+  pre { white-space:pre-wrap; background:var(--panel); border:1px solid var(--borde); border-radius:6px; padding:8px; margin:6px 0; }
+  .running::before { content:"⏳ "; } .done::before { content:"✓ "; color:var(--ok); } .failed::before, .stuck::before { content:"✗ "; color:var(--error); }
+  .waitingApproval::before { content:"⚠ "; color:var(--aviso); }
+</style>
+</head>
+<body>
+<header>PublicCode</header>
+<main>
+  <aside>
+    <label for="tarea">Nueva tarea</label>
+    <textarea id="tarea" rows="3"></textarea>
+    <label for="backend">Backend (opcional)</label>
+    <input id="backend" placeholder="p. ej. glm">
+    <label for="acepta">Aceptación (opcional)</label>
+    <input id="acepta" placeholder="p. ej. cargo test">
+    <button id="lanzar">Lanzar</button>
+    <ul id="sesiones" aria-label="Sesiones"></ul>
+  </aside>
+  <section>
+    <h2 id="titulo">Sin sesión seleccionada</h2>
+    <div id="transcripcion" aria-live="polite"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let sesiones = [], actual = null, trans = {};
+async function rpc(method, params) {
+  const r = await fetch("/rpc", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params: params || {} }) });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message);
+  return j.result;
+}
+function pintaLista() {
+  const ul = $("sesiones"); ul.replaceChildren();
+  for (const s of sesiones) {
+    const li = document.createElement("li");
+    li.tabIndex = 0; li.className = s.state; li.textContent = `#${s.id} ${s.title}`;
+    if (s.id === actual) li.setAttribute("aria-current", "true");
+    li.onclick = li.onkeydown = (e) => { if (e.type === "click" || e.key === "Enter") elige(s.id); };
+    ul.appendChild(li);
+  }
+}
+async function elige(id) {
+  actual = id; trans[id] = await rpc("session.transcript", { session: id }); pintaLista(); pintaTrans();
+}
+function pintaTrans() {
+  const s = sesiones.find((x) => x.id === actual);
+  $("titulo").textContent = s ? `#${s.id} ${s.title} — ${s.state}` : "Sin sesión seleccionada";
+  const box = $("transcripcion"); box.replaceChildren();
+  for (const e of trans[actual] || []) { const p = document.createElement("pre"); p.textContent = e.text; box.appendChild(p); }
+}
+$("lanzar").onclick = async () => {
+  const task = $("tarea").value.trim(); if (!task) return;
+  await rpc("session.create", { task, backend: $("backend").value || null, accept: $("acepta").value || null });
+  $("tarea").value = "";
+};
+async function carga() { sesiones = await rpc("session.list"); pintaLista(); }
+carga();
+const es = new EventSource("/eventos");
+es.onmessage = (m) => {
+  const e = JSON.parse(m.data);
+  if (e.tipo === "sessionUpdated") {
+    const i = sesiones.findIndex((s) => s.id === e.session.id);
+    if (i >= 0) sesiones[i] = e.session; else sesiones.unshift(e.session);
+    pintaLista(); if (e.session.id === actual) pintaTrans();
+  } else if (e.tipo === "transcript") {
+    (trans[e.session] ||= []).push(e.entry); if (e.session === actual) pintaTrans();
+  }
+};
+</script>
+</body>
+</html>

@@ -11,11 +11,24 @@ escritorio** (Linux, macOS y Windows), **navegador**, **móvil** (aprobaciones),
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
-> **Estado: diseño, fase 0.** Este repositorio contiene el plan completo, el plan de implementación
-> desgranado para agentes pequeños (Haiku 5.5), las skills y las primeras tools que ya funcionan:
-> el prototipo de [mini sandbox](tools/minisandbox/) (9 tests en verde) y el buscador de
-> [papers de ACL/EMNLP 2026](tools/papers/). El CLI `pcode` todavía no existe: es lo primero que se
-> construye (ver [docs/implementacion.md](docs/implementacion.md)).
+> **Estado: F0–F3 y el núcleo de F5 implementados y probados** (más de 240 tests, `clippy -D warnings`
+> limpio). Funciona hoy:
+>
+> | Parte | Qué hay | Tareas |
+> |---|---|---|
+> | Núcleo | bucle del agente con política (capacidades por capas, análisis de shell), auditoría con hash encadenado, presupuestos, hook de parada, detector de atasco, compresión de salidas; proveedores OpenAI-compatible (LiteLLM, vLLM, Ollama) con SSE y reparación de tool calls | F1.01–F1.21 |
+> | Tools | `leer`, `escribir`, `editar`, `buscar`, `listar`, `bash` | F1.08–F1.12 |
+> | Mini sandbox | overlay CoW sin privilegios, sin red, aplicar/descartar/diff, `pcode sandbox …` | F2.01–F2.03 |
+> | Backends | Claude Code, Gemini CLI, Copilot CLI, opencode y modelo propio; `pcode run --backend X` | F2.06–F2.12, F2.18 |
+> | Skills | registro, exportación a Claude/AGENTS/Copilot/Gemini/opencode, contratos | F2.13–F2.15 |
+> | Flujos | tareas (cabeceras de SO_IA), DAG, estado por eventos (importa el `estado.json` real de SO_IA), planificador, integración sin conflictos de lockfile, clasificador de CI, `pcode flow run` | F3.01–F3.08, F3.10 |
+> | Demonio | API JSON-RPC + eventos SSE + página web + cola de aprobaciones, tipos TypeScript generados, `pcode daemon` | F5.01–F5.03 |
+>
+> **Pendiente** (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
+> seccomp, proxy de salida y red filtrada, sandbox en macOS, servidor MCP, TUI, UI React y app de
+> escritorio, PWA, ACP, VS Code, GitHub, contexto/memoria/router (F4), aprendizaje de skills (F6) y
+> endurecimiento (F7). Los adaptadores de CLIs de terceros usan fixtures sintéticas hasta que F0.03
+> (verificación con las CLIs instaladas) aporte salidas reales.
 
 ---
 

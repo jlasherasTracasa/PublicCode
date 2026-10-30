@@ -1,0 +1,21 @@
+[package]
+name = "pcode-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pcode-protocol = { path = "../pcode-protocol" }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tempfile.workspace = true

@@ -17,6 +17,12 @@ struct Cli {
 enum Cmd {
     /// Ejecuta una tarea con el bucle del agente.
     Run(run::RunArgs),
+    /// Arranca el demonio (API JSON-RPC, eventos y página web) en loopback.
+    Daemon {
+        /// Puerto.
+        #[arg(long, default_value_t = 7878)]
+        puerto: u16,
+    },
     /// Flujos de tareas (sustituye al orquestador de SO_IA).
     #[command(subcommand)]
     Flow(flow_cmd::FlowCmd),
@@ -36,6 +42,19 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Some(Cmd::Run(a)) => std::process::exit(run::run(a).await?),
+        Some(Cmd::Daemon { puerto }) => {
+            let mut b = [0u8; 16];
+            std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
+            let token: String = b.iter().map(|x| format!("{x:02x}")).collect();
+            let st = pcode_server::AppState::new(
+                std::env::current_dir()?,
+                std::env::current_exe()?,
+                Some(token.clone()),
+            );
+            eprintln!("pcoded: http://127.0.0.1:{puerto}/?t={token}");
+            pcode_server::serve(st, std::net::SocketAddr::from(([127, 0, 0, 1], puerto))).await?;
+            Ok(())
+        }
         Some(Cmd::Flow(c)) => std::process::exit(flow_cmd::flow_cmd(c).await?),
         Some(Cmd::Sandbox(c)) => std::process::exit(backend_run::sandbox_cmd(c).await?),
         None => {
