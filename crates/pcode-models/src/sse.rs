@@ -89,16 +89,16 @@ pub fn accumulate_openai_stream(events: &[SseEvent]) -> Result<ChatResponse, Mod
             for t in arr {
                 let idx = t.get("index").and_then(Value::as_u64).unwrap_or(0);
                 let ent = calls.entry(idx).or_default();
-                if let Some(id) = t.get("id").and_then(Value::as_str) {
-                    if ent.0.is_empty() {
-                        ent.0 = id.into();
-                    }
+                if let Some(id) = t.get("id").and_then(Value::as_str)
+                    && ent.0.is_empty()
+                {
+                    ent.0 = id.into();
                 }
                 if let Some(f) = t.get("function") {
-                    if let Some(n) = f.get("name").and_then(Value::as_str) {
-                        if ent.1.is_empty() {
-                            ent.1 = n.into();
-                        }
+                    if let Some(n) = f.get("name").and_then(Value::as_str)
+                        && ent.1.is_empty()
+                    {
+                        ent.1 = n.into();
                     }
                     if let Some(a) = f.get("arguments").and_then(Value::as_str) {
                         ent.2.push_str(a);
