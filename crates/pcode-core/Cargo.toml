@@ -1,0 +1,17 @@
+[package]
+name = "pcode-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pcode-models = { path = "../pcode-models" }
+pcode-tools = { path = "../pcode-tools" }
+pcode-policy = { path = "../pcode-policy" }
+serde_json.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

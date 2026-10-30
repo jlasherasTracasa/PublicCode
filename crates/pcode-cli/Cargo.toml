@@ -9,5 +9,21 @@ name = "pcode"
 path = "src/main.rs"
 
 [dependencies]
+pcode-config = { path = "../pcode-config" }
+pcode-models = { path = "../pcode-models" }
+pcode-tools = { path = "../pcode-tools" }
+pcode-policy = { path = "../pcode-policy" }
+pcode-core = { path = "../pcode-core" }
+pcode-store = { path = "../pcode-store" }
 clap.workspace = true
 anyhow.workspace = true
+tokio.workspace = true
+toml.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
