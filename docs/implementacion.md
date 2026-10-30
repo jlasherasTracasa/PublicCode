@@ -193,4 +193,49 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F3.11-modo-so-ia](../tareas/F3.11-modo-so-ia.md) | Modo SO_IA: usar `ci/tareas` tal cual y ejecución en sombra frente a `orquestador.py` | coordinador | F3.10 | pendiente |
 | [F3.12-revision-cruzada](../tareas/F3.12-revision-cruzada.md) | Revisión cruzada del diff por otro backend (rúbrica del repo y seguridad del parche) | haiku | F3.10 | pendiente |
 | [F3.13-bench](../tareas/F3.13-bench.md) | `pcode bench`: ejecutar SinapsisBench con cualquier backend | haiku | F3.10, F0.04 | pendiente |
+
+### F4
+
+| Tarea | Qué | Ejecutor | Depende | Estado |
+|---|---|---|---|---|
+| [F4.01-contexto-tool](../tareas/F4.01-contexto-tool.md) | Tool `contexto` (fijar, soltar, resumir) y estado del proyecto que sobrevive a la compactación | haiku | F1.21 | pendiente |
+| [F4.02-compactacion-prefijo](../tareas/F4.02-compactacion-prefijo.md) | Compactación por segmentos con prefijo estable (no rompe la caché) | haiku | F4.01 | pendiente |
+| [F4.03-memoria-facetas](../tareas/F4.03-memoria-facetas.md) | `pcode-memory`: memoria de archivos por facetas invalidada por hash | haiku | F1.19 | pendiente |
+| [F4.04-tree-sitter](../tareas/F4.04-tree-sitter.md) | Mapa del repo con tree-sitter y tool `editar_simbolo` | haiku | F1.10 | pendiente |
+| [F4.05-busqueda-hibrida](../tareas/F4.05-busqueda-hibrida.md) | Búsqueda híbrida (BM25 + símbolos, RRF), compresión de código y subagente bibliotecario | haiku | F4.04, F4.03 | pendiente |
+| [F4.06-contexto-por-rol](../tareas/F4.06-contexto-por-rol.md) | Contexto por rol para subagentes y tablero compartido acotado | haiku | F4.02, F2.06 | pendiente |
+| [F4.07-router-historico](../tareas/F4.07-router-historico.md) | Router por histórico del banco y rol crítico opcional | haiku | F3.13 | pendiente |
+| [F4.08-parada-temprana](../tareas/F4.08-parada-temprana.md) | Parada temprana guiada por experiencia y puerta de incertidumbre antes de acciones caras | haiku | F4.07, F1.21 | pendiente |
+| [F4.09-memoria-episodica](../tareas/F4.09-memoria-episodica.md) | Memoria episódica verificada: experiencia de tareas anteriores solo si pasó `acepta` | haiku | F4.05, F3.03 | pendiente |
+| [F4.10-busqueda-tools](../tareas/F4.10-busqueda-tools.md) | Búsqueda y deduplicación de tools: anunciar solo las relevantes | haiku | F2.16 | pendiente |
+| [F4.11-preguntar](../tareas/F4.11-preguntar.md) | Tool `preguntar` con presupuesto (interactivo, flujo y banco) | haiku | F3.10 | pendiente |
+| [F4.12-guion](../tareas/F4.12-guion.md) | Tool `guion`: secuencia determinista de órdenes en una sola llamada | haiku | F1.17 | pendiente |
+
+### F5
+
+| Tarea | Qué | Ejecutor | Depende | Estado |
+|---|---|---|---|---|
+| [F5.01-demonio-api](../tareas/F5.01-demonio-api.md) | `pcoded`: API JSON-RPC + SSE en socket Unix y cola de aprobaciones | haiku | F3.10 | pendiente |
+| [F5.02-tui](../tareas/F5.02-tui.md) | TUI con ratatui: sesiones, transcripción en vivo, aprobaciones y diffs | haiku | F5.01 | pendiente |
+| [F5.03-panel-web](../tareas/F5.03-panel-web.md) | Panel web estático servido por `pcoded` | haiku | F5.01 | pendiente |
+| [F5.04-acp](../tareas/F5.04-acp.md) | Servidor ACP (Agent Client Protocol) para usar PublicCode desde editores | haiku | F5.01 | pendiente |
+| [F5.05-github](../tareas/F5.05-github.md) | GitHub: PR del trabajo integrado, comentarios con resultados y checks | haiku | F3.10, F2.11 | pendiente |
+
+### F6
+
+| Tarea | Qué | Ejecutor | Depende | Estado |
+|---|---|---|---|---|
+| [F6.01-destilador-skills](../tareas/F6.01-destilador-skills.md) | Destilador de skills desde parejas fallo/acierto (a cuarentena) | haiku | F4.09, F2.15 | pendiente |
+| [F6.02-puerta-regresion](../tareas/F6.02-puerta-regresion.md) | Puerta de regresión: una skill sale de cuarentena solo si mejora sin romper nada | haiku | F6.01, F3.13 | pendiente |
+| [F6.03-gobierno-skills](../tareas/F6.03-gobierno-skills.md) | Gobierno de skills y subagentes reutilizables | haiku | F6.02 | pendiente |
+| [F6.04-regresion-nocturna](../tareas/F6.04-regresion-nocturna.md) | Regresión nocturna de SinapsisBench con aviso automático | coordinador | F3.13 | pendiente |
+| [F6.05-trayectorias](../tareas/F6.05-trayectorias.md) | Puntuación estructural de trayectorias y exportación de trazas | haiku | F3.03 | pendiente |
+
+### F7
+
+| Tarea | Qué | Ejecutor | Depende | Estado |
+|---|---|---|---|---|
+| [F7.01-redteam-skills](../tareas/F7.01-redteam-skills.md) | Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas | haiku | F6.02, F2.20 | pendiente |
+| [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | haiku | F7.01, F3.13 | pendiente |
+| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.03, F6.04 | pendiente |
 <!-- tabla:fin -->

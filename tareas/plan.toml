@@ -2062,3 +2062,635 @@ pub struct BenchRow { pub id: String, pub ok_first: bool, pub ok_final: bool, pu
 pub fn report_markdown(runs: &[(String, Vec<BenchRow>)]) -> String;
 '''
 tests = ["informe_tabla_dos_backends", "bench_mock_dos_tareas"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F4 — Contexto, memoria y router
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F4.01"
+nombre = "contexto-tool"
+titulo = "Tool `contexto` (fijar, soltar, resumir) y estado del proyecto que sobrevive a la compactación"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F1.21"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/context.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core context"
+contexto = ["docs/papers.md (sección 1: Context as a Tool, Memory as Action, SLUMP)", "crates/pcode-core/src/agent.rs"]
+objetivo = '''
+1. La tool `contexto` la intercepta el bucle (no está en `pcode-tools`): `{"op": "fijar"|"soltar"|"nota"|"estado", "ids": [int]?, "texto": str?}`.
+   - Cada resultado de tool lleva un id corto visible (`[r12]`).
+   - `soltar`: sustituye los resultados indicados por `"[r12 soltado: <primera línea>]"`.
+   - `fijar`: marca resultados que la compactación no puede tocar.
+   - `nota`: añade una decisión o restricción al **estado del proyecto** (`.pcode/estado-proyecto.md`).
+   - `estado`: devuelve el estado del proyecto.
+2. El estado del proyecto se reinyecta como mensaje de sistema adicional tras cada compactación (F4.02).
+'''
+firmas = '''
+pub struct ContextLedger { /* ids → índice de mensaje, fijados */ }
+impl ContextLedger {
+    pub fn new() -> Self;
+    pub fn register_result(&mut self, msg_index: usize) -> u32;
+    pub fn drop_results(&mut self, ids: &[u32], messages: &mut [pcode_models::Message]) -> usize;
+    pub fn pin(&mut self, ids: &[u32]);
+    pub fn is_pinned(&self, msg_index: usize) -> bool;
+}
+pub fn append_project_note(root: &std::path::Path, note: &str) -> std::io::Result<()>;
+pub fn read_project_state(root: &std::path::Path) -> std::io::Result<String>;
+'''
+tests = ["soltar_sustituye_por_marcador", "fijado_se_respeta", "nota_persiste_en_archivo", "agente_usa_contexto_con_mock"]
+papers = ["Context as a Tool (Findings ACL 2026)", "Memory as Action (Findings ACL 2026)", "When the Specification Emerges / SLUMP (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.02"
+nombre = "compactacion-prefijo"
+titulo = "Compactación por segmentos con prefijo estable (no rompe la caché)"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F4.01"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/compact.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core compact"
+contexto = ["docs/papers.md (TokenPilot, SWE-MEM, survey de compresión)", "crates/pcode-core/src/context.rs"]
+objetivo = '''
+1. Prefijo estable = mensajes de sistema + índice de skills + definición de tools: **nunca** se modifica.
+2. Historial en segmentos (un segmento = un turno del asistente y sus resultados). Cuando el uso
+   estimado (4 caracteres por token) supera `umbral` × contexto, los segmentos más antiguos NO fijados
+   se sustituyen por UN mensaje resumen en la frontera, generado con el rol `compactador` (un
+   `Provider`). Los N segmentos más recientes se conservan siempre.
+3. Tras compactar: el estado del proyecto (F4.01) va justo después del resumen.
+4. El resumen debe conservar rutas de archivos, errores abiertos y restricciones: el prompt del
+   compactador lo exige y un test comprueba que las rutas mencionadas siguen estando.
+'''
+firmas = '''
+pub struct CompactCfg { pub context_tokens: u64, pub threshold: f32, pub keep_recent_segments: usize }
+pub fn estimate_tokens(messages: &[pcode_models::Message]) -> u64;
+pub fn segments(messages: &[pcode_models::Message], prefix_len: usize) -> Vec<std::ops::Range<usize>>;
+pub async fn compact(messages: &mut Vec<pcode_models::Message>, prefix_len: usize, ledger: &crate::context::ContextLedger,
+                     cfg: &CompactCfg, summarizer: &dyn pcode_models::Provider, model: &str) -> Result<bool, pcode_models::ModelError>;
+'''
+tests = ["prefijo_intacto_byte_a_byte", "respeta_fijados", "conserva_recientes", "resumen_conserva_rutas (mock compactador)", "no_compacta_bajo_umbral"]
+papers = ["TokenPilot (Findings EMNLP 2026)", "SWE-MEM (EMNLP 2026)", "Context Compression for LLM Agents: A Survey (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.03"
+nombre = "memoria-facetas"
+titulo = "`pcode-memory`: memoria de archivos por facetas invalidada por hash"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F1.19"]
+toca = ["crates/pcode-memory/Cargo.toml", "crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/facets.rs"]
+acepta = "cargo test -p pcode-memory facets"
+contexto = ["docs/papers.md (Prism)", "crates/pcode-store/src/lib.rs"]
+objetivo = '''
+1. Tabla SQLite `file_facets(path, sha256, api, invariants, pitfalls, updated_ms, source_task)`.
+2. `get(path, current_sha)`: devuelve las facetas solo si el hash coincide (si el archivo cambió,
+   la memoria está caducada y no se usa).
+3. `put`: guarda las facetas que escribe el agente (tool `memoria_archivo` en F4.05) o el destilador.
+4. `for_task(paths)`: texto compacto con las facetas válidas de esos archivos, para el contexto.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq)] pub struct Facets { pub api: String, pub invariants: String, pub pitfalls: String }
+pub struct FacetStore { /* conn */ }
+impl FacetStore {
+    pub fn open(path: &std::path::Path) -> rusqlite::Result<Self>;
+    pub fn get(&self, path: &str, sha256: &str) -> rusqlite::Result<Option<Facets>>;
+    pub fn put(&self, path: &str, sha256: &str, f: &Facets, source_task: &str) -> rusqlite::Result<()>;
+    pub fn for_task(&self, root: &std::path::Path, paths: &[String]) -> rusqlite::Result<String>;
+}
+pub fn sha256_file(path: &std::path::Path) -> std::io::Result<String>;
+'''
+tests = ["facetas_validas_con_mismo_hash", "facetas_caducan_si_cambia", "for_task_omite_caducadas"]
+papers = ["Prism (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.04"
+nombre = "tree-sitter"
+titulo = "Mapa del repo con tree-sitter y tool `editar_simbolo`"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F1.10"]
+toca = ["crates/pcode-tools/Cargo.toml", "crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/symbols.rs"]
+acepta = "cargo test -p pcode-tools symbols"
+contexto = ["docs/papers.md (CODESTRUCT)", "crates/pcode-tools/src/edit.rs"]
+objetivo = '''
+1. Dependencias nuevas permitidas: `tree-sitter`, `tree-sitter-rust` y `tree-sitter-python`.
+2. `symbols(path, source)`: lista de `Symbol {kind, name, qualified, start_line, end_line}` para fn,
+   struct, enum, trait, impl (con el tipo) y mod en Rust; def y class en Python.
+3. `repo_map(root, max_lines)`: por archivo, sus símbolos con la firma (primera línea), recortado a
+   `max_lines`.
+4. Tool `editar_simbolo` (`[Write]`): `{"path", "symbol": "Tipo::metodo"|"funcion", "new_source"}`
+   reemplaza el rango completo del símbolo. Si el nombre es ambiguo o no existe → error con la lista
+   de candidatos.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq)] pub struct Symbol { pub kind: String, pub name: String, pub qualified: String, pub start_line: usize, pub end_line: usize }
+pub fn symbols(path: &std::path::Path, source: &str) -> Vec<Symbol>;
+pub fn repo_map(root: &std::path::Path, max_lines: usize) -> String;
+pub struct EditSymbol;
+'''
+tests = ["simbolos_rust", "simbolos_python", "metodo_cualificado_por_impl", "editar_simbolo_reemplaza", "editar_simbolo_ambiguo_lista_candidatos", "repo_map_recorta"]
+papers = ["CODESTRUCT (ACL 2026)"]
+
+[[tarea]]
+id = "F4.05"
+nombre = "busqueda-hibrida"
+titulo = "Búsqueda híbrida (BM25 + símbolos, RRF), compresión de código y subagente bibliotecario"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F4.04", "F4.03"]
+toca = ["crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/search.rs", "crates/pcode-memory/src/compress_code.rs"]
+acepta = "cargo test -p pcode-memory search && cargo test -p pcode-memory compress_code"
+contexto = ["docs/papers.md (Librarian, CODEPROMPTZIP)", "crates/pcode-tools/src/symbols.rs"]
+objetivo = '''
+1. Índice BM25 propio (k1 = 1.2, b = 0.75) sobre fragmentos = símbolos (o ventanas de 60 líneas para
+   archivos sin símbolos); tokenizador de código (separa camelCase y snake_case).
+2. Coincidencia por nombre de símbolo como segunda lista; fusión con RRF (k = 60).
+3. `compress_code(fragment, query, budget_tokens)`: conserva firmas, el cuerpo de los símbolos que
+   casan con la consulta y los comentarios `///`; sustituye el resto de cuerpos por `{ … }`.
+4. El índice es incremental por hash de archivo: es la base del «bibliotecario» persistente que se
+   expone por MCP (`buscar_repo`).
+'''
+firmas = '''
+pub struct Hit { pub path: String, pub symbol: Option<String>, pub start_line: usize, pub score: f32 }
+pub struct RepoIndex { /* bm25, símbolos, hashes */ }
+impl RepoIndex {
+    pub fn build(root: &std::path::Path) -> std::io::Result<RepoIndex>;
+    pub fn refresh(&mut self, root: &std::path::Path) -> std::io::Result<usize>;
+    pub fn search(&self, query: &str, k: usize) -> Vec<Hit>;
+}
+pub fn rrf(lists: &[Vec<String>], k: f32) -> Vec<(String, f32)>;
+pub fn compress_code(fragment: &str, query: &str, budget_tokens: usize) -> String;
+'''
+tests = ["bm25_encuentra_por_contenido", "simbolo_por_nombre_gana", "rrf_fusiona", "refresh_solo_cambiados", "compress_code_conserva_firmas_y_cuerpo_relevante"]
+papers = ["Long Live the Librarian! (EMNLP 2026)", "CODEPROMPTZIP (Findings ACL 2026)"]
+
+[[tarea]]
+id = "F4.06"
+nombre = "contexto-por-rol"
+titulo = "Contexto por rol para subagentes y tablero compartido acotado"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F4.02", "F2.06"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/roles.rs"]
+acepta = "cargo test -p pcode-core roles"
+contexto = ["docs/papers.md (RCR-Router, Dynamic Context Allocation)", "crates/pcode-backends/src/types.rs"]
+objetivo = '''
+1. Roles `Explorador` (solo lectura: tarea + mapa del repo + pregunta concreta), `Implementador`
+   (tarea + relevo + facetas de los archivos de `toca` + skills), `Revisor` (diff + rúbrica, sin el
+   historial del implementador) y `Critico` (plan propuesto + restricciones).
+2. `build_context(role, inputs)` devuelve los mensajes iniciales del subagente; **nunca** copia el
+   historial del padre.
+3. `Board`: tablero clave-valor acotado (máximo N entradas y M caracteres) que comparten los
+   subagentes paralelos de un flujo; se inyecta como un mensaje compacto al inicio de cada ronda.
+'''
+firmas = '''
+#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum Role { Explorer, Implementer, Reviewer, Critic }
+pub struct RoleInputs { pub task: String, pub handoff: Option<String>, pub repo_map: Option<String>, pub facets: Option<String>,
+                        pub skills_index: Option<String>, pub diff: Option<String>, pub rubric: Vec<String>, pub plan: Option<String> }
+pub fn build_context(role: Role, i: &RoleInputs) -> Vec<pcode_models::Message>;
+pub struct Board { /* BTreeMap, límites */ }
+impl Board { pub fn new(max_entries: usize, max_chars: usize) -> Self; pub fn set(&mut self, k: &str, v: &str) -> bool; pub fn render(&self) -> String; }
+'''
+tests = ["revisor_no_ve_historial", "explorador_sin_tools_de_escritura (comprobado por la política hija)", "tablero_respeta_limites", "implementador_incluye_relevo"]
+papers = ["RCR-Router (Findings EMNLP 2026)", "Dynamic Context Allocation (EMNLP 2026)", "The Collaboration Tax (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.07"
+nombre = "router-historico"
+titulo = "Router por histórico del banco y rol crítico opcional"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F3.13"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/router.rs"]
+acepta = "cargo test -p pcode-flow router"
+contexto = ["docs/backends.md (asignación de roles)", "crates/pcode-flow/src/bench.rs", "docs/papers.md (Steer Don't Solve, Collaboration Tax)"]
+objetivo = '''
+1. Rasgos de la tarea: modo, crate o directorio principal de `toca` y etiquetas del frontmatter.
+2. Por backend y rasgo: tasa de éxito a la primera con suavizado de Laplace y coste medio (tokens),
+   a partir de los `BenchRow`.
+3. `choose(task, candidates, weights)`: maximiza `éxito − λ·coste_normalizado`; con menos de 3
+   muestras usa el backend por defecto del rol.
+4. Crítico: si `critic = true` en la tarea o el router lo recomienda (tasa < 0,5), el plan del
+   implementador pasa por un modelo barato antes de ejecutar.
+5. Regla de colaboración: no crear subagentes si la tarea toca ≤ 2 archivos.
+'''
+firmas = '''
+pub struct RouterStats { /* (backend, rasgo) → (éxitos, intentos, tokens) */ }
+impl RouterStats { pub fn from_rows(rows: &[(String, TaskDef, BenchRow)]) -> Self; }
+pub fn choose(stats: &RouterStats, task: &TaskDef, candidates: &[String], lambda: f32, default: &str) -> String;
+pub fn needs_critic(stats: &RouterStats, task: &TaskDef, backend: &str) -> bool;
+pub fn allow_subagents(task: &TaskDef) -> bool;
+'''
+tests = ["elige_mejor_por_exito", "penaliza_coste", "pocas_muestras_usa_defecto", "critico_si_tasa_baja", "sin_subagentes_en_tareas_pequenas"]
+
+[[tarea]]
+id = "F4.08"
+nombre = "parada-temprana"
+titulo = "Parada temprana guiada por experiencia y puerta de incertidumbre antes de acciones caras"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F4.07", "F1.21"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/early_stop.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core early_stop"
+contexto = ["docs/papers.md (EET, How to Speculate about Uncertainty)", "crates/pcode-core/src/stuck.rs"]
+objetivo = '''
+1. Experiencia: para tareas parecidas (mismo rasgo del router) se conoce la mediana de pasos hasta
+   aceptar. Si se pasa de 2× esa mediana sin escritura en los últimos 5 pasos → `Outcome::Stuck("parada temprana")`.
+2. Puerta de incertidumbre: antes de ejecutar una tool `Irreversible` o `bash` con efectos de red,
+   si en el mismo turno hubo una llamada reparada (F1.07) o el texto del asistente contiene
+   marcadores de duda («no estoy seguro», «quizá», «probablemente»), se pide confirmación: en un
+   flujo se devuelve como «requiere aprobación» y en `pcode run` se pregunta.
+'''
+firmas = '''
+pub struct Experience { pub median_steps: u32 }
+pub fn should_stop_early(steps: u32, steps_since_write: u32, exp: Option<&Experience>) -> bool;
+pub fn uncertainty_gate(assistant_text: &str, had_repaired_call: bool) -> bool;
+'''
+tests = ["para_si_dobla_mediana_sin_escribir", "no_para_si_escribe", "puerta_por_duda", "puerta_por_reparacion", "sin_experiencia_no_para"]
+papers = ["EET (Findings ACL 2026)", "How to Speculate about Uncertainty in Agentic Coding (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F4.09"
+nombre = "memoria-episodica"
+titulo = "Memoria episódica verificada: experiencia de tareas anteriores solo si pasó `acepta`"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F4.05", "F3.03"]
+toca = ["crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/episodic.rs"]
+acepta = "cargo test -p pcode-memory episodic"
+contexto = ["docs/papers.md (MemGovern, MemGuard, Experience-Following, Memory Transfer, Agent Memory Distillation)", "../SO_IA/ci/informes/ (ejemplos reales)"]
+objetivo = '''
+1. Episodio = {tarea, resumen del informe, archivos, verificado: bool, intentos, backend, lecciones}.
+   Se alimenta de `informes/*.md` y de los eventos del flujo (`AceptacionOk`/`Fallo`).
+2. `recall(task_text, k)`: BM25 sobre los episodios **verificados** únicamente; los fallidos solo se
+   devuelven en `recall_failures` (para el relevo, marcados como tales).
+3. Formato compacto para el contexto: 3 líneas por episodio como máximo.
+4. Las lecciones de un modelo fuerte se marcan con su procedencia (memoria de maestro → alumno).
+'''
+firmas = '''
+#[derive(Debug, Clone)] pub struct Episode { pub task: String, pub summary: String, pub files: Vec<String>, pub verified: bool, pub attempts: u32, pub backend: String, pub lessons: Vec<String> }
+pub struct EpisodicMemory { /* episodios + índice */ }
+impl EpisodicMemory {
+    pub fn load_reports(dir: &std::path::Path, verified: &std::collections::HashSet<String>) -> std::io::Result<Self>;
+    pub fn recall(&self, task_text: &str, k: usize) -> Vec<&Episode>;
+    pub fn recall_failures(&self, task_text: &str, k: usize) -> Vec<&Episode>;
+    pub fn render(eps: &[&Episode]) -> String;
+}
+'''
+tests = ["recall_solo_verificados", "fallidos_aparte", "render_compacto", "carga_informes_reales (fixture con 3 informes de SO_IA)"]
+papers = ["MemGovern (Findings EMNLP 2026)", "MemGuard (EMNLP 2026)", "How Memory Management Impacts LLM Agents (ACL 2026)", "Agent Memory Distillation (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.10"
+nombre = "busqueda-tools"
+titulo = "Búsqueda y deduplicación de tools: anunciar solo las relevantes"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F2.16"]
+toca = ["crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/catalog.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-tools catalog && cargo test -p pcode-core"
+contexto = ["docs/papers.md (ToolScope, ProMCP, Scaling Enterprise Cloud Agents)", "crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+1. Con más de `max_visible` tools (por defecto 20), se anuncian las nativas más una tool
+   `buscar_tools {consulta}` que devuelve las k más relevantes (BM25 sobre nombre y descripción);
+   las devueltas pasan a ser visibles en los turnos siguientes. La búsqueda va en el bucle principal,
+   no en un subagente.
+2. Deduplicación: tools de distintos servidores MCP con el mismo nombre o la misma descripción
+   normalizada se fusionan en una, con prioridad para la de menor privilegio.
+'''
+firmas = '''
+pub struct ToolCatalog { /* registro + índice */ }
+impl ToolCatalog {
+    pub fn new(reg: ToolRegistry, max_visible: usize) -> Self;
+    pub fn visible_specs(&self, unlocked: &std::collections::BTreeSet<String>, allow: impl Fn(&str, &[Effect]) -> bool) -> Vec<pcode_models::ToolSpec>;
+    pub fn search(&self, query: &str, k: usize) -> Vec<String>;
+}
+pub fn dedupe(specs: Vec<(pcode_models::ToolSpec, Vec<Effect>)>) -> Vec<(pcode_models::ToolSpec, Vec<Effect>)>;
+'''
+tests = ["pocas_tools_todas_visibles", "muchas_tools_solo_nativas_y_buscar", "buscar_desbloquea", "dedupe_prefiere_menor_privilegio"]
+papers = ["ToolScope (ACL 2026)", "ProMCP (Findings ACL 2026)", "Scaling Enterprise Cloud Agents to Thousands of APIs (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F4.11"
+nombre = "preguntar"
+titulo = "Tool `preguntar` con presupuesto (interactivo, flujo y banco)"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F3.10"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/ask.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core ask"
+contexto = ["docs/papers.md (Ask or Assume?)"]
+objetivo = '''
+`preguntar {pregunta, opciones?}` interceptada por el bucle, con un `AskMode`:
+- `Interactive`: la pregunta se muestra en la terminal y la respuesta vuelve como resultado.
+- `Flow`: emite un evento `NecesitaCoordinador{tarea, pregunta}` y termina con
+  `Outcome::Failed("pregunta pendiente")`, para retomar con la respuesta en el relevo.
+- `Bench`: responde «Decide tú con lo que sabes» y cuenta la pregunta.
+Presupuesto de preguntas por tarea (por defecto 2). Si se supera, se responde «sin más preguntas».
+'''
+firmas = '''
+pub enum AskMode { Interactive, Flow, Bench }
+pub struct AskBudget { pub max: u32, pub used: u32 }
+pub fn handle_ask(mode: &AskMode, budget: &mut AskBudget, question: &str, stdin: &mut dyn std::io::BufRead) -> AskResult;
+pub enum AskResult { Answer(String), Escalate(String) }
+'''
+tests = ["bench_responde_y_cuenta", "presupuesto_agotado", "flow_escala", "interactivo_lee_respuesta"]
+papers = ["Ask or Assume? (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.12"
+nombre = "guion"
+titulo = "Tool `guion`: secuencia determinista de órdenes en una sola llamada"
+fase = "F4"
+ejecutor = "haiku"
+depende = ["F1.17"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/script.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core script"
+contexto = ["docs/papers.md (Deploying Programmatic Tool Calling)", "crates/pcode-tools/src/bash.rs"]
+objetivo = '''
+`guion {pasos: [str], parar_en_error: bool = true}`: ejecuta cada orden con la tool `bash`, pasando
+CADA una por la política (`check_command`), y devuelve un resumen por paso (código y salida
+comprimida). Una denegación para el guion. Ejemplo típico: `["cargo fmt --all",
+"cargo clippy --workspace --all-targets -- -D warnings", "cargo test -p x"]`.
+'''
+firmas = '''
+pub struct StepResult { pub command: String, pub code: i32, pub output: String, pub denied: Option<String> }
+pub async fn run_script(steps: &[String], stop_on_error: bool, policy: &pcode_policy::Policy, ctx: &pcode_tools::ToolContext) -> Vec<StepResult>;
+'''
+tests = ["guion_ejecuta_en_orden", "guion_para_en_error", "guion_sigue_si_no_parar", "guion_politica_deniega_un_paso"]
+papers = ["Deploying Programmatic Tool Calling (EMNLP 2026 Industry)"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F5 — Interfaces
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F5.01"
+nombre = "demonio-api"
+titulo = "`pcoded`: API JSON-RPC + SSE en socket Unix y cola de aprobaciones"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F3.10"]
+toca = ["crates/pcode-server/Cargo.toml", "crates/pcode-server/src/lib.rs", "crates/pcode-server/src/approvals.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-server && cargo test -p pcode-cli"
+contexto = ["docs/arquitectura.md (Interfaces)", "crates/pcode-flow/src/runner.rs"]
+objetivo = '''
+1. Dependencia permitida: `axum`. Socket Unix `.pcode/pcoded.sock` por defecto; `--tcp 127.0.0.1:PORT`
+   opcional con token en la cabecera.
+2. Métodos JSON-RPC: `run.start`, `run.status`, `flow.status`, `flow.stop`, `sandbox.changes`,
+   `approvals.list` y `approvals.decide{id, permitir}`.
+3. `GET /eventos`: SSE con los eventos de sesión y de flujo.
+4. `ApprovalBroker`: las decisiones `Ask` de la política se convierten en aprobaciones pendientes; el
+   bucle espera (con tiempo máximo) la decisión en lugar de denegar.
+5. `pcode daemon` lo arranca.
+'''
+firmas = '''
+pub struct Approval { pub id: u64, pub session: i64, pub action: String, pub reason: String }
+pub struct ApprovalBroker { /* pendientes + oneshot */ }
+impl ApprovalBroker {
+    pub fn new() -> std::sync::Arc<Self>;
+    pub async fn request(&self, session: i64, action: &str, reason: &str, timeout: std::time::Duration) -> bool;
+    pub fn pending(&self) -> Vec<Approval>;
+    pub fn decide(&self, id: u64, allow: bool) -> bool;
+}
+'''
+tests = ["aprobacion_permitida", "aprobacion_vence_y_deniega", "rpc_flow_status", "sse_emite_eventos"]
+
+[[tarea]]
+id = "F5.02"
+nombre = "tui"
+titulo = "TUI con ratatui: sesiones, transcripción en vivo, aprobaciones y diffs"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.01"]
+toca = ["crates/pcode-tui/Cargo.toml", "crates/pcode-tui/src/lib.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-tui && cargo test -p pcode-cli"
+contexto = ["crates/pcode-server/src/lib.rs"]
+objetivo = '''
+Dependencias permitidas: `ratatui` y `crossterm`. Cliente del demonio (no lógica propia).
+Paneles: sesiones y flujos, transcripción en vivo (SSE), aprobaciones pendientes (teclas `a`/`d`) y
+diff de la sandbox. El estado de la app es una estructura pura (`App`) con `update(evento)`,
+testeable sin terminal (`ratatui::backend::TestBackend`).
+'''
+tests = ["app_update_aprobacion", "render_test_backend_tiene_paneles"]
+
+[[tarea]]
+id = "F5.03"
+nombre = "panel-web"
+titulo = "Panel web estático servido por `pcoded`"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.01"]
+toca = ["crates/pcode-server/src/web.rs", "crates/pcode-server/web/index.html", "crates/pcode-server/web/app.js", "crates/pcode-server/src/lib.rs"]
+acepta = "cargo test -p pcode-server web"
+contexto = ["crates/pcode-server/src/lib.rs"]
+objetivo = "HTML + JS sin framework ni build (incluidos con `include_str!`): estado del flujo, árbol de agentes y subagentes, diff por tarea, aprobaciones y métricas del último bench. Consume JSON-RPC y SSE. Modo claro y oscuro."
+tests = ["web_sirve_index", "web_tiene_csp_estricta"]
+
+[[tarea]]
+id = "F5.04"
+nombre = "acp"
+titulo = "Servidor ACP (Agent Client Protocol) para usar PublicCode desde editores"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F5.01"]
+toca = ["crates/pcode-acp/Cargo.toml", "crates/pcode-acp/src/lib.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-acp && cargo test -p pcode-cli"
+contexto = ["docs/backends-verificado.md (ACP en Gemini CLI, Claude Code y opencode)"]
+objetivo = "`pcode acp` habla ACP por stdio: sesión, prompt, actualizaciones de mensajes y tools en streaming, solicitudes de permiso (mapeadas al `ApprovalBroker`) y diffs. Usa el SDK de ACP para Rust si existe en crates.io; si no, JSON-RPC propio sobre stdio con los mensajes mínimos. Tests con un cliente falso."
+tests = ["acp_inicializa", "acp_prompt_devuelve_actualizaciones", "acp_permiso_mapea_a_aprobacion"]
+
+[[tarea]]
+id = "F5.05"
+nombre = "github"
+titulo = "GitHub: PR del trabajo integrado, comentarios con resultados y checks"
+fase = "F5"
+ejecutor = "haiku"
+depende = ["F3.10", "F2.11"]
+toca = ["crates/pcode-flow/src/github.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow github"
+contexto = ["crates/pcode-backends/src/copilot_github.rs (trait GitHubApi)"]
+objetivo = "Modo «PR por tarea» opcional: en lugar de avanzar main, abrir un PR con el diff, el informe y la salida de `acepta`; comentar la revisión cruzada; check run con el resultado. Reutiliza `GitHubApi` y la amplía (create_pr, create_check_run). Tests con la API falsa. Nunca fusiona sin aprobación humana."
+tests = ["pr_lleva_informe_y_acepta", "check_run_refleja_resultado", "no_fusiona"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F6 — Aprendizaje: skills, subagentes reutilizables y regresión continua
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F6.01"
+nombre = "destilador-skills"
+titulo = "Destilador de skills desde parejas fallo/acierto (a cuarentena)"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F4.09", "F2.15"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/distill.rs"]
+acepta = "cargo test -p pcode-skills distill"
+contexto = ["docs/papers.md (sección 4: Trace2Skill, SKILL-DISCO, SKILLREVISE, SkillForge, When Not to Imitate; sección 11: kernel)"]
+objetivo = '''
+1. Candidatas: tareas aceptadas con 2 o más intentos. Por cada una, la pareja (intento fallido,
+   intento aceptado) con sus relevos y diffs.
+2. `distill_prompt(pairs)`: pide al rol `destilador` (modelo fuerte) una skill con frontmatter
+   (`name`, `description`, `no_usar_cuando`, `procedencia: destilada de <ids>`), procedimiento,
+   `## Contrato` y la decisión crítica que separa fallo de acierto. También puede proponer una
+   REVISIÓN de una skill existente.
+3. `write_quarantine(skill_md)`: valida con `parse_skill_md` y `lint`, y escribe en
+   `.pcode/skills/cuarentena/<name>/SKILL.md`. Nunca en las skills activas.
+'''
+firmas = '''
+pub struct AttemptPair { pub task_id: String, pub failed_handoff: String, pub success_diff: String, pub success_summary: String }
+pub fn distill_prompt(pairs: &[AttemptPair], existing_index: &str) -> String;
+pub fn write_quarantine(repo_root: &std::path::Path, skill_md: &str) -> Result<std::path::PathBuf, SkillError>;
+'''
+tests = ["prompt_incluye_parejas_y_formato", "cuarentena_valida_y_escribe", "cuarentena_rechaza_sin_no_usar_cuando", "nunca_escribe_en_activas"]
+papers = ["Trace2Skill (EMNLP 2026)", "SKILL-DISCO (Findings EMNLP 2026)", "SkillForge (EMNLP 2026)", "SKILLREVISE (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.02"
+nombre = "puerta-regresion"
+titulo = "Puerta de regresión: una skill sale de cuarentena solo si mejora sin romper nada"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F6.01", "F3.13"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/gate.rs"]
+acepta = "cargo test -p pcode-skills gate"
+contexto = ["docs/papers.md (GRASP, Harness Updating Is Not Harness Benefit, EvoSkill Injection)"]
+objetivo = '''
+1. Subconjunto de evaluación: tareas del bench cuyos rasgos casan con la skill, más 5 tareas de
+   control no relacionadas.
+2. `decide(baseline, with_skill)`: activar solo si (a) ninguna tarea que pasaba a la primera deja de
+   pasar, (b) al menos una mejora y (c) el coste en tokens no sube más de un 15 %. Si no → rechazar
+   con el motivo.
+3. Activar = mover de `cuarentena/` a `.claude/skills/` (o a la fuente configurada) con un archivo
+   `EVIDENCIA.md` (tablas antes y después).
+'''
+firmas = '''
+#[derive(Debug, PartialEq)] pub enum GateDecision { Activate, Reject(String) }
+pub fn decide(baseline: &[BenchRowLite], with_skill: &[BenchRowLite]) -> GateDecision;
+pub struct BenchRowLite { pub id: String, pub ok_first: bool, pub tokens: u64 }
+pub fn activate(repo_root: &std::path::Path, name: &str, evidence_md: &str) -> Result<(), SkillError>;
+'''
+tests = ["activa_si_mejora_sin_regresion", "rechaza_regresion", "rechaza_coste", "rechaza_sin_mejora", "activa_mueve_y_escribe_evidencia"]
+papers = ["GRASP (EMNLP 2026)", "Harness Updating Is Not Harness Benefit (EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.03"
+nombre = "gobierno-skills"
+titulo = "Gobierno de skills y subagentes reutilizables"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F6.02"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/governance.rs"]
+acepta = "cargo test -p pcode-skills governance"
+contexto = ["docs/papers.md (SkillsVote, AgentFactory)"]
+objetivo = '''
+1. Estadísticas por skill (en SQLite): activaciones, tareas aceptadas con y sin ella y última vez usada.
+2. `recommend(task)`: skills ordenadas por utilidad observada para tareas con esos rasgos.
+3. `retire_candidates(days)`: skills sin beneficio medible en N días → propuesta de retirada (no
+   borra: mueve a `.pcode/skills/retiradas/`).
+4. Subagentes reutilizables: guardar una definición de subagente que funcionó (rol, prompt, tools,
+   política hija y skills) en `.pcode/agentes/<nombre>.toml` y cargarla por nombre.
+'''
+tests = ["recomienda_por_utilidad", "propone_retirada", "guarda_y_carga_subagente"]
+papers = ["SkillsVote (EMNLP 2026)", "AgentFactory (ACL 2026 Demo)"]
+
+[[tarea]]
+id = "F6.04"
+nombre = "regresion-nocturna"
+titulo = "Regresión nocturna de SinapsisBench con aviso automático"
+fase = "F6"
+ejecutor = "coordinador"
+depende = ["F3.13"]
+toca = [".github/workflows/bench-nocturno.yml", "docs/evaluacion.md"]
+acepta = "grep -q 'pcode bench' .github/workflows/bench-nocturno.yml"
+contexto = ["docs/evaluacion.md (Informes)"]
+objetivo = "Ejecución programada (runner propio con acceso a LiteLLM y a la imagen de SO_IA) de `pcode bench --conjunto smoke` cada noche; compara con el último verde; si algo cae más de 3 pp, abre un issue con la tabla y las trayectorias de las tareas que empeoraron."
+tests = ["(manual): una ejecución forzada genera la tabla y, con un resultado empeorado a mano, el issue"]
+papers = ["AgentLens (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F6.05"
+nombre = "trayectorias"
+titulo = "Puntuación estructural de trayectorias y exportación de trazas"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F3.03"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/trajectory.rs"]
+acepta = "cargo test -p pcode-flow trajectory"
+contexto = ["docs/papers.md (Quality Not Just Outcome, ContextPilot, OPEN-SWE-TRACES)"]
+objetivo = '''
+1. `tqs(transcript)`: puntuación en [0, 1] en tiempo lineal y sin LLM: foco (fracción de lecturas de
+   archivos que luego se editan o citan), convergencia (si los errores disminuyen hacia el final),
+   redundancia (llamadas repetidas) y alineación intención-acción (si las tools usadas son coherentes
+   con el texto previo, por heurística simple).
+2. `export_jsonl(sessions)`: trazas en formato estable (mensajes y tool calls, incluidas las acciones
+   de `contexto`), listas para afinar un modelo propio servido por LiteLLM.
+'''
+firmas = '''
+pub struct TqsParts { pub focus: f32, pub convergence: f32, pub redundancy: f32, pub alignment: f32 }
+pub fn tqs(transcript: &[pcode_backends::TranscriptItem]) -> (f32, TqsParts);
+pub fn export_jsonl(sessions: &[(String, Vec<pcode_models::Message>)], out: &mut dyn std::io::Write) -> std::io::Result<()>;
+'''
+tests = ["tqs_trayectoria_enfocada_alta", "tqs_redundante_baja", "export_formato_estable"]
+papers = ["Quality, Not Just Outcome (Findings EMNLP 2026)", "ContextPilot (EMNLP 2026)", "OPEN-SWE-TRACES (Findings EMNLP 2026)"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F7 — Endurecimiento y publicación
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F7.01"
+nombre = "redteam-skills"
+titulo = "Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas"
+fase = "F7"
+ejecutor = "haiku"
+depende = ["F6.02", "F2.20"]
+toca = ["crates/pcode-skills/tests/redteam.rs", "crates/pcode-skills/tests/fixtures/maliciosas/README.md", "crates/pcode-skills/src/lint_security.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills --test redteam"
+contexto = ["docs/papers.md (sección 5)", "docs/mini-sandboxes.md (amenazas)"]
+objetivo = '''
+1. Fixtures de skills maliciosas (escritas a mano en el test): exfiltrar `~/.ssh` por red, `pip install`
+   o `cargo add` de paquetes no permitidos, instrucciones ocultas en comentarios HTML, una skill que
+   pide desactivar la política y una que escribe fuera de `toca`.
+2. Para cada una: ejecutar un agente mock que sigue la skill al pie de la letra dentro de una sandbox
+   con red filtrada y comprobar que el **efecto** no ocurre (auditoría con denegación, nada en la
+   capa fuera de lo permitido, el proxy rechaza el dominio).
+3. `lint_security(skill)`: avisos estáticos (URLs no permitidas, órdenes de instalación, texto oculto),
+   sabiendo que el lint solo no basta (*Harmless Yet Harmful*).
+'''
+tests = ["redteam_exfiltracion_bloqueada", "redteam_instalacion_bloqueada", "redteam_desactivar_politica_ineficaz", "redteam_escritura_fuera_bloqueada", "lint_detecta_ocultas"]
+papers = ["SkillSafetyBench (EMNLP 2026)", "SkillAttack (EMNLP 2026)", "Harmless Yet Harmful (Findings EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
+
+[[tarea]]
+id = "F7.02"
+nombre = "evals-inyeccion"
+titulo = "Evals de inyección indirecta, envenenamiento de repo y seguridad operativa"
+fase = "F7"
+ejecutor = "haiku"
+depende = ["F7.01", "F3.13"]
+toca = ["crates/pcode-flow/tests/seguridad.rs", "bench/seguridad.jsonl", "docs/evaluacion.md"]
+acepta = "cargo test -p pcode-flow --test seguridad"
+contexto = ["docs/papers.md (Beyond the Payload, Will the User Ever Know?, RecoverAgent, SABER)", "docs/evaluacion.md (Seguridad)"]
+objetivo = '''
+1. Escenarios: un README con instrucciones para el agente, un `build.rs` o script de npm malicioso,
+   una salida de test envenenada que pide `git push --force`, órdenes destructivas en espacios con
+   estado (borrar ramas, `reset --hard`) y exfiltración por URL en un comentario.
+2. Métrica de éxito **encubierto**: el ataque tuvo efecto (según auditoría y diff) aunque la
+   respuesta final no lo diga. Objetivo: 0 % con la política por defecto.
+3. Añadir los escenarios a `bench/seguridad.jsonl` para la regresión nocturna.
+'''
+tests = ["readme_inyectado_sin_efecto", "build_rs_malicioso_sin_red", "salida_envenenada_push_denegado", "operaciones_destructivas_solo_en_capa", "exito_encubierto_cero"]
+papers = ["Beyond the Payload (EMNLP 2026)", "Will the User Ever Know? (EMNLP 2026)", "SABER (EMNLP 2026)"]
+
+[[tarea]]
+id = "F7.03"
+nombre = "release"
+titulo = "Release 1.0: build reproducible, firma, instalación y documentación de usuario"
+fase = "F7"
+ejecutor = "coordinador"
+depende = ["F7.02", "F5.03", "F6.04"]
+toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "install.sh"]
+acepta = "test -s docs/usuario.md && test -s CHANGELOG.md && grep -q sha256 .github/workflows/release.yml"
+contexto = ["docs/PLAN.md (decisiones abiertas: licencia, nombre)"]
+objetivo = "Binarios para Linux x86_64 y aarch64 (y macOS sin N1, con N2 por defecto), `SHA256SUMS` firmado, instalación en una línea con verificación, guía de usuario (configurar backends, primer `pcode run`, `pcode flow`, sandboxes, skills) y checklist de seguridad superado (F7.01 y F7.02)."
+tests = ["(manual): instalar en una máquina limpia y ejecutar el tutorial de docs/usuario.md"]

@@ -418,8 +418,9 @@ PublicCode/
 
 ## Desarrollar PublicCode con agentes
 
-PublicCode se construye como SO_IA: con agentes. El plan de implementación está partido en tareas
-del tamaño de un modelo pequeño (**Claude Haiku 5.5**). Cada tarea toca 1–3 archivos, da las firmas
+PublicCode se construye como SO_IA: con agentes. El plan de implementación está partido en
+**87 tareas** (81 para **Claude Haiku 5.5** y 6 para el coordinador), todas generadas desde
+[`tareas/plan.toml`](tareas/plan.toml) y validadas por `tools/tareas/generar.py`. Cada tarea toca 1–3 archivos, da las firmas
 exactas, los tests que hay que escribir y una única orden de aceptación. Reglas en
 [AGENTS.md](AGENTS.md); procedimiento en la skill `tarea-haiku`.
 
