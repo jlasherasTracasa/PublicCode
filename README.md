@@ -11,8 +11,8 @@ escritorio** (Linux, macOS y Windows), **navegador**, **móvil** (aprobaciones),
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
-> **Estado: F0–F3 y el núcleo de F5 implementados y probados** (más de 240 tests, `clippy -D warnings`
-> limpio). Funciona hoy:
+> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (255 tests,
+> `clippy -D warnings` limpio). Funciona hoy:
 >
 > | Parte | Qué hay | Tareas |
 > |---|---|---|
@@ -24,7 +24,8 @@ se sigue en el escritorio.
 > | Flujos | tareas (cabeceras de SO_IA), DAG, estado por eventos (importa el `estado.json` real de SO_IA), planificador, integración sin conflictos de lockfile, clasificador de CI, `pcode flow run` | F3.01–F3.08, F3.10 |
 > | Demonio | API JSON-RPC + eventos SSE + página web + cola de aprobaciones, tipos TypeScript generados, `pcode daemon` | F5.01–F5.03 |
 >
-> **Pendiente** (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
+> **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F3, el
+> planificador LLM, la revisión cruzada, `pcode bench` y el modo sombra. Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
 > seccomp, proxy de salida y red filtrada, sandbox en macOS, servidor MCP, TUI, UI React y app de
 > escritorio, PWA, ACP, VS Code, GitHub, contexto/memoria/router (F4), aprendizaje de skills (F6) y
 > endurecimiento (F7). Los adaptadores de CLIs de terceros usan fixtures sintéticas hasta que F0.03
