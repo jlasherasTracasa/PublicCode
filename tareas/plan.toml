@@ -1154,3 +1154,911 @@ pub struct GeminiProvider { /* name, base_url, api_key, client */ }
 impl GeminiProvider { pub fn new(name: impl Into<String>, base_url: impl Into<String>, api_key: String) -> Self; }
 '''
 tests = ["gemini_roles_user_model", "gemini_function_call_y_response", "gemini_ids_sinteticos", "gemini_usage", "gemini_http_cabecera_y_ruta"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F2 — Backends, mini sandbox en Rust, skills, MCP
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F2.01"
+nombre = "sandbox-capa"
+titulo = "`pcode-sandbox`: leer la capa superior del overlay como lista de cambios"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F0.01"]
+toca = ["crates/pcode-sandbox/Cargo.toml", "crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/src/layer.rs"]
+acepta = "cargo test -p pcode-sandbox layer"
+contexto = ["tools/minisandbox/minisandbox.py (función leer_cambios: es la referencia a portar)", "docs/mini-sandboxes.md"]
+objetivo = '''
+Portar `leer_cambios` del prototipo Python:
+1. Recorre `upper` (sin seguir enlaces). Un dispositivo de caracteres con rdev 0 → `Deleted`; un
+   directorio con xattr `trusted.overlay.opaque` o `user.overlay.opaque` = "y" que existe en `lower`
+   → `Replaced`; un directorio vacío que no existe en `lower` → `Added`; un archivo o enlace → `Modified`
+   si existe en `lower` y `Added` si no.
+2. `filter_ignored`: si `lower/.git` existe, pasa las rutas por `git -C lower check-ignore --stdin`
+   y quita las ignoradas.
+3. Resultado ordenado por ruta. Rutas relativas con `/`.
+4. `nix` solo para `major`/`minor` y xattr (o `std::os::unix::fs::MetadataExt::rdev` + `libc`/`nix::sys::stat`).
+'''
+firmas = '''
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum ChangeKind { Added, Modified, Deleted, Replaced }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Change { pub path: String, pub kind: ChangeKind }
+
+pub fn read_changes(upper: &std::path::Path, lower: &std::path::Path) -> std::io::Result<Vec<Change>>;
+pub fn filter_ignored(lower: &std::path::Path, changes: Vec<Change>) -> std::io::Result<Vec<Change>>;
+'''
+tests = [
+  "capa_anadido_y_modificado (crea upper y lower a mano en un tempdir)",
+  "capa_borrado_whiteout (crea el dispositivo 0/0 con mknod; si da EPERM, el test se salta)",
+  "capa_directorio_nuevo_vacio",
+  "capa_ordenada",
+  "filtra_ignorados_por_git",
+]
+
+[[tarea]]
+id = "F2.02"
+nombre = "sandbox-ejecutar"
+titulo = "Ejecutar una orden en N1 (namespaces + overlay + raíz ro) con tiempo máximo"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.01"]
+toca = ["crates/pcode-sandbox/Cargo.toml", "crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/src/run.rs", "crates/pcode-sandbox/src/prepare.sh"]
+acepta = "cargo test -p pcode-sandbox run"
+contexto = ["tools/minisandbox/minisandbox.py (PREPARAR y ejecutar: referencia a portar)", "docs/mini-sandboxes.md"]
+objetivo = '''
+1. `prepare.sh` = el script `PREPARAR` del prototipo, incluido con `include_str!`.
+2. `Sandbox::create(spec)`: crea `state/upper`, `state/work` y, si el repo o el estado están bajo
+   `/tmp`, `state/tmp`. Rechaza un estado dentro de `root`.
+3. `Sandbox::run(argv, env)`: lanza `unshare --user --map-root-user --mount --pid --fork --kill-child
+   --mount-proc [--net] sh -c <prepare.sh> pcode-sandbox <argv…>` con las mismas variables de entorno
+   que el prototipo, `kill_on_drop` y el tiempo máximo de `spec.timeout` (vencido → `ExitStatus`
+   con código 124 y `timed_out = true`).
+4. `userns_available()` prueba `unshare --user --map-root-user --mount true` una vez (`OnceLock`).
+5. Los tests se saltan (con un `eprintln!`) si no hay namespaces de usuario.
+'''
+firmas = '''
+#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum Network { None, Open, Filtered }
+#[derive(Debug, Clone)]
+pub struct SandboxSpec { pub root: PathBuf, pub state: Option<PathBuf>, pub network: Network, pub writable: Vec<PathBuf>, pub timeout: Duration }
+#[derive(Debug, Clone, PartialEq, Eq)] pub struct RunStatus { pub code: i32, pub timed_out: bool, pub millis: u128 }
+#[derive(Debug, thiserror::Error)]
+pub enum SandboxError { #[error("E/S: {0}")] Io(#[from] std::io::Error), #[error("namespaces de usuario no disponibles")] NoUserns, #[error("{0}")] Invalid(String) }
+pub struct Sandbox { /* spec, state dir */ }
+impl Sandbox {
+    pub fn create(spec: SandboxSpec) -> Result<Sandbox, SandboxError>;
+    pub fn state_dir(&self) -> &Path;
+    pub async fn run(&self, argv: &[String], env: &[(String, String)]) -> Result<RunStatus, SandboxError>;
+    pub fn changes(&self) -> Result<Vec<Change>, SandboxError>;   // read_changes + filter_ignored
+}
+pub fn userns_available() -> bool;
+'''
+tests = ["run_escribe_en_capa_no_en_repo", "run_sin_red", "run_fuera_solo_lectura", "run_timeout_124", "run_estado_dentro_de_root_es_error", "run_repo_bajo_tmp"]
+
+[[tarea]]
+id = "F2.03"
+nombre = "sandbox-aplicar"
+titulo = "Aplicar y descartar los cambios de una sandbox"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.02"]
+toca = ["crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/src/apply.rs"]
+acepta = "cargo test -p pcode-sandbox apply"
+contexto = ["tools/minisandbox/minisandbox.py (aplicar y descartar)", "crates/pcode-sandbox/src/run.rs"]
+objetivo = '''
+1. `Sandbox::apply(self)`: por cada cambio filtrado: Deleted/Replaced → borrar en root (archivo o
+   árbol); Replaced → copiar el árbol de upper; Added/Modified → copiar el archivo (o crear el
+   directorio), conservando los enlaces simbólicos como enlaces. Después, `discard`. Devuelve los cambios.
+2. `Sandbox::discard(self)`: `chmod 0700` recursivo de los directorios de `state` (overlay deja
+   `work/` con permisos 000) y borrar `state`.
+3. `Sandbox::diff(&self, path)`: diff unificado (`similar`) entre la versión de root y la de upper
+   para archivos de texto < 1 MiB.
+'''
+firmas = '''
+impl Sandbox {
+    pub fn apply(self) -> Result<Vec<Change>, SandboxError>;
+    pub fn discard(self) -> Result<(), SandboxError>;
+    pub fn diff(&self, path: &str) -> Result<Option<String>, SandboxError>;
+}
+'''
+tests = ["apply_lleva_cambios", "apply_borrado", "apply_enlace_simbolico", "discard_no_toca_repo", "diff_unificado"]
+
+[[tarea]]
+id = "F2.04"
+nombre = "sandbox-landlock"
+titulo = "Landlock dentro de la sandbox con `pcode __sandbox-exec`"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.03", "F1.20"]
+toca = ["crates/pcode-sandbox/Cargo.toml", "crates/pcode-sandbox/src/restrict.rs", "crates/pcode-sandbox/src/prepare.sh", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-sandbox restrict && cargo test -p pcode-cli"
+contexto = ["docs/mini-sandboxes.md (N1 en detalle)", "crates/pcode-sandbox/src/run.rs"]
+objetivo = '''
+1. Dependencia nueva permitida en esta tarea: `landlock`.
+2. `restrict_self(rules)`: ABI de Landlock con el mejor esfuerzo (si el kernel no lo soporta,
+   devuelve `Ok(false)` y avisa con `tracing::warn!`). Lectura y ejecución en todo `/`; escritura
+   solo en `rules.writable` (root, tmp privado, `--escribible`).
+3. Subcomando oculto `pcode __sandbox-exec --escribible P… -- argv…`: llama a `restrict_self` y hace
+   `execvp(argv)`.
+4. `prepare.sh`: si existe la variable `PCODE_BIN`, termina con `exec "$PCODE_BIN" __sandbox-exec
+   --escribible … -- "$@"` en lugar de `exec "$@"`.
+'''
+firmas = '''
+pub struct LandlockRules { pub writable: Vec<std::path::PathBuf> }
+pub fn restrict_self(rules: &LandlockRules) -> Result<bool, SandboxError>;
+'''
+tests = ["restrict_permite_escribir_en_writable (en un proceso hijo)", "restrict_deniega_fuera (en un proceso hijo)", "restrict_sin_soporte_es_ok_false"]
+
+[[tarea]]
+id = "F2.05"
+nombre = "sandbox-seccomp-limites"
+titulo = "Seccomp (lista de syscalls denegadas) y límites de recursos"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.04"]
+toca = ["crates/pcode-sandbox/Cargo.toml", "crates/pcode-sandbox/src/seccomp.rs", "crates/pcode-sandbox/src/restrict.rs"]
+acepta = "cargo test -p pcode-sandbox seccomp"
+contexto = ["docs/mini-sandboxes.md", "crates/pcode-sandbox/src/restrict.rs"]
+objetivo = '''
+1. Dependencia nueva permitida: `seccompiler`. Filtro que devuelve EPERM para: ptrace,
+   process_vm_readv, process_vm_writev, mount, umount2, pivot_root, kexec_load, kexec_file_load, bpf,
+   keyctl, add_key, request_key, init_module, finit_module, delete_module, setns, unshare,
+   perf_event_open, userfaultfd, reboot, swapon, swapoff. Solo x86_64 y aarch64.
+2. Límites con `nix::sys::resource::setrlimit`: NPROC (por defecto 4096), FSIZE (por defecto 8 GiB),
+   NOFILE (4096), CORE 0.
+3. `restrict_self` aplica Landlock, después los límites y por último seccomp.
+'''
+firmas = '''
+pub struct Limits { pub nproc: u64, pub fsize_bytes: u64, pub nofile: u64 }
+impl Default for Limits { /* 4096, 8 GiB, 4096 */ }
+pub fn apply_limits(l: &Limits) -> Result<(), SandboxError>;
+pub fn install_seccomp() -> Result<(), SandboxError>;
+'''
+tests = ["seccomp_bloquea_ptrace (proceso hijo)", "seccomp_permite_lo_normal (proceso hijo hace write/read)", "limits_fsize (proceso hijo no puede escribir más que el límite)"]
+
+[[tarea]]
+id = "F2.06"
+nombre = "backend-trait"
+titulo = "`pcode-backends`: trait `Backend`, `Job`, relevo tipado y `MockBackend`"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F1.16", "F2.03"]
+toca = ["crates/pcode-backends/Cargo.toml", "crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/types.rs", "crates/pcode-backends/src/mock.rs"]
+acepta = "cargo test -p pcode-backends"
+contexto = ["docs/arquitectura.md (sección «Backends»)", "docs/backends.md"]
+objetivo = '''
+1. Tipos de abajo, serializables.
+2. `Handoff::render_for_agent()`: texto Markdown estable con secciones «Qué se probó», «Por qué
+   falló», «Paso crítico», «Archivos tocados» y «Límites (no negociables)». Para los agentes externos.
+3. `Handoff::to_json()`: para los componentes internos (formato estructurado, *Routed Graph Handoff*).
+4. `MockBackend`: escribe en la sandbox los archivos de un guion `{ruta: contenido}` ejecutando
+   `sh -c 'mkdir -p … && printf … > …'` vía `Sandbox::run`, y devuelve un `BackendResult` fijo.
+'''
+firmas = '''
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Boundaries { pub capabilities: Vec<String>, pub data_class: String, pub audience: Vec<String> }
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Handoff { pub attempt: u32, pub tried: Vec<String>, pub failed_because: String,
+                     pub critical_step: Option<String>, pub files: Vec<String>, pub boundaries: Boundaries }
+impl Handoff { pub fn render_for_agent(&self) -> String; pub fn to_json(&self) -> serde_json::Value; }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Job { pub id: String, pub task: String, pub accept: Option<String>, pub handoff: Option<Handoff>,
+                 pub skills: Vec<String>, pub model: Option<String>, pub max_minutes: u32 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum TranscriptItem { Text(String), ToolCall { name: String, input: serde_json::Value }, ToolResult { output: String, is_error: bool } }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BackendResult { pub exit: i32, pub final_message: String, pub transcript: Vec<TranscriptItem>, pub usage: Option<pcode_models::Usage> }
+
+#[derive(Debug, Clone, Default)]
+pub struct BackendCaps { pub needs_network: Vec<String>, pub reads_agents_md: bool, pub supports_mcp: bool }
+
+#[derive(Debug, thiserror::Error)]
+pub enum BackendError { #[error("sandbox: {0}")] Sandbox(#[from] pcode_sandbox::SandboxError), #[error("salida no reconocida: {0}")] Parse(String), #[error("{0}")] Other(String) }
+
+#[async_trait::async_trait]
+pub trait Backend: Send + Sync {
+    fn id(&self) -> &str;
+    fn caps(&self) -> BackendCaps;
+    async fn run(&self, job: &Job, sandbox: &pcode_sandbox::Sandbox) -> Result<BackendResult, BackendError>;
+}
+'''
+tests = ["handoff_markdown_estable (snapshot por igualdad de string)", "handoff_json_ida_y_vuelta", "mock_backend_escribe_en_sandbox (se salta sin userns)"]
+papers = ["Handoff Debt (EMNLP 2026)", "Facts Without Rules (Findings EMNLP 2026)", "Routed Graph Handoff (Findings EMNLP 2026)", "TRAJDEBUG (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F2.07"
+nombre = "backend-claude-code"
+titulo = "Backend Claude Code (modo headless stream-json)"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.06", "F0.03"]
+toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/claude_code.rs", "crates/pcode-backends/tests/fixtures/claude_code.jsonl"]
+acepta = "cargo test -p pcode-backends claude_code"
+contexto = ["docs/backends-verificado.md (sección claude-code: orden y salida reales)", "docs/backends.md (Claude Code)", "crates/pcode-backends/src/types.rs"]
+objetivo = '''
+1. `build_command(job, cfg)`: argv exacto según `docs/backends-verificado.md`: prompt (tarea +
+   relevo renderizado + «Al terminar, `acepta` debe pasar: <cmd>»), modelo, salida stream-json y
+   permisos para autoaprobar dentro de la sandbox.
+2. `parse_stream(lines)`: convierte las líneas JSON en `TranscriptItem`s, el mensaje final y el uso.
+   Ignora los tipos de evento desconocidos (no falla).
+3. `ClaudeCode::run`: `sandbox.run(build_command(…))` con la salida capturada en un archivo del
+   estado, y después `parse_stream`.
+4. Fixture: una salida real recortada de F0.03.
+'''
+firmas = '''
+pub struct ClaudeCodeCfg { pub binary: String, pub model: Option<String>, pub extra_args: Vec<String> }
+pub struct ClaudeCode { pub cfg: ClaudeCodeCfg }
+pub fn build_command(job: &Job, cfg: &ClaudeCodeCfg) -> Vec<String>;
+pub fn parse_stream(lines: &str) -> Result<BackendResult, BackendError>;
+'''
+tests = ["claude_build_command_incluye_prompt_y_modelo", "claude_parse_fixture", "claude_parse_ignora_eventos_desconocidos", "claude_prompt_incluye_relevo_y_acepta"]
+
+[[tarea]]
+id = "F2.08"
+nombre = "backend-gemini-cli"
+titulo = "Backend Gemini CLI (no interactivo, salida JSON)"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.06", "F0.03"]
+toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/gemini_cli.rs", "crates/pcode-backends/tests/fixtures/gemini_cli.json"]
+acepta = "cargo test -p pcode-backends gemini_cli"
+contexto = ["docs/backends-verificado.md (sección gemini)", "crates/pcode-backends/src/claude_code.rs (mismo patrón)"]
+objetivo = "Mismo patrón que F2.07: `build_command`, `parse_output` con fixture real y `GeminiCli::run`."
+firmas = '''
+pub struct GeminiCliCfg { pub binary: String, pub model: Option<String>, pub extra_args: Vec<String> }
+pub struct GeminiCli { pub cfg: GeminiCliCfg }
+pub fn build_command(job: &Job, cfg: &GeminiCliCfg) -> Vec<String>;
+pub fn parse_output(out: &str) -> Result<BackendResult, BackendError>;
+'''
+tests = ["gemini_build_command", "gemini_parse_fixture", "gemini_parse_salida_vacia_es_error"]
+
+[[tarea]]
+id = "F2.09"
+nombre = "backend-copilot-cli"
+titulo = "Backend GitHub Copilot CLI (no interactivo)"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.06", "F0.03"]
+toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/copilot_cli.rs", "crates/pcode-backends/tests/fixtures/copilot_cli.txt"]
+acepta = "cargo test -p pcode-backends copilot_cli"
+contexto = ["docs/backends-verificado.md (sección copilot)", "crates/pcode-backends/src/claude_code.rs"]
+objetivo = "Mismo patrón que F2.07. Si la CLI no da salida estructurada, `parse_output` toma el texto final y deja la transcripción en un único `Text`; el resultado real lo deciden el diff y `acepta`."
+firmas = '''
+pub struct CopilotCliCfg { pub binary: String, pub model: Option<String>, pub extra_args: Vec<String> }
+pub struct CopilotCli { pub cfg: CopilotCliCfg }
+pub fn build_command(job: &Job, cfg: &CopilotCliCfg) -> Vec<String>;
+pub fn parse_output(out: &str) -> Result<BackendResult, BackendError>;
+'''
+tests = ["copilot_build_command", "copilot_parse_fixture"]
+
+[[tarea]]
+id = "F2.10"
+nombre = "backend-opencode"
+titulo = "Backend opencode (`opencode run`)"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.06", "F0.03"]
+toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/opencode.rs", "crates/pcode-backends/tests/fixtures/opencode.txt"]
+acepta = "cargo test -p pcode-backends opencode"
+contexto = ["docs/backends-verificado.md (sección opencode)", "../SO_IA/ci/agente.sh (cómo se invoca hoy)"]
+objetivo = "Mismo patrón que F2.07, con `opencode run` y su configuración por `OPENCODE_CONFIG`."
+firmas = '''
+pub struct OpencodeCfg { pub binary: String, pub model: Option<String>, pub config: Option<std::path::PathBuf> }
+pub struct Opencode { pub cfg: OpencodeCfg }
+pub fn build_command(job: &Job, cfg: &OpencodeCfg) -> Vec<String>;
+pub fn parse_output(out: &str) -> Result<BackendResult, BackendError>;
+'''
+tests = ["opencode_build_command", "opencode_env_config", "opencode_parse_fixture"]
+
+[[tarea]]
+id = "F2.11"
+nombre = "backend-copilot-github"
+titulo = "Backend Copilot coding agent: issue → PR → verificación local"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.06", "F0.03"]
+toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/copilot_github.rs", "crates/pcode-backends/tests/copilot_github.rs"]
+acepta = "cargo test -p pcode-backends copilot_github"
+contexto = ["docs/backends-verificado.md (sección copilot: coding agent)", "docs/backends.md (Copilot coding agent)"]
+objetivo = '''
+1. `trait GitHubApi` (create_issue, assign_to_copilot, find_linked_pr, pr_diff, comment) con una
+   implementación real (`reqwest`, token desde la variable `GITHUB_TOKEN`) y otra falsa para tests.
+2. Máquina de estados: `Creado → Asignado → PrAbierto → DiffAplicado → Verificado | Fallido`, con
+   sondeo (intervalo y tiempo máximo configurables; los tests usan 0 y una API falsa).
+3. Al llegar el PR: baja el diff, lo aplica en la sandbox con `git apply` y deja que el flujo ejecute
+   `acepta` localmente. Nunca se fusiona el PR desde aquí.
+4. El texto del issue incluye la tarea, el relevo y el criterio `acepta`.
+'''
+firmas = '''
+#[async_trait::async_trait]
+pub trait GitHubApi: Send + Sync {
+    async fn create_issue(&self, title: &str, body: &str) -> Result<u64, BackendError>;
+    async fn assign_to_copilot(&self, issue: u64) -> Result<(), BackendError>;
+    async fn find_linked_pr(&self, issue: u64) -> Result<Option<u64>, BackendError>;
+    async fn pr_diff(&self, pr: u64) -> Result<String, BackendError>;
+    async fn comment(&self, number: u64, body: &str) -> Result<(), BackendError>;
+}
+#[derive(Debug, Clone, PartialEq, Eq)] pub enum CopilotState { Created(u64), Assigned(u64), PrOpen(u64, u64), DiffApplied(u64), Verified, Failed(String) }
+pub struct CopilotGitHub<A: GitHubApi> { pub api: A, pub poll: std::time::Duration, pub max_wait: std::time::Duration }
+'''
+tests = ["copilot_gh_flujo_feliz (API falsa)", "copilot_gh_sin_pr_agota_tiempo", "copilot_gh_cuerpo_issue_lleva_acepta"]
+
+[[tarea]]
+id = "F2.12"
+nombre = "backend-modelo"
+titulo = "Backend «modelo»: `pcode run` dentro de la sandbox con LiteLLM, Anthropic o Gemini"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.06", "F1.20"]
+toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/model.rs"]
+acepta = "cargo test -p pcode-backends model"
+contexto = ["crates/pcode-cli/src/run.rs", "docs/mini-sandboxes.md (Red)"]
+objetivo = '''
+1. Ejecuta el propio binario `pcode run <tarea> --acepta <cmd> --modelo <m>` DENTRO de la sandbox
+   (así las tools escriben en la capa del overlay).
+2. Red: `Network::Filtered` con el dominio y puerto del proveedor (p. ej. `127.0.0.1:30400` para
+   LiteLLM a través del proxy de F2.19); las variables `HTTP_PROXY` y `HTTPS_PROXY` las pone la sandbox.
+3. Lee la sesión de `.pcode/pcode.db` del estado de la sandbox para rellenar transcripción y uso.
+   Si no puede, deja la transcripción vacía.
+4. Tests con `PCODE_MOCK_SCRIPT` (sin red).
+'''
+firmas = '''
+pub struct ModelBackendCfg { pub pcode_bin: std::path::PathBuf, pub model: String, pub provider: Option<String> }
+pub struct ModelBackend { pub cfg: ModelBackendCfg }
+pub fn build_command(job: &Job, cfg: &ModelBackendCfg) -> Vec<String>;
+'''
+tests = ["modelo_build_command", "modelo_con_mock_escribe_en_capa (se salta sin userns)"]
+
+[[tarea]]
+id = "F2.13"
+nombre = "skills-registro"
+titulo = "`pcode-skills`: leer `SKILL.md`, registro, índice y cierre de dependencias"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F0.01"]
+toca = ["crates/pcode-skills/Cargo.toml", "crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/registry.rs"]
+acepta = "cargo test -p pcode-skills registry"
+contexto = [".claude/skills/tarea-haiku/SKILL.md (ejemplo real)", "docs/adr/ADR-0004-skills-formato-unico.md"]
+objetivo = '''
+1. Frontmatter entre `---`: subconjunto de YAML con `clave: valor` y listas `[a, b]` o `- a`. Sin
+   dependencia de YAML: parser propio pequeño. Claves: `name` y `description` (obligatorias),
+   `depende`, `no_usar_cuando` y `procedencia` (opcionales).
+2. `Registry::load(dirs)`: cada subdirectorio con `SKILL.md` es una skill; error si dos tienen el
+   mismo `name`.
+3. `index()`: texto con una línea `- <name>: <description>` por skill (lo único que entra siempre
+   en contexto).
+4. `with_dependencies(name)`: la skill y sus `depende`, transitivamente, sin ciclos (si hay ciclo, error).
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq)]
+pub struct Skill { pub name: String, pub description: String, pub depends: Vec<String>, pub do_not_use_when: Option<String>,
+                   pub provenance: Option<String>, pub dir: std::path::PathBuf, pub body: String }
+#[derive(Debug, thiserror::Error)]
+pub enum SkillError { #[error("E/S: {0}")] Io(#[from] std::io::Error), #[error("{0}: {1}")] Invalid(String, String) }
+pub fn parse_skill_md(text: &str, dir: &std::path::Path) -> Result<Skill, SkillError>;
+pub struct Registry { /* BTreeMap<String, Skill> */ }
+impl Registry {
+    pub fn load(dirs: &[std::path::PathBuf]) -> Result<Registry, SkillError>;
+    pub fn get(&self, name: &str) -> Option<&Skill>;
+    pub fn index(&self) -> String;
+    pub fn with_dependencies(&self, name: &str) -> Result<Vec<&Skill>, SkillError>;
+}
+'''
+tests = ["parsea_skill_del_repo (lee .claude/skills/tarea-haiku/SKILL.md)", "falta_name_es_error", "lista_en_dos_formatos", "registro_duplicado_es_error", "dependencias_transitivas", "ciclo_es_error"]
+papers = ["Graph-of-Skills (EMNLP 2026)"]
+
+[[tarea]]
+id = "F2.14"
+nombre = "skills-exportar"
+titulo = "Exportar skills a Claude Code, Copilot, Gemini y opencode"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.13", "F0.03"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/export.rs"]
+acepta = "cargo test -p pcode-skills export"
+contexto = ["docs/backends-verificado.md (dónde lee skills cada agente)", "docs/adr/ADR-0004-skills-formato-unico.md"]
+objetivo = '''
+`export(registry, target, repo_root)`:
+1. `Claude`: copia cada carpeta a `.claude/skills/<name>/`, salvo si la fuente ya es esa misma ruta.
+2. `AgentsMd`: reescribe la sección entre `<!-- skills:inicio -->` y `<!-- skills:fin -->` de
+   `AGENTS.md` con el índice y la ruta de cada skill (crea los marcadores al final si no existen).
+3. `Copilot`: lo mismo en `.github/copilot-instructions.md`.
+4. `Gemini`: lo mismo en `GEMINI.md`.
+5. `Opencode`: ruta según `docs/backends-verificado.md`.
+6. Idempotente: exportar dos veces no cambia nada. `check` devuelve las rutas desfasadas sin escribir.
+'''
+firmas = '''
+#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum Target { Claude, AgentsMd, Copilot, Gemini, Opencode }
+pub fn export(reg: &Registry, target: Target, repo_root: &std::path::Path) -> Result<Vec<std::path::PathBuf>, SkillError>;
+pub fn check(reg: &Registry, target: Target, repo_root: &std::path::Path) -> Result<Vec<std::path::PathBuf>, SkillError>;
+'''
+tests = ["exporta_claude", "exporta_agents_md_entre_marcadores", "crea_marcadores_si_faltan", "export_idempotente", "check_detecta_desfase"]
+
+[[tarea]]
+id = "F2.15"
+nombre = "skills-contrato"
+titulo = "Sección `## Contrato` y checkpoints de estado en las skills"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.13"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/contract.rs"]
+acepta = "cargo test -p pcode-skills contract"
+contexto = ["docs/papers.md (sección 4: Skill-as-Pseudocode y SKILL.state)"]
+objetivo = '''
+1. `## Contrato` contiene tres subsecciones: `### Entradas` (lista `- nombre: tipo — descripción`),
+   `### Salidas` (igual) y `### Ejemplo` (un bloque de código con la invocación concreta).
+2. `parse_contract(body)` → `Option<Contract>` (None si no hay sección); error si existe pero le
+   falta el ejemplo, porque el contrato sin plantilla concreta no ayuda (*Skill-as-Pseudocode*).
+3. `### Checkpoints` opcional: lista de nombres de estado que la skill declara. El bucle (F4) los
+   guardará fuera del historial (*SKILL.state*).
+4. `lint(skill)`: avisos legibles (descripción de más de 300 caracteres, contrato sin entradas, skill
+   aprendida sin `no_usar_cuando`).
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq)] pub struct Field { pub name: String, pub ty: String, pub doc: String }
+#[derive(Debug, Clone, PartialEq)] pub struct Contract { pub inputs: Vec<Field>, pub outputs: Vec<Field>, pub example: String, pub checkpoints: Vec<String> }
+pub fn parse_contract(body: &str) -> Result<Option<Contract>, SkillError>;
+pub fn lint(skill: &Skill) -> Vec<String>;
+'''
+tests = ["contrato_completo", "sin_contrato_es_none", "contrato_sin_ejemplo_es_error", "checkpoints", "lint_aprendida_sin_no_usar_cuando"]
+papers = ["Skill-as-Pseudocode (Findings EMNLP 2026)", "SKILL.state (EMNLP 2026 Industry)", "When Not to Imitate (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F2.16"
+nombre = "mcp-servidor"
+titulo = "`pcode-mcp`: servidor MCP (stdio) con las tools de PublicCode filtradas por política"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.03", "F1.18", "F1.11"]
+toca = ["crates/pcode-mcp/Cargo.toml", "crates/pcode-mcp/src/lib.rs", "crates/pcode-mcp/src/tools.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-mcp && cargo test -p pcode-cli"
+contexto = ["docs/arquitectura.md (sección «MCP»)", "crates/pcode-policy/src/caps.rs"]
+objetivo = '''
+1. Dependencia nueva permitida: `rmcp` (SDK oficial de MCP para Rust), transporte stdio.
+2. Tools: `sandbox_ejecutar {orden, red?: bool, tiempo?: int}` → `{estado, codigo, salida}`;
+   `sandbox_cambios {estado}`; `sandbox_aplicar {estado}`; `sandbox_descartar {estado}`;
+   `aceptar {orden}` → `{ok, salida_comprimida}`; `buscar_repo {patron, glob?}` (reusa `Grep`).
+3. Esquemas mínimos: descripciones de una línea (el coste de MCP está en el esquema, *ProMCP*).
+4. Política: el servidor recibe `--politica <toml>` y **no anuncia** las tools que la política oculta.
+5. `pcode mcp` arranca el servidor.
+'''
+tests = ["mcp_lista_tools", "mcp_oculta_por_politica", "mcp_aceptar_devuelve_salida_comprimida", "mcp_sandbox_ida_y_vuelta (se salta sin userns)"]
+papers = ["ProMCP (Findings ACL 2026)", "Prompts Don't Protect (EMNLP 2026 Industry)", "DynamicMCPBench / AgentCheck (EMNLP 2026)"]
+
+[[tarea]]
+id = "F2.17"
+nombre = "sincronizar-instrucciones"
+titulo = "`pcode instrucciones sincronizar`: AGENTS.md → CLAUDE.md, GEMINI.md, copilot-instructions"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.14"]
+toca = ["crates/pcode-skills/src/instructions.rs", "crates/pcode-skills/src/lib.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-skills instructions && cargo test -p pcode-cli"
+contexto = ["AGENTS.md", "CLAUDE.md", "docs/backends-verificado.md"]
+objetivo = '''
+1. `AGENTS.md` es la fuente única.
+2. `CLAUDE.md`: garantiza que la primera línea es `@AGENTS.md` y conserva el resto.
+3. `GEMINI.md` y `.github/copilot-instructions.md`: cabecera `<!-- generado desde AGENTS.md por pcode; no editar -->`
+   más el contenido de AGENTS.md (o un `@AGENTS.md` si F0.03 confirma que esa CLI importa archivos).
+4. `--comprobar`: sale con 1 si algo está desfasado.
+'''
+firmas = '''
+pub fn sync_instructions(repo_root: &std::path::Path, check_only: bool) -> Result<Vec<std::path::PathBuf>, SkillError>;
+'''
+tests = ["sync_crea_gemini_y_copilot", "sync_respeta_resto_de_claude_md", "sync_idempotente", "comprobar_detecta_desfase"]
+
+[[tarea]]
+id = "F2.18"
+nombre = "cli-backend-sandbox"
+titulo = "CLI: `pcode run --backend X --sandbox N1` y `pcode sandbox …`"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.07", "F2.08", "F2.09", "F2.10", "F2.12"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/sandbox_cmd.rs", "crates/pcode-cli/tests/backend.rs"]
+acepta = "cargo test -p pcode-cli"
+contexto = ["crates/pcode-backends/src/lib.rs", "crates/pcode-sandbox/src/lib.rs", "README.md (Configuración prevista)"]
+objetivo = '''
+1. `pcode run … --backend <nombre de [backends.*]> --sandbox N1|ninguna`: construye el backend desde la
+   configuración, crea la sandbox, ejecuta, imprime los cambios y deja el estado para que el usuario
+   decida (`pcode sandbox aplicar <estado>`).
+2. `--aplicar-si-acepta`: si `acepta` pasa DENTRO de la sandbox, aplica automáticamente.
+3. `pcode sandbox ejecutar|cambios|aplicar|descartar`: mismas opciones que el prototipo de Python.
+'''
+tests = ["cli_sandbox_ejecutar_y_cambios (se salta sin userns)", "cli_run_backend_mock (backend `modelo` con PCODE_MOCK_SCRIPT)", "cli_backend_desconocido_es_error"]
+
+[[tarea]]
+id = "F2.19"
+nombre = "proxy-salida"
+titulo = "`pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F1.15"]
+toca = ["crates/pcode-sandbox/src/netproxy.rs", "crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/Cargo.toml"]
+acepta = "cargo test -p pcode-sandbox netproxy"
+contexto = ["docs/mini-sandboxes.md (Red)"]
+objetivo = '''
+1. Escucha en un socket Unix. Acepta `CONNECT host:puerto HTTP/1.1`: si `host:puerto` casa con la
+   lista (`*.dominio` admitido; puerto opcional) → `200 Connection established` y túnel
+   bidireccional (`tokio::io::copy_bidirectional`); si no → `403` y una entrada de auditoría.
+2. Peticiones HTTP planas (`GET http://host:puerto/… HTTP/1.1`): lo mismo, reenviándolas (para
+   LiteLLM en `http://127.0.0.1:30400`).
+3. Tiempo máximo de inactividad por conexión: 10 minutos.
+'''
+firmas = '''
+pub struct NetProxy { pub socket: std::path::PathBuf, pub allow: Vec<String> }
+impl NetProxy { pub async fn serve(self, audit: Option<std::sync::Arc<std::sync::Mutex<pcode_policy::AuditLog>>>) -> std::io::Result<()>; }
+pub fn host_allowed(allow: &[String], host: &str, port: u16) -> bool;
+'''
+tests = ["host_allowed_comodin_y_puerto", "proxy_connect_permitido_hace_tunel (servidor TCP de eco local)", "proxy_connect_denegado_403", "proxy_http_plano_reenvia"]
+
+[[tarea]]
+id = "F2.20"
+nombre = "puente-sandbox"
+titulo = "Puente TCP→Unix dentro de la sandbox y red `Filtered`"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.19", "F2.04"]
+toca = ["crates/pcode-sandbox/src/bridge.rs", "crates/pcode-sandbox/src/run.rs", "crates/pcode-sandbox/src/prepare.sh", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-sandbox bridge && cargo test -p pcode-cli"
+contexto = ["docs/mini-sandboxes.md (Red)", "crates/pcode-sandbox/src/netproxy.rs"]
+objetivo = '''
+1. Subcomando oculto `pcode __puente --escucha 127.0.0.1:3128 --socket <ruta>`: acepta TCP y reenvía
+   cada conexión al socket Unix.
+2. Con `Network::Filtered`: `Sandbox::run` arranca un `NetProxy` en el host (socket en el estado), lo
+   monta dentro con `--escribible`, crea el netns (`--net`), `prepare.sh` lanza `__puente` en segundo
+   plano antes del `exec` y exporta `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` y `https_proxy`
+   apuntando a `http://127.0.0.1:3128`.
+3. Test de extremo a extremo: dentro de la sandbox, `curl` (si existe) o un pequeño cliente Rust
+   llega a un servidor local permitido y no a uno denegado.
+'''
+tests = ["puente_reenvia", "filtered_permite_dominio (se salta sin userns)", "filtered_deniega_otro (se salta sin userns)"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F3 — Flujos: tareas, DAG, aceptación, reintentos, integración, CI (sustituye a orquestador.py)
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F3.01"
+nombre = "tareas-parser"
+titulo = "`pcode-flow`: leer tareas (frontmatter y cabeceras HTML de SO_IA)"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F0.01"]
+toca = ["crates/pcode-flow/Cargo.toml", "crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/task.rs"]
+acepta = "cargo test -p pcode-flow task"
+contexto = ["tareas/F1.01-config.md (formato propio)", "../SO_IA/ci/tareas/T1.2.md (formato SO_IA)", "../SO_IA/ci/orquestador.py (función cabecera)"]
+objetivo = '''
+1. Acepta las cabeceras `<!-- acepta: … -->`, `<!-- modo: … -->` y `<!-- depende: a, b -->` (como
+   `cabecera()` de SO_IA) y, además, un frontmatter `---` con `acepta`, `modo`, `depende`, `toca`,
+   `backend`, `skills`, `presupuesto_minutos`.
+2. Si están los dos, manda el frontmatter.
+3. `id` = nombre del archivo sin `.md`. `body` = el resto.
+4. `load_dir(dir)` carga todos los `.md` (ignora los que no tienen `acepta` y lo avisa con `tracing::warn!`).
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)] pub enum Mode { Kernel, Isolated, Coordinator }
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskDef { pub id: String, pub accept: String, pub mode: Mode, pub depends: Vec<String>, pub touches: Vec<String>,
+                     pub backend: Option<String>, pub skills: Vec<String>, pub budget_minutes: Option<u32>, pub body: String }
+pub fn parse_task(id: &str, text: &str) -> Result<TaskDef, String>;
+pub fn load_dir(dir: &std::path::Path) -> Result<Vec<TaskDef>, String>;
+'''
+tests = ["parsea_cabecera_so_ia", "parsea_frontmatter", "frontmatter_gana", "modo_por_defecto_kernel (como SO_IA)", "sin_acepta_se_ignora_en_load_dir"]
+
+[[tarea]]
+id = "F3.02"
+nombre = "dag"
+titulo = "DAG de tareas: ciclos, dependencias inexistentes y tareas listas"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.01"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/dag.rs"]
+acepta = "cargo test -p pcode-flow dag"
+contexto = ["crates/pcode-flow/src/task.rs"]
+objetivo = "`Dag::new` valida (ciclos con el camino, dependencias que no existen); `ready(done, running, blocked)` devuelve las tareas cuyas dependencias están todas en `done`, que no están ni hechas, ni en marcha, ni bloqueadas, en orden estable por id."
+firmas = '''
+pub struct Dag { /* tasks */ }
+impl Dag {
+    pub fn new(tasks: Vec<TaskDef>) -> Result<Dag, String>;
+    pub fn ready(&self, done: &std::collections::HashSet<String>, running: &std::collections::HashSet<String>,
+                 blocked: &std::collections::HashSet<String>) -> Vec<&TaskDef>;
+    pub fn get(&self, id: &str) -> Option<&TaskDef>;
+}
+'''
+tests = ["dag_ciclo_con_camino", "dag_dependencia_inexistente", "dag_ready_respeta_dependencias", "dag_ready_orden_estable"]
+
+[[tarea]]
+id = "F3.03"
+nombre = "eventos-flujo"
+titulo = "Estado del flujo por eventos en SQLite y su proyección"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.02", "F1.19"]
+toca = ["crates/pcode-flow/Cargo.toml", "crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/events.rs"]
+acepta = "cargo test -p pcode-flow events"
+contexto = ["crates/pcode-store/src/lib.rs", "../SO_IA/ci/estado.json (lo que sustituye)"]
+objetivo = '''
+1. `FlowEvent` (serde, etiquetado por `tipo`): `Lanzada{tarea, intento, backend}`,
+   `AceptacionOk{tarea, intento}`, `AceptacionFallo{tarea, intento, resumen}`, `Integrada{tarea, commit}`,
+   `IntegracionFallo{tarea, motivo}`, `Bloqueada{tarea, motivo}`, `CiRoja{sha, detalle}`, `Parada`.
+2. Se guardan como eventos de `pcode-store` con `kind = "flujo"`.
+3. `FlowState::replay(events)`: estados por tarea (`Pendiente`, `EnMarcha(intento)`, `Aceptada`,
+   `Integrada`, `Bloqueada`) e intentos. Reabrir el proceso = replay: **no hay estado que se pierda**.
+4. `import_so_ia_estado(json)`: convierte un `ci/estado.json` de SO_IA en eventos equivalentes.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "tipo")]
+pub enum FlowEvent { /* variantes del objetivo */ }
+#[derive(Debug, Clone, PartialEq, Eq)] pub enum TaskState { Pending, Running(u32), Accepted, Integrated, Blocked(String) }
+#[derive(Debug, Default)] pub struct FlowState { pub tasks: std::collections::BTreeMap<String, TaskState>, pub attempts: std::collections::BTreeMap<String, u32> }
+impl FlowState { pub fn replay(events: &[FlowEvent]) -> FlowState; }
+pub fn import_so_ia_estado(json: &serde_json::Value) -> Vec<FlowEvent>;
+'''
+tests = ["replay_ciclo_completo", "replay_reintentos", "persistir_y_releer (Store en memoria)", "importa_estado_so_ia (fixture con 3 tareas)"]
+
+[[tarea]]
+id = "F3.04"
+nombre = "planificador-ejecucion"
+titulo = "Planificador de ejecución: paralelismo por modo y exclusión de kernel"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.03"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/scheduler.rs"]
+acepta = "cargo test -p pcode-flow scheduler"
+contexto = ["crates/pcode-flow/src/dag.rs", "../SO_IA/ci/orquestador.py (MAX_PAR, KERNEL-OCUPADO)"]
+objetivo = '''
+Función PURA `plan(dag, state, limits, flags)` → lista de tareas a lanzar ahora:
+1. Como mucho `limits.max_parallel` en marcha en total.
+2. `Kernel`: como mucho 1 a la vez, y ninguna si `flags.kernel_busy` (equivale a `ci/KERNEL-OCUPADO`).
+3. Una tarea `CI-arreglo-*` lista va antes que cualquier otra de kernel.
+4. `Coordinator`: nunca se lanza sola; aparece en `needs_coordinator`.
+5. Tras `max_attempts` fallos → `Bloqueada`.
+'''
+firmas = '''
+pub struct Limits { pub max_parallel: usize, pub max_attempts: u32 }
+pub struct Flags { pub kernel_busy: bool, pub stop: bool, pub provider_down: bool }
+pub struct Plan { pub launch: Vec<String>, pub needs_coordinator: Vec<String>, pub newly_blocked: Vec<String> }
+pub fn plan(dag: &Dag, state: &FlowState, limits: &Limits, flags: &Flags) -> Plan;
+'''
+tests = ["plan_respeta_max_parallel", "plan_un_kernel_a_la_vez", "plan_kernel_ocupado", "plan_ci_arreglo_primero", "plan_coordinador_no_se_lanza", "plan_bloquea_tras_max_intentos", "plan_stop_no_lanza"]
+
+[[tarea]]
+id = "F3.05"
+nombre = "aceptacion-dos-etapas"
+titulo = "Aceptación en dos etapas: rápida en N1 y completa en N2 (contenedor)"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.04", "F2.03", "F1.18"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/accept.rs"]
+acepta = "cargo test -p pcode-flow accept"
+contexto = ["docs/arquitectura.md (Flujos)", "docs/papers.md (Dockerless, SWE-World)", "../SO_IA/ci/en-imagen.sh"]
+objetivo = '''
+1. Etapa rápida (opcional, `acepta_rapida` del frontmatter): `run_acceptance` en una sandbox N1
+   sobre el resultado del agente. Si falla, no se pasa a la etapa completa.
+2. Etapa completa: `docker run --rm -v <copia limpia>:/work -w /work <imagen> sh -c '<acepta>'` con el
+   tiempo máximo de la tarea (por defecto 50 min, como SO_IA), o en N1 si no hay imagen configurada.
+3. Salida: `ok`, salida completa en `informes/validaciones/<id>.txt` y **líneas clave** delante (las
+   que contienen `error`, `FAILED`, `panicked`, `test result`, `TESTS DONE`).
+4. La orden de docker se construye en una función pura (testeable sin docker).
+'''
+firmas = '''
+pub struct AcceptSpec { pub quick: Option<String>, pub full: String, pub image: Option<String>, pub timeout: std::time::Duration }
+pub struct AcceptOutcome { pub ok: bool, pub stage: &'static str, pub key_lines: Vec<String>, pub output_path: std::path::PathBuf }
+pub fn docker_argv(image: &str, workdir: &std::path::Path, cmd: &str) -> Vec<String>;
+pub fn key_lines(output: &str, max: usize) -> Vec<String>;
+pub async fn run_accept(spec: &AcceptSpec, tree: &std::path::Path, report: &std::path::Path) -> AcceptOutcome;
+'''
+tests = ["docker_argv_exacto", "key_lines_extrae", "rapida_falla_no_ejecuta_completa", "completa_sin_imagen_usa_n1 (se salta sin userns)"]
+
+[[tarea]]
+id = "F3.06"
+nombre = "reintentos-relevo"
+titulo = "Reintentos con informe de relevo, paso crítico y escalado de backend"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.05", "F2.06"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/retry.rs"]
+acepta = "cargo test -p pcode-flow retry"
+contexto = ["crates/pcode-backends/src/types.rs (Handoff)", "docs/papers.md (Handoff Debt, TRAJDEBUG)"]
+objetivo = '''
+1. `build_handoff(attempt, result, accept, changes)`: `tried` = órdenes y tools principales de la
+   transcripción (como mucho 15, sin duplicados); `failed_because` = líneas clave de la aceptación;
+   `critical_step` = la PRIMERA llamada cuyo resultado contiene un error relacionado con la primera
+   línea clave (mismo archivo o mismo test) o, si no hay ninguna, la primera llamada con error;
+   `files` = cambios de la sandbox.
+2. `next_backend(attempt, policy)`: intentos 1 y 2 con el backend de la tarea; el 3 con
+   `policy.escalate_to` (p. ej. Claude Code); después, bloqueada.
+'''
+firmas = '''
+pub struct RetryPolicy { pub max_attempts: u32, pub escalate_to: Option<String> }
+pub fn build_handoff(attempt: u32, result: &pcode_backends::BackendResult, accept: &AcceptOutcome,
+                     changes: &[pcode_sandbox::Change]) -> pcode_backends::Handoff;
+pub fn next_backend(task_backend: &str, attempt: u32, policy: &RetryPolicy) -> Option<String>;
+'''
+tests = ["handoff_paso_critico_por_archivo", "handoff_tried_sin_duplicados", "escala_en_el_tercero", "bloquea_tras_maximo"]
+papers = ["Handoff Debt (EMNLP 2026)", "TRAJDEBUG (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F3.07"
+nombre = "integracion"
+titulo = "Cola de integración: aplicar, commit, rebase, lockfiles regenerados y re-validación"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.05"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/integrate.rs", "crates/pcode-flow/tests/integrate.rs"]
+acepta = "cargo test -p pcode-flow --test integrate"
+contexto = ["../SO_IA/ci/integrar.sh", "../SO_IA/ci/orquestador.log (los 17 fallos de integración: conflictos en Cargo.toml y Cargo.lock)"]
+objetivo = '''
+En un worktree de integración (`git worktree add .pcode/integracion main`), de una en una:
+1. Aplica los cambios de la tarea (desde su rama o desde la capa de la sandbox) y hace un commit
+   `<id>: <título>` con SOLO las rutas de los cambios (nunca `git add -A`).
+2. `git rebase main`. Si hay conflicto SOLO en lockfiles (`Cargo.lock`): toma la versión de main,
+   regenera (`cargo metadata --offline >/dev/null` o `cargo update -w --offline`) y continúa.
+3. Conflicto en `Cargo.toml` raíz de un workspace con `members = ["lib/*"]` o `["crates/*"]`: si las
+   dos partes solo añaden miembros, une las listas; si no → `IntegracionFallo` para el coordinador.
+4. Cualquier otro conflicto → `git rebase --abort` e `IntegracionFallo`.
+5. Re-ejecuta `acepta` sobre el resultado del rebase; solo si pasa, fast-forward de main.
+6. Tests con repos git temporales y un workspace Cargo mínimo.
+'''
+firmas = '''
+#[derive(Debug, PartialEq)] pub enum IntegrateResult { Integrated { commit: String }, Conflict { files: Vec<String> }, AcceptFailed(String) }
+pub async fn integrate(repo: &std::path::Path, task: &TaskDef, source_branch: &str) -> Result<IntegrateResult, String>;
+pub fn merge_member_lists(ours: &str, theirs: &str) -> Option<String>;
+'''
+tests = ["integra_sin_conflicto", "conflicto_cargo_lock_se_regenera", "conflicto_members_se_une", "conflicto_codigo_aborta", "acepta_falla_tras_rebase_no_avanza_main"]
+
+[[tarea]]
+id = "F3.08"
+nombre = "clasificador-ci"
+titulo = "Clasificador de ejecuciones de GitHub Actions (sin tareas fantasma)"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.01"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/ci.rs", "crates/pcode-flow/tests/fixtures/ci_runs.json"]
+acepta = "cargo test -p pcode-flow ci"
+contexto = ["../SO_IA/ci/orquestador.py (ci_github y el comentario sobre los rojos fantasma)", "../SO_IA/ci/orquestador.log (líneas «CI de GitHub en …»)"]
+objetivo = '''
+`classify(run, jobs)` a partir del JSON de la API de Actions:
+1. `success` → `Verde`.
+2. `failure` o `timed_out` con al menos un paso fallido → `Roja{jobs, pasos}` (genera una tarea `CI-arreglo-<sha>`).
+3. `cancelled`, o `failure` SIN ningún paso fallido → `NoAccionable` (no genera tarea).
+4. `startup_failure` o error de infraestructura (runner perdido) → `Infra` (reintentar más tarde).
+5. Run en curso → `EnCurso`.
+Fixtures sacados de los casos reales del log de SO_IA (rojo real, cancelado, fantasma).
+'''
+firmas = '''
+#[derive(Debug, PartialEq)] pub enum CiVerdict { Green, Red { failing: Vec<(String, String)> }, NotActionable(String), Infra(String), InProgress }
+pub fn classify(run: &serde_json::Value, jobs: &serde_json::Value) -> CiVerdict;
+'''
+tests = ["ci_verde", "ci_roja_con_paso", "ci_cancelada_no_accionable", "ci_failure_sin_pasos_no_accionable", "ci_startup_failure_infra", "ci_en_curso"]
+
+[[tarea]]
+id = "F3.09"
+nombre = "planificador-llm"
+titulo = "Planificador LLM: generar tareas cuando la cola baja y validarlas antes de aceptarlas"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.04", "F2.07"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/planner.rs"]
+acepta = "cargo test -p pcode-flow planner"
+contexto = ["../SO_IA/ci/planificador.md (prompt actual)", "tools/tareas/generar.py (reglas de validación de tareas)"]
+objetivo = '''
+1. `should_plan(state, dag)`: verdadero si hay menos de `min_ready` tareas listas y no hay una
+   planificación en marcha.
+2. `planner_prompt(ctx)`: prompt del planificador con el estado (como el orquestador de SO_IA, que
+   antepone el estado a `planificador.md`).
+3. `validate_new_tasks(dir_before, dir_after)`: cada tarea nueva debe parsear (`parse_task`), tener
+   `acepta`, no repetir un id, no depender de inexistentes y, si es para Haiku, tocar ≤ 4 archivos.
+   Las inválidas se rechazan con su motivo y no entran en el DAG.
+'''
+firmas = '''
+pub struct PlannerCtx { pub state_summary: String, pub prompt_file: std::path::PathBuf }
+pub fn should_plan(state: &FlowState, dag: &Dag, min_ready: usize) -> bool;
+pub fn planner_prompt(ctx: &PlannerCtx) -> std::io::Result<String>;
+pub fn validate_new_tasks(existing: &[TaskDef], new: &[(String, String)]) -> (Vec<TaskDef>, Vec<(String, String)>);
+'''
+tests = ["planifica_si_pocas_listas", "rechaza_sin_acepta", "rechaza_id_repetido", "rechaza_haiku_demasiados_archivos", "acepta_valida"]
+
+[[tarea]]
+id = "F3.10"
+nombre = "cli-flow"
+titulo = "`pcode flow run|estado|parar` y `estado.md`"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.06", "F3.07", "F3.08", "F2.18"]
+toca = ["crates/pcode-flow/src/runner.rs", "crates/pcode-flow/src/lib.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/flow_cmd.rs"]
+acepta = "cargo test -p pcode-flow runner && cargo test -p pcode-cli"
+contexto = ["crates/pcode-flow/src/scheduler.rs", "../SO_IA/ci/orquestador.py (ciclo principal)", "../SO_IA/ci/README.md"]
+objetivo = '''
+1. `Runner::tick()`: un ciclo = recoger lo que ha terminado → aceptar → integrar → CI → `plan()` →
+   lanzar → escribir `estado.md` → planificador si toca. Cada paso emite eventos.
+2. `pcode flow run --tareas DIR [--paralelo N] [--una-vez]`: bucle de `tick` cada 30 s (o uno solo).
+   Señal o archivo `.pcode/STOP` → parada limpia.
+3. `pcode flow estado`: tabla de tareas, agentes en marcha y «Requiere coordinador».
+4. Test con backend mock, 3 tareas y una dependencia: termina con las 3 integradas.
+'''
+firmas = '''
+pub struct Runner { /* dag, store, backends, limits, ... */ }
+impl Runner { pub async fn tick(&mut self) -> Result<TickSummary, String>; pub fn render_status_md(&self) -> String; }
+pub struct TickSummary { pub launched: Vec<String>, pub accepted: Vec<String>, pub integrated: Vec<String>, pub failed: Vec<String> }
+'''
+tests = ["runner_tres_tareas_con_mock", "runner_stop_para", "estado_md_tiene_secciones"]
+
+[[tarea]]
+id = "F3.11"
+nombre = "modo-so-ia"
+titulo = "Modo SO_IA: usar `ci/tareas` tal cual y ejecución en sombra frente a `orquestador.py`"
+fase = "F3"
+ejecutor = "coordinador"
+depende = ["F3.10"]
+toca = ["docs/so-ia-migracion.md", "crates/pcode-flow/src/shadow.rs"]
+acepta = "test -s docs/so-ia-migracion.md && cargo test -p pcode-flow shadow"
+contexto = ["../SO_IA/ci/README.md", "../SO_IA/docs/08-adr/ADR-0012-agentes-de-codigo.md"]
+objetivo = '''
+1. Modo sombra: `pcode flow run --sombra` lee `ci/tareas` y `ci/estado.json` de SO_IA, calcula qué
+   lanzaría e integraría y lo registra SIN actuar; compara con `ci/orquestador.log` cada hora.
+2. Una semana en sombra; documentar las diferencias en `docs/so-ia-migracion.md`.
+3. Plan de corte: parar `orquestador.sh`, importar el estado (`import_so_ia_estado`), arrancar
+   `pcode flow run` con backend opencode+GLM (idéntico) y después probar backends nuevos.
+'''
+tests = ["shadow_no_ejecuta_nada", "shadow_compara_con_log (fixture)"]
+
+[[tarea]]
+id = "F3.12"
+nombre = "revision-cruzada"
+titulo = "Revisión cruzada del diff por otro backend (rúbrica del repo y seguridad del parche)"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.10"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/review.rs"]
+acepta = "cargo test -p pcode-flow review"
+contexto = ["docs/papers.md (sección 7: Agentic Rubrics, CodeJudgeBench, When Correct Is Not Safe)", "AGENTS.md"]
+objetivo = '''
+1. `rubric(agents_md, task)`: lista de comprobaciones derivadas de las reglas duras de AGENTS.md y de
+   `toca` y los tests de la tarea.
+2. `review_prompt(diff, rubric)`: pide un JSON con el veredicto (esquema abajo).
+3. `parse_verdict(text)`: extrae el JSON (reusa la reparación de F1.07); si no parsea → veredicto
+   `Indeterminado`.
+4. Política: el veredicto **no bloquea** salvo un problema de `seguridad` de gravedad `alta` con
+   archivo y línea que existan en el diff → la tarea pasa a coordinador. El juez nunca sustituye a `acepta`.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)] pub struct Issue { pub severity: String, pub file: String, pub line: Option<u32>, pub description: String, pub security: bool }
+#[derive(Debug, Clone, PartialEq)] pub enum Verdict { Approved(Vec<Issue>), NeedsCoordinator(Vec<Issue>), Undetermined(String) }
+pub fn rubric(agents_md: &str, task: &TaskDef) -> Vec<String>;
+pub fn review_prompt(diff: &str, rubric: &[String]) -> String;
+pub fn parse_verdict(text: &str, diff: &str) -> Verdict;
+'''
+tests = ["rubrica_incluye_toca", "veredicto_aprobado", "seguridad_alta_con_evidencia_va_a_coordinador", "seguridad_sin_evidencia_no_bloquea", "json_roto_indeterminado"]
+papers = ["Agentic Rubrics (ACL 2026)", "CodeJudgeBench (ACL 2026)", "When \"Correct\" Is Not Safe (ACL 2026)"]
+
+[[tarea]]
+id = "F3.13"
+nombre = "bench"
+titulo = "`pcode bench`: ejecutar SinapsisBench con cualquier backend"
+fase = "F3"
+ejecutor = "haiku"
+depende = ["F3.10", "F0.04"]
+toca = ["crates/pcode-flow/src/bench.rs", "crates/pcode-flow/src/lib.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/bench_cmd.rs"]
+acepta = "cargo test -p pcode-flow bench && cargo test -p pcode-cli"
+contexto = ["docs/evaluacion.md", "bench/README.md", ".claude/skills/sinapsis-bench/SKILL.md"]
+objetivo = '''
+1. `pcode bench --conjunto bench/smoke.jsonl --backend X --repo ../SO_IA [--intentos 3]`: por cada
+   tarea, worktree en `base`, sandbox, backend, aceptación y reintentos con relevo.
+2. Resultado por línea en `bench/resultados/<fecha>-<backend>.jsonl`: id, ok_primera, ok_final,
+   intentos, tokens, ms, violaciones (`tools/bench/reglas.py`), archivos.
+3. `pcode bench informe A.jsonl B.jsonl`: tabla Markdown comparativa con las métricas de
+   `docs/evaluacion.md`.
+'''
+firmas = '''
+pub struct BenchRow { pub id: String, pub ok_first: bool, pub ok_final: bool, pub attempts: u32, pub tokens_in: u64, pub tokens_out: u64, pub millis: u64, pub violations: u32 }
+pub fn report_markdown(runs: &[(String, Vec<BenchRow>)]) -> String;
+'''
+tests = ["informe_tabla_dos_backends", "bench_mock_dos_tareas"]
