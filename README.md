@@ -23,9 +23,13 @@ se sigue en el escritorio.
 > | Skills | registro, exportación a Claude/AGENTS/Copilot/Gemini/opencode, contratos | F2.13–F2.15 |
 > | Flujos | tareas con criterio de aceptación, DAG, estado por eventos, planificador, integración sin conflictos de lockfile, clasificador de CI, `pcode flow run` | F3.01–F3.08, F3.10 |
 > | Demonio | API JSON-RPC + eventos SSE + página web + cola de aprobaciones, tipos TypeScript generados, `pcode daemon` | F5.01–F5.03 |
+> | Windows | el núcleo, `pcode run` y `pcode daemon` funcionan en Windows (shell `cmd`, política que entiende cmd y PowerShell); la sandbox N1 es solo de Linux | F1.24 |
+> | CI/CD | CI en Linux y Windows con prueba de humo; release con `.zip` para Windows, `.tar.gz` para Linux y `SHA256SUMS` | F0.07 |
 >
-> **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F3, el
-> planificador LLM, la revisión cruzada y `pcode bench`. Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
+> **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F1,
+> los proveedores nativos Anthropic y Gemini (F1.22, F1.23; hoy se usan vía LiteLLM); de F2, el Copilot
+> coding agent (F2.11) y `pcode run --backend` / `pcode flow` en Windows sin WSL (F2.21, nivel N0); de F3, el
+> planificador LLM, la revisión cruzada, la etapa N2 de la aceptación y `pcode bench`; de F5, la API de flujos en el demonio (F5.04). Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
 > seccomp, proxy de salida y red filtrada, servidor MCP, TUI, UI React y app de
 > escritorio, PWA, ACP, VS Code, GitHub, contexto/memoria/router (F4), aprendizaje de skills (F6) y
 > endurecimiento (F7). Los adaptadores de CLIs de terceros usan fixtures sintéticas hasta que F0.03
@@ -48,11 +52,12 @@ se sigue en el escritorio.
 11. [Base científica: ACL y EMNLP 2026](#base-científica-acl-y-emnlp-2026)
 12. [Cómo se mide que es mejor](#cómo-se-mide-que-es-mejor)
 13. [Hoja de ruta](#hoja-de-ruta)
-14. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
-15. [Configuración prevista](#configuración-prevista)
-16. [Estructura del repositorio](#estructura-del-repositorio)
-17. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
-18. [Decisiones abiertas](#decisiones-abiertas)
+14. [Instalación](#instalación)
+15. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
+16. [Configuración prevista](#configuración-prevista)
+17. [Estructura del repositorio](#estructura-del-repositorio)
+18. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
+19. [Decisiones abiertas](#decisiones-abiertas)
 
 ---
 
@@ -338,6 +343,42 @@ Terminal-Bench) con el mismo modelo abierto en opencode y en PublicCode. Detalle
 Plan completo: [docs/PLAN.md](docs/PLAN.md). Arquitectura: [docs/arquitectura.md](docs/arquitectura.md).
 Plan de implementación tarea a tarea para Haiku 5.5: [docs/implementacion.md](docs/implementacion.md)
 y [tareas/](tareas/).
+
+## Instalación
+
+Cada etiqueta `v*` publica una [release](https://github.com/jlasherasTracasa/PublicCode/releases)
+con el binario `pcode` y `SHA256SUMS` (workflow [release.yml](.github/workflows/release.yml)).
+
+| Sistema | Archivo | Instalación |
+|---|---|---|
+| Windows 10/11 x64 | `pcode-<versión>-x86_64-pc-windows-msvc.zip` | descomprimir y ejecutar `install.ps1` |
+| Linux x86_64 | `pcode-<versión>-x86_64-unknown-linux-gnu.tar.gz` | descomprimir y ejecutar `install.sh` |
+
+En Windows (PowerShell, sin permisos de administrador; instala en `%LOCALAPPDATA%\PublicCode\bin` y lo
+añade al PATH del usuario):
+
+```powershell
+Expand-Archive pcode-v0.1.0-x86_64-pc-windows-msvc.zip -DestinationPath .
+powershell -ExecutionPolicy Bypass -File .\pcode-v0.1.0-x86_64-pc-windows-msvc\install.ps1
+pcode --version
+```
+
+En Linux (instala en `~/.local/bin`):
+
+```bash
+tar xzf pcode-v0.1.0-x86_64-unknown-linux-gnu.tar.gz && ./pcode-v0.1.0-x86_64-unknown-linux-gnu/install.sh
+```
+
+Desde el código: `cargo install --path crates/pcode-cli --locked` (Rust según `rust-toolchain.toml`).
+
+| Función | Linux | Windows |
+|---|---|---|
+| `pcode run` (bucle del agente con política y auditoría) | ✓ | ✓ |
+| `pcode daemon` (API, web y aprobaciones) | ✓ | ✓ |
+| `pcode sandbox …`, `pcode run --backend`, `pcode flow` | ✓ (N1) | dentro de WSL2; N0 nativo en F2.21 |
+
+Publicar una versión: `git tag v0.1.0 && git push origin v0.1.0`, o lanzar *Release* a mano desde
+Actions con el nombre de la etiqueta.
 
 ## Uso rápido (lo que ya funciona)
 

@@ -109,9 +109,12 @@ impl Runner {
         backend: Arc<dyn Backend>,
     ) -> Result<Done, String> {
         let t = self.dag.get(&id).ok_or("tarea desconocida")?;
+        // Directorio único por proceso y ejecución: dos runners (o dos tests) no comparten estado.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let state = pcode_sandbox::tmp_base()
             .join("pcode-flow")
-            .join(format!("{id}-{attempt}"));
+            .join(format!("{}-{n}-{id}-{attempt}", std::process::id()));
         let _ = std::fs::remove_dir_all(&state);
         let sandbox = Sandbox::create(SandboxSpec {
             root: self.cfg.repo.clone(),

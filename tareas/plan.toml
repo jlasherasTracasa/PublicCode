@@ -160,6 +160,28 @@ tests = [
 papers = ["OctoBench (ACL 2026): seguimiento de instrucciones del scaffold"]
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
+[[tarea]]
+id = "F0.07"
+nombre = "ci-windows-release"
+titulo = "CI en Linux y Windows, y release de la CLI con instaladores"
+fase = "F0"
+ejecutor = "coordinador"
+depende = ["F0.02", "F1.20"]
+toca = [".github/workflows/ci.yml", ".github/workflows/release.yml", "install.ps1", "install.sh"]
+acepta = "grep -q 'windows-latest' .github/workflows/ci.yml && grep -q 'x86_64-pc-windows-msvc' .github/workflows/release.yml && grep -q 'SHA256SUMS' .github/workflows/release.yml && test -x install.sh && test -s install.ps1"
+contexto = ["AGENTS.md (sección 8, plataformas)", "README.md (sección «Instalación»)"]
+objetivo = '''
+1. `ci.yml`: además de `rust` en Linux, un job `windows` (`windows-latest`) con clippy de todo el
+   workspace, tests de los crates portables y una prueba de humo de `pcode.exe run` con un guion
+   simulado (crea un archivo y escribe `.pcode\audit.jsonl`).
+2. `release.yml`: al subir una etiqueta `v*` (o a mano), compila `pcode` para
+   `x86_64-pc-windows-msvc` (zip con `install.ps1`) y `x86_64-unknown-linux-gnu` (tar.gz con
+   `install.sh`), calcula `SHA256SUMS` y publica la release de GitHub.
+3. `install.ps1`: instalación por usuario en `%LOCALAPPDATA%\PublicCode\bin` y PATH de usuario;
+   `install.sh`: en `~/.local/bin`. Ambos verifican el SHA-256 si se les pasa.
+'''
+tests = ["(CI): los jobs `windows` y `linux` en verde; la release publica los dos archivos y `SHA256SUMS`"]
+
 # F1 — Núcleo: configuración, modelos, tools, política, bucle, CLI
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1155,6 +1177,30 @@ impl GeminiProvider { pub fn new(name: impl Into<String>, base_url: impl Into<St
 tests = ["gemini_roles_user_model", "gemini_function_call_y_response", "gemini_ids_sinteticos", "gemini_usage", "gemini_http_cabecera_y_ruta"]
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
+[[tarea]]
+id = "F1.24"
+nombre = "shell-portable"
+titulo = "Shell portable (sh en Linux, cmd en Windows) y política que entra en cmd y PowerShell"
+fase = "F1"
+ejecutor = "coordinador"
+depende = ["F1.12", "F1.14"]
+toca = ["crates/pcode-tools/src/bash.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-policy/src/shell.rs", "crates/pcode-core/src/stop_hook.rs", "crates/pcode-flow/src/accept.rs"]
+acepta = "cargo test -p pcode-tools shell_argv && cargo test -p pcode-policy cmd_y_powershell"
+contexto = ["crates/pcode-tools/src/bash.rs", "crates/pcode-policy/src/shell.rs"]
+objetivo = '''
+1. `shell_argv(cmd)` devuelve `["cmd", "/C", cmd]` en Windows y `["sh", "-c", cmd]` en el resto;
+   `shell_command(cmd)` construye el `tokio::process::Command`. La tool `bash`, el hook de parada y
+   la aceptación de flujos los usan en lugar de `sh -c` fijo.
+2. `simple_commands` descompone también `cmd /C …` y `powershell|pwsh -Command|-c …`, para que la
+   política vea las órdenes de dentro.
+'''
+firmas = '''
+// crates/pcode-tools/src/bash.rs
+pub fn shell_argv(cmd: &str) -> Vec<String>;
+pub fn shell_command(cmd: &str) -> tokio::process::Command;
+'''
+tests = ["shell_argv_segun_plataforma", "cmd_y_powershell_recursivos: `cmd /C 'git push'` y `pwsh -Command 'git push'` contienen `git push`"]
+
 # F2 — Backends, mini sandbox en Rust, skills, MCP
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1720,6 +1766,28 @@ tests = ["puente_reenvia", "filtered_permite_dominio (se salta sin userns)", "fi
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
+[[tarea]]
+id = "F2.21"
+nombre = "windows-sin-n1"
+titulo = "Windows sin WSL: copia de trabajo aislada (N0) para backends y flujos"
+fase = "F2"
+ejecutor = "haiku"
+depende = ["F2.03", "F2.18", "F3.10"]
+toca = ["crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/src/worktree.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/worktree.rs"]
+acepta = "cargo test -p pcode-sandbox worktree && cargo test -p pcode-cli --test worktree"
+contexto = ["crates/pcode-sandbox/src/run.rs (Sandbox, userns_available)", "crates/pcode-sandbox/src/apply.rs", "docs/mini-sandboxes.md"]
+objetivo = '''
+Hoy, en Windows, `pcode run --backend` y `pcode flow run` fallan porque N1 necesita namespaces de
+Linux. Añade un nivel **N0**: una copia de trabajo con `git worktree add --detach` en el directorio
+temporal, sin aislamiento de red ni de disco (el backend corre con los permisos del usuario).
+1. `WorktreeSandbox::create(repo)`, `run_capture(argv, timeout)`, `changes()`, `apply()` y
+   `discard()`, con la misma forma que `Sandbox` (cambios = `git status --porcelain` del worktree).
+2. Elección: si `userns_available()` es falso, la CLI usa N0 **solo** con `--sandbox N0` explícito o
+   `[sandbox] nivel = "N0"` en `pcode.toml`; si no, falla con un mensaje que explica WSL2 y N0.
+3. Los tests usan un repo git temporal y funcionan en Linux y en Windows.
+'''
+tests = ["worktree_crea_aplica_y_descarta", "worktree_sin_git_falla_con_mensaje", "cli: `pcode run --backend mock --sandbox N0` integra el cambio"]
+
 # F3 — Flujos: tareas, DAG, aceptación, reintentos, integración, CI (sustituye a orquestador.py)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1891,7 +1959,7 @@ fase = "F3"
 ejecutor = "haiku"
 depende = ["F3.05"]
 toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/integrate.rs", "crates/pcode-flow/tests/integrate.rs"]
-acepta = "cargo test -p pcode-flow --test integrate"
+acepta = "cargo test -p pcode-flow integrate"
 contexto = ["crates/pcode-flow/src/integrate.rs"]
 objetivo = '''
 En un worktree de integración (`git worktree add .pcode/integracion main`), de una en una:
@@ -3276,8 +3344,8 @@ nombre = "release"
 titulo = "Release 1.0: build reproducible, firma, instalación y documentación de usuario"
 fase = "F7"
 ejecutor = "coordinador"
-depende = ["F7.02", "F5.21", "F5.22", "F6.04"]
-toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "install.sh"]
+depende = ["F7.02", "F5.21", "F5.22", "F6.04", "F0.07"]
+toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "install.sh", "install.ps1"]
 acepta = "test -s docs/usuario.md && test -s CHANGELOG.md && grep -q sha256 .github/workflows/release.yml"
 contexto = ["docs/PLAN.md (decisiones abiertas: licencia, nombre)"]
 objetivo = "Binarios para Linux (x86_64 y aarch64) y Windows (x86_64) , `SHA256SUMS` firmado, instalación en una línea con verificación, guía de usuario (configurar backends, primer `pcode run`, `pcode flow`, sandboxes, skills) y checklist de seguridad superado (F7.01 y F7.02)."

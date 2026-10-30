@@ -124,6 +124,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F0.04-bench-smoke](../tareas/F0.04-bench-smoke.md) | Banco PublicBench: 20 tareas del propio plan con su commit base | coordinador | — | pendiente |
 | [F0.05-adrs](../tareas/F0.05-adrs.md) | ADRs iniciales: lenguaje, backends, sandbox, skills | coordinador | — | hecha |
 | [F0.06-eval-reglas](../tareas/F0.06-eval-reglas.md) | Eval de cumplimiento de reglas: archivos fuera de `toca` y órdenes git prohibidas | haiku | — | pendiente |
+| [F0.07-ci-windows-release](../tareas/F0.07-ci-windows-release.md) | CI en Linux y Windows, y release de la CLI con instaladores | coordinador | F0.02, F1.20 | hecha |
 
 ### F1
 
@@ -152,46 +153,48 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F1.21-detector-atasco](../tareas/F1.21-detector-atasco.md) | Detector de atasco, pistas por fallo típico y parada temprana | haiku | F1.18 | hecha |
 | [F1.22-anthropic](../tareas/F1.22-anthropic.md) | Proveedor Anthropic (Messages API): formato y cliente HTTP | haiku | F1.05 | pendiente |
 | [F1.23-gemini](../tareas/F1.23-gemini.md) | Proveedor Gemini (generateContent): formato y cliente HTTP | haiku | F1.05 | pendiente |
+| [F1.24-shell-portable](../tareas/F1.24-shell-portable.md) | Shell portable (sh en Linux, cmd en Windows) y política que entra en cmd y PowerShell | coordinador | F1.12, F1.14 | hecha |
 
 ### F2
 
 | Tarea | Qué | Ejecutor | Depende | Estado |
 |---|---|---|---|---|
-| [F2.01-sandbox-capa](../tareas/F2.01-sandbox-capa.md) | `pcode-sandbox`: leer la capa superior del overlay como lista de cambios | haiku | F0.01 | pendiente |
-| [F2.02-sandbox-ejecutar](../tareas/F2.02-sandbox-ejecutar.md) | Ejecutar una orden en N1 (namespaces + overlay + raíz ro) con tiempo máximo | haiku | F2.01 | pendiente |
-| [F2.03-sandbox-aplicar](../tareas/F2.03-sandbox-aplicar.md) | Aplicar y descartar los cambios de una sandbox | haiku | F2.02 | pendiente |
+| [F2.01-sandbox-capa](../tareas/F2.01-sandbox-capa.md) | `pcode-sandbox`: leer la capa superior del overlay como lista de cambios | haiku | F0.01 | hecha |
+| [F2.02-sandbox-ejecutar](../tareas/F2.02-sandbox-ejecutar.md) | Ejecutar una orden en N1 (namespaces + overlay + raíz ro) con tiempo máximo | haiku | F2.01 | hecha |
+| [F2.03-sandbox-aplicar](../tareas/F2.03-sandbox-aplicar.md) | Aplicar y descartar los cambios de una sandbox | haiku | F2.02 | hecha |
 | [F2.04-sandbox-landlock](../tareas/F2.04-sandbox-landlock.md) | Landlock dentro de la sandbox con `pcode __sandbox-exec` | haiku | F2.03, F1.20 | pendiente |
 | [F2.05-sandbox-seccomp-limites](../tareas/F2.05-sandbox-seccomp-limites.md) | Seccomp (lista de syscalls denegadas) y límites de recursos | haiku | F2.04 | pendiente |
-| [F2.06-backend-trait](../tareas/F2.06-backend-trait.md) | `pcode-backends`: trait `Backend`, `Job`, relevo tipado y `MockBackend` | haiku | F1.16, F2.03 | pendiente |
-| [F2.07-backend-claude-code](../tareas/F2.07-backend-claude-code.md) | Backend Claude Code (modo headless stream-json) | haiku | F2.06, F0.03 | pendiente |
-| [F2.08-backend-gemini-cli](../tareas/F2.08-backend-gemini-cli.md) | Backend Gemini CLI (no interactivo, salida JSON) | haiku | F2.06, F0.03 | pendiente |
-| [F2.09-backend-copilot-cli](../tareas/F2.09-backend-copilot-cli.md) | Backend GitHub Copilot CLI (no interactivo) | haiku | F2.06, F0.03 | pendiente |
-| [F2.10-backend-opencode](../tareas/F2.10-backend-opencode.md) | Backend opencode (`opencode run`) | haiku | F2.06, F0.03 | pendiente |
+| [F2.06-backend-trait](../tareas/F2.06-backend-trait.md) | `pcode-backends`: trait `Backend`, `Job`, relevo tipado y `MockBackend` | haiku | F1.16, F2.03 | hecha |
+| [F2.07-backend-claude-code](../tareas/F2.07-backend-claude-code.md) | Backend Claude Code (modo headless stream-json) | haiku | F2.06, F0.03 | hecha |
+| [F2.08-backend-gemini-cli](../tareas/F2.08-backend-gemini-cli.md) | Backend Gemini CLI (no interactivo, salida JSON) | haiku | F2.06, F0.03 | hecha |
+| [F2.09-backend-copilot-cli](../tareas/F2.09-backend-copilot-cli.md) | Backend GitHub Copilot CLI (no interactivo) | haiku | F2.06, F0.03 | hecha |
+| [F2.10-backend-opencode](../tareas/F2.10-backend-opencode.md) | Backend opencode (`opencode run`) | haiku | F2.06, F0.03 | hecha |
 | [F2.11-backend-copilot-github](../tareas/F2.11-backend-copilot-github.md) | Backend Copilot coding agent: issue → PR → verificación local | haiku | F2.06, F0.03 | pendiente |
-| [F2.12-backend-modelo](../tareas/F2.12-backend-modelo.md) | Backend «modelo»: `pcode run` dentro de la sandbox con LiteLLM, Anthropic o Gemini | haiku | F2.06, F1.20 | pendiente |
-| [F2.13-skills-registro](../tareas/F2.13-skills-registro.md) | `pcode-skills`: leer `SKILL.md`, registro, índice y cierre de dependencias | haiku | F0.01 | pendiente |
-| [F2.14-skills-exportar](../tareas/F2.14-skills-exportar.md) | Exportar skills a Claude Code, Copilot, Gemini y opencode | haiku | F2.13, F0.03 | pendiente |
-| [F2.15-skills-contrato](../tareas/F2.15-skills-contrato.md) | Sección `## Contrato` y checkpoints de estado en las skills | haiku | F2.13 | pendiente |
+| [F2.12-backend-modelo](../tareas/F2.12-backend-modelo.md) | Backend «modelo»: `pcode run` dentro de la sandbox con LiteLLM, Anthropic o Gemini | haiku | F2.06, F1.20 | hecha |
+| [F2.13-skills-registro](../tareas/F2.13-skills-registro.md) | `pcode-skills`: leer `SKILL.md`, registro, índice y cierre de dependencias | haiku | F0.01 | hecha |
+| [F2.14-skills-exportar](../tareas/F2.14-skills-exportar.md) | Exportar skills a Claude Code, Copilot, Gemini y opencode | haiku | F2.13, F0.03 | hecha |
+| [F2.15-skills-contrato](../tareas/F2.15-skills-contrato.md) | Sección `## Contrato` y checkpoints de estado en las skills | haiku | F2.13 | hecha |
 | [F2.16-mcp-servidor](../tareas/F2.16-mcp-servidor.md) | `pcode-mcp`: servidor MCP (stdio) con las tools de PublicCode filtradas por política | haiku | F2.03, F1.18, F1.11 | pendiente |
 | [F2.17-sincronizar-instrucciones](../tareas/F2.17-sincronizar-instrucciones.md) | `pcode instrucciones sincronizar`: AGENTS.md → CLAUDE.md, GEMINI.md, copilot-instructions | haiku | F2.14 | pendiente |
-| [F2.18-cli-backend-sandbox](../tareas/F2.18-cli-backend-sandbox.md) | CLI: `pcode run --backend X --sandbox N1` y `pcode sandbox …` | haiku | F2.07, F2.08, F2.09, F2.10, F2.12 | pendiente |
+| [F2.18-cli-backend-sandbox](../tareas/F2.18-cli-backend-sandbox.md) | CLI: `pcode run --backend X --sandbox N1` y `pcode sandbox …` | haiku | F2.07, F2.08, F2.09, F2.10, F2.12 | hecha |
 | [F2.19-proxy-salida](../tareas/F2.19-proxy-salida.md) | `pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría | haiku | F1.15 | pendiente |
 | [F2.20-puente-sandbox](../tareas/F2.20-puente-sandbox.md) | Puente TCP→Unix dentro de la sandbox y red `Filtered` | haiku | F2.19, F2.04 | pendiente |
+| [F2.21-windows-sin-n1](../tareas/F2.21-windows-sin-n1.md) | Windows sin WSL: copia de trabajo aislada (N0) para backends y flujos | haiku | F2.03, F2.18, F3.10 | pendiente |
 
 ### F3
 
 | Tarea | Qué | Ejecutor | Depende | Estado |
 |---|---|---|---|---|
-| [F3.01-tareas-parser](../tareas/F3.01-tareas-parser.md) | `pcode-flow`: leer tareas (frontmatter y cabeceras HTML) | haiku | F0.01 | pendiente |
-| [F3.02-dag](../tareas/F3.02-dag.md) | DAG de tareas: ciclos, dependencias inexistentes y tareas listas | haiku | F3.01 | pendiente |
-| [F3.03-eventos-flujo](../tareas/F3.03-eventos-flujo.md) | Estado del flujo por eventos en SQLite y su proyección | haiku | F3.02, F1.19 | pendiente |
-| [F3.04-planificador-ejecucion](../tareas/F3.04-planificador-ejecucion.md) | Planificador de ejecución: paralelismo por modo y exclusión de kernel | haiku | F3.03 | pendiente |
-| [F3.05-aceptacion-dos-etapas](../tareas/F3.05-aceptacion-dos-etapas.md) | Aceptación en dos etapas: rápida en N1 y completa en N2 (contenedor) | haiku | F3.04, F2.03, F1.18 | pendiente |
-| [F3.06-reintentos-relevo](../tareas/F3.06-reintentos-relevo.md) | Reintentos con informe de relevo, paso crítico y escalado de backend | haiku | F3.05, F2.06 | pendiente |
-| [F3.07-integracion](../tareas/F3.07-integracion.md) | Cola de integración: aplicar, commit, rebase, lockfiles regenerados y re-validación | haiku | F3.05 | pendiente |
-| [F3.08-clasificador-ci](../tareas/F3.08-clasificador-ci.md) | Clasificador de ejecuciones de GitHub Actions (sin tareas fantasma) | haiku | F3.01 | pendiente |
+| [F3.01-tareas-parser](../tareas/F3.01-tareas-parser.md) | `pcode-flow`: leer tareas (frontmatter y cabeceras HTML) | haiku | F0.01 | hecha |
+| [F3.02-dag](../tareas/F3.02-dag.md) | DAG de tareas: ciclos, dependencias inexistentes y tareas listas | haiku | F3.01 | hecha |
+| [F3.03-eventos-flujo](../tareas/F3.03-eventos-flujo.md) | Estado del flujo por eventos en SQLite y su proyección | haiku | F3.02, F1.19 | hecha |
+| [F3.04-planificador-ejecucion](../tareas/F3.04-planificador-ejecucion.md) | Planificador de ejecución: paralelismo por modo y exclusión de kernel | haiku | F3.03 | hecha |
+| [F3.05-aceptacion-dos-etapas](../tareas/F3.05-aceptacion-dos-etapas.md) | Aceptación en dos etapas: rápida en N1 y completa en N2 (contenedor) | haiku | F3.04, F2.03, F1.18 | hecha |
+| [F3.06-reintentos-relevo](../tareas/F3.06-reintentos-relevo.md) | Reintentos con informe de relevo, paso crítico y escalado de backend | haiku | F3.05, F2.06 | hecha |
+| [F3.07-integracion](../tareas/F3.07-integracion.md) | Cola de integración: aplicar, commit, rebase, lockfiles regenerados y re-validación | haiku | F3.05 | hecha |
+| [F3.08-clasificador-ci](../tareas/F3.08-clasificador-ci.md) | Clasificador de ejecuciones de GitHub Actions (sin tareas fantasma) | haiku | F3.01 | hecha |
 | [F3.09-planificador-llm](../tareas/F3.09-planificador-llm.md) | Planificador LLM: generar tareas cuando la cola baja y validarlas antes de aceptarlas | haiku | F3.04, F2.07 | pendiente |
-| [F3.10-cli-flow](../tareas/F3.10-cli-flow.md) | `pcode flow run|estado|parar` y `estado.md` | haiku | F3.06, F3.07, F3.08, F2.18 | pendiente |
+| [F3.10-cli-flow](../tareas/F3.10-cli-flow.md) | `pcode flow run|estado|parar` y `estado.md` | haiku | F3.06, F3.07, F3.08, F2.18 | hecha |
 | [F3.12-revision-cruzada](../tareas/F3.12-revision-cruzada.md) | Revisión cruzada del diff por otro backend (rúbrica del repo y seguridad del parche) | haiku | F3.10 | pendiente |
 | [F3.13-bench](../tareas/F3.13-bench.md) | `pcode bench`: ejecutar PublicBench con cualquier backend | haiku | F3.10 | pendiente |
 
@@ -216,9 +219,9 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 
 | Tarea | Qué | Ejecutor | Depende | Estado |
 |---|---|---|---|---|
-| [F5.01-protocolo](../tareas/F5.01-protocolo.md) | `pcode-protocol`: tipos de la API (JSON-RPC y eventos) con exportación a TypeScript | haiku | F0.01 | pendiente |
-| [F5.02-demonio](../tareas/F5.02-demonio.md) | `pcode-server`: demonio `pcoded` con JSON-RPC, eventos SSE y sesiones | haiku | F5.01, F2.18 | pendiente |
-| [F5.03-aprobaciones](../tareas/F5.03-aprobaciones.md) | Cola de aprobaciones: las decisiones `Ask` esperan a un humano desde cualquier cliente | haiku | F5.02 | pendiente |
+| [F5.01-protocolo](../tareas/F5.01-protocolo.md) | `pcode-protocol`: tipos de la API (JSON-RPC y eventos) con exportación a TypeScript | haiku | F0.01 | hecha |
+| [F5.02-demonio](../tareas/F5.02-demonio.md) | `pcode-server`: demonio `pcoded` con JSON-RPC, eventos SSE y sesiones | haiku | F5.01, F2.18 | hecha |
+| [F5.03-aprobaciones](../tareas/F5.03-aprobaciones.md) | Cola de aprobaciones: las decisiones `Ask` esperan a un humano desde cualquier cliente | haiku | F5.02 | hecha |
 | [F5.04-api-flujo](../tareas/F5.04-api-flujo.md) | Métodos y eventos de flujos en el demonio | haiku | F5.02, F3.10 | pendiente |
 | [F5.05-cliente-rust](../tareas/F5.05-cliente-rust.md) | `pcode-client`: cliente Rust del demonio con arranque automático | haiku | F5.02 | pendiente |
 | [F5.06-cli-maquinas](../tareas/F5.06-cli-maquinas.md) | CLI: `--formato json|stream-json`, autocompletado y `pcode` sin argumentos abre la TUI | haiku | F5.05 | pendiente |
@@ -260,5 +263,5 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 |---|---|---|---|---|
 | [F7.01-redteam-skills](../tareas/F7.01-redteam-skills.md) | Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas | haiku | F6.02, F2.20 | pendiente |
 | [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | haiku | F7.01, F3.13 | pendiente |
-| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.21, F5.22, F6.04 | pendiente |
+| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.21, F5.22, F6.04, F0.07 | pendiente |
 <!-- tabla:fin -->
