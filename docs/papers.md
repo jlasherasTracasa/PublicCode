@@ -1,0 +1,152 @@
+# Papers de ACL 2026 y EMNLP 2026 adaptados a PublicCode
+
+**Fuente**: ACL Anthology, actas de ACL 2026 (long, short, Findings, demo, industry, SRW) y
+EMNLP 2026 (main, Findings, demos, industry). En total, **10.341 papers**.
+`tools/papers/buscar_papers.py` los descargó con sus resúmenes y los puntuó por temas del plan;
+salieron **1.189 candidatos**. Aquí están los que cambian una decisión concreta de PublicCode.
+
+**Método**: cada fila se apoya en el **resumen** del paper (no en el texto completo). La columna
+«Qué propone» resume ese resumen; la columna «En PublicCode» es nuestra adaptación, con el componente
+y la tarea de [implementacion.md](implementacion.md). Antes de implementar una tarea basada en un
+paper, el agente debe leer el paper completo (skill `papers-acl-emnlp`).
+
+Para regenerar la lista de candidatos:
+
+```bash
+tools/papers/buscar_papers.py --top 0 --formato jsonl > candidatos.jsonl
+```
+
+Abreviaturas de venue: **EMNLP** / **ACL** = actas principales; **F-EMNLP** / **F-ACL** = Findings;
+**Ind** = industry track; **Demo** = demos.
+
+---
+
+## 1. Contexto y coste del bucle
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Context as a Tool: Context Management for Long-Horizon SWE-Agents](https://aclanthology.org/2026.findings-acl.1032/) | F-ACL | el contexto deja de ser *append-only* o de comprimirse de forma pasiva: el agente lo gestiona como una acción más; mejora a ReAct y a la compresión estática con presupuesto acotado | `pcode-core`: tool `contexto` (fijar, soltar, resumir un tramo) disponible para el modelo. **F4.01** |
+| [SWE-MEM: Learning Adaptive Memory Management for Long-Horizon Coding Agents](https://aclanthology.org/2026.emnlp-main.1312/) | EMNLP | gestión de memoria aprendida y ligada al resultado de la tarea; 43,4 % / 60,2 % en SWE-bench Verified con modelos de 4B / 30B | política de compactación por defecto pensada para modelos pequeños (GLM, Haiku); se mide en el banco. **F4.01–F4.02** |
+| [TokenPilot: Cache-Efficient Context Management for LLM Agents](https://aclanthology.org/2026.findings-emnlp.899/) | F-EMNLP | podar texto altera el diseño del prompt y rompe la caché de prefijos; TokenPilot gestiona el contexto respetando la caché (−56 % a −87 % de coste) | compactación **solo en fronteras de segmento** y prefijo estable (sistema, AGENTS.md, skills, tools) para no invalidar la caché. **F4.02** |
+| [Prism: Persistent Faceted File Memory for Cost-Efficient Coding Agents](https://aclanthology.org/2026.findings-emnlp.1301/) | F-EMNLP | los agentes releen los mismos archivos entre tareas (>⅓ de tokens); resumir sin estructura sube el coste; memoria **por facetas** sí ahorra. Su código parte de opencode | memoria de archivos por facetas (API, invariantes, trampas) invalidada por hash, compartida entre tareas y backends. **F4.03** |
+| [Context Compression for LLM Agents: A Survey](https://aclanthology.org/2026.emnlp-main.2396/) | EMNLP | taxonomía de métodos, modos de fallo y evaluación de la compresión en trayectorias de agentes | lista de modos de fallo que comprueban los tests de compactación (pérdida de restricciones, de rutas, de errores). **F4.02** |
+| [Memory as Action: Autonomous Context Curation](https://aclanthology.org/2026.findings-acl.956/) | F-ACL | el agente cura su memoria de trabajo como acción consciente de su estado de razonamiento; −51 % de longitud de contexto | refuerza F4.01: la curación es una tool, no un mecanismo externo ciego. **F4.01** |
+| [ContextPilot: Proactive Context Management via Fine-grained RL](https://aclanthology.org/2026.emnlp-main.299/) | EMNLP | gestión proactiva del contexto entrenada con RL; mejor rendimiento con contexto más compacto | registrar las acciones de contexto en las trazas para poder afinar modelos propios más adelante. **F6.05** |
+| [CODEPROMPTZIP: Code-specific Prompt Compression for RAG](https://aclanthology.org/2026.findings-acl.1384/) | F-ACL | compresión consciente del código: análisis estático para ordenar tokens por ganancia de información, con control preciso de la longitud | compresión de fragmentos de código recuperados (no de salidas de compilador) con presupuesto exacto. **F4.05** |
+| [ProMCP: Profiling Token Flows and Latency Costs in MCP-Based Agents](https://aclanthology.org/2026.findings-acl.1967/) | F-ACL | el coste de MCP está en el esquema y el transporte, no en ejecutar la tool | esquemas MCP mínimos, carga diferida de tools y métrica de tokens por esquema en la telemetría. **F2.16, F4.10** |
+| [EET: Experience-Driven Early Termination for SE Agents](https://aclanthology.org/2026.findings-acl.1652/) | F-ACL | terminación temprana guiada por experiencia: −21 % de llamadas y −30 % de tokens de entrada sin perder rendimiento | detector de atasco y parada temprana en `pcode-core` (sustituye a «si llevas mucho sin progreso, para»). **F1.21, F4.08** |
+| [Polished but Unresolved: Late-Stage Pressure States](https://aclanthology.org/2026.emnlp-main.1143/) | EMNLP | cerca del final, los agentes tienden a entregar algo pulido con restricciones sin resolver | el hook de parada exige la aceptación **y** una lista de restricciones de la tarea marcadas; el informe no puede afirmar lo que `acepta` no comprueba. **F1.18** |
+| [When the Specification Emerges: Faithfulness Loss in Long-Horizon Coding Agents](https://aclanthology.org/2026.findings-emnlp.76/) | F-EMNLP | benchmark SLUMP: los compromisos de diseño que se revelan a lo largo de la sesión se pierden; un estado externo semántico y estructural del proyecto recupera el 90 % de la brecha de Claude Code | «estado del proyecto» externo (decisiones, restricciones) que sobrevive a la compactación y se reinyecta. **F4.01** |
+
+## 2. Subagentes, delegación y relevos
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Handoff Debt: The Rediscovery Cost When Coding Agents Take Over Interrupted Tasks](https://aclanthology.org/2026.emnlp-main.738/) | EMNLP | retomar el trabajo parcial de otro agente tiene un coste de redescubrimiento medible; la evaluación debe reportarlo | cada reintento o cambio de backend recibe un **informe de relevo** estructurado (qué se probó, qué falló, archivos tocados); métrica «coste de relevo» en el banco. **F3.06** |
+| [Long Live the Librarian! A Persistent Search Sub-Agent](https://aclanthology.org/2026.emnlp-main.867/) | EMNLP | en sistemas multiagente de SWE, el gasto se concentra en tokens de salida redundantes; un subagente de búsqueda persistente ahorra un 11–30 % de energía | subagente **bibliotecario** persistente por repo (búsqueda e índice) compartido por todos los backends vía MCP. **F4.05** |
+| [The Collaboration Tax](https://aclanthology.org/2026.emnlp-main.2031/) | EMNLP | coordinar dos LLM cuesta rendimiento medible y predecible | regla del router: no se crean subagentes por defecto; solo cuando la tarea es paralelizable o necesita otra capacidad; se mide con y sin ellos. **F4.07** |
+| [Facts Without Rules: Boundary Metadata Collapse in Handoffs](https://aclanthology.org/2026.findings-emnlp.422/) | F-EMNLP | los resúmenes de relevo conservan hechos pero pierden las reglas de frontera (a quién se puede contar qué); una lista de audiencia explícita casi elimina la fuga | el relevo es un objeto tipado con campos de **frontera** (capacidades, clase de datos, audiencia), nunca solo texto libre. **F2.06, F3.06** |
+| [Routed Graph Handoff: Adaptive Format Selection for Delegation](https://aclanthology.org/2026.findings-emnlp.2008/) | F-EMNLP | un router ligero elige entre grafo de dependencias tipado y lenguaje natural para cada delegación (+12,7 pp en Tau-retail con 3,2× de compresión) | formato de delegación dual: estructurado (JSON) por defecto entre componentes y lenguaje natural solo hacia agentes externos. **F2.06** |
+| [Trust Cascade through Provenance Erasure](https://aclanthology.org/2026.emnlp-main.1005/) | EMNLP | delegar en lenguaje natural borra los metadatos de confianza; la seguridad multiagente exige control de la delegación más auditoría de procedencia | cada mensaje entre agentes lleva **procedencia** (origen, confianza) y la política la consulta. **F1.15, F2.06** |
+| [Delegated Misalignment](https://aclanthology.org/2026.emnlp-main.398/) | EMNLP | la alineación individual no se transfiere a sistemas multiagente: difusión de responsabilidad y obediencia al rol | las negativas y los límites se aplican en el motor (capacidades atenuadas), no en cada modelo. **F1.13** |
+| [RCR-Router: Role-Conditioned Context Routing](https://aclanthology.org/2026.findings-emnlp.425/) | F-EMNLP | dar a cada agente solo el contexto relevante para su rol: −35 % de tokens y −38 % de tiempo sin perder rendimiento | el contexto de un subagente se construye por rol (explorador, implementador, revisor), no copiando el del padre. **F4.06** |
+| [Dynamic Context Allocation for Concurrent Multi-Agent LLMs](https://aclanthology.org/2026.emnlp-main.1785/) | EMNLP | un asignador mantiene un tablero de contexto acotado y decide qué entra para cada trabajador en cada ronda | «tablero» compartido de estado de la tarea en flujos con varios subagentes en paralelo. **F4.06** |
+| [AgentFactory: Executable Subagent Accumulation and Reuse](https://aclanthology.org/2026.acl-demo.81/) | ACL Demo | guardar subagentes **ejecutables** en vez de reflexiones de texto, para reutilizarlos en tareas parecidas | los subagentes que funcionan se guardan como definiciones reutilizables (prompt, tools, política, skills). **F6.03** |
+| [Steer, Don't Solve: Small Critic Models for Large Code Agents](https://aclanthology.org/2026.emnlp-main.2478/) | EMNLP | un crítico pequeño que guía la planificación del agente grande reduce pasos y coste | rol **crítico** opcional con un modelo barato (Haiku o GLM) que revisa el plan antes de ejecutar. **F4.07** |
+| [TRAJDEBUG: Tracing Error Lifecycle in Long-Horizon Trajectories](https://aclanthology.org/2026.findings-emnlp.437/) | F-EMNLP | localiza el paso crítico de fallo en trayectorias largas (TrajErrBench, con SWE-Bench Pro) y da diagnósticos accionables | el resumen de fallo que reciben los reintentos señala el **paso crítico**, no solo el último error. **F3.06** |
+
+## 3. Tools y MCP
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Prompts Don't Protect: Architectural Enforcement via MCP Proxy](https://aclanthology.org/2026.emnlp-industry.4/) | EMNLP Ind | con tools no autorizadas visibles, los modelos las eligen en el 48–68 % de los casos adversarios aunque se les prohíba; filtrarlas en el descubrimiento da un 0 % por diseño | las tools fuera de la política **no se anuncian** al modelo; el servidor MCP de PublicCode filtra por capacidades. **F1.13, F2.16** |
+| [When Lower Privileges Suffice: Over-Privileged Tool Selection](https://aclanthology.org/2026.findings-emnlp.2059/) | F-EMNLP | los agentes eligen tools de más privilegio de lo necesario; enseñarles a preferir la de menos privilegio y escalar solo si hace falta | cada tool declara su nivel de efecto; el registro ofrece primero la de menor privilegio (p. ej. `leer` antes que `bash cat`). **F1.08** |
+| [Deploying Programmatic Tool Calling](https://aclanthology.org/2026.emnlp-industry.78/) | EMNLP Ind | sacar el LLM del bucle de cada llamada con planes programáticos: −77 % de tokens de entrada y −21 % de latencia en 19 agentes de producción | modo «guion» para secuencias deterministas (p. ej. fmt → clippy → test) que el modelo pide en una sola llamada. **F4.09** |
+| [Scaling Enterprise Cloud Agents to Thousands of APIs](https://aclanthology.org/2026.emnlp-industry.179/) | EMNLP Ind | el diseño de la frontera de las tools importa: las llamadas en paralelo ayudan, pero el éxito mejora cuando la resolución de operaciones es visible en el bucle principal | la búsqueda de tools (carga diferida) devuelve el resultado al bucle principal y no se esconde en un subagente. **F4.10** |
+| [ToolScope: Tool Merging and Context-Aware Filtering](https://aclanthology.org/2026.acl-long.1573/) | ACL | fusionar tools redundantes y filtrar por contexto: +8 a +39 % de precisión al elegir tool | el registro deduplica las tools que llegan de varios MCP y filtra por tarea antes de anunciarlas. **F4.10** |
+| [CODESTRUCT: Code Agents over Structured Action Spaces](https://aclanthology.org/2026.acl-long.607/) | ACL | editar entidades del AST con nombre en vez de reemplazar texto frágil: más precisión y hasta −33 % de coste | tool `editar_simbolo` (por función o tipo, vía tree-sitter) además de `editar` por texto. **F4.04** |
+| [PRFC: Progressive Recovery from Function Calling Errors](https://aclanthology.org/2026.findings-emnlp.1762/) | F-EMNLP | los modelos repiten el mismo error de llamada en los reintentos; modelar el progreso entre intentos ayuda | detector de «mismo error de tool repetido» con pista correctiva automática y reparación de llamadas mal formadas. **F1.07, F1.21** |
+| [DynamicMCPBench](https://aclanthology.org/2026.emnlp-industry.202/) · [AgentCheck](https://aclanthology.org/2026.emnlp-demos.64/) | EMNLP Ind · EMNLP Demo | evaluación sobre servidores MCP vivos puntuada por efectos; banco de trabajo para reproducir, intervenir y mitigar sobre MCP | tests de integración MCP puntuados por **efecto** (qué cambió en la sandbox), no por el texto devuelto. **F2.16** |
+| [Beyond Max Tokens: Resource Amplification via Tool Calling Chains](https://aclanthology.org/2026.emnlp-main.2090/) | EMNLP | cadenas de llamadas que amplifican el consumo de forma sigilosa | presupuestos por tarea y por subagente (tokens, llamadas, tiempo) que impone el motor. **F1.16** |
+
+## 4. Skills: formato, recuperación, aprendizaje y gobierno
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Skill-as-Pseudocode](https://aclanthology.org/2026.findings-emnlp.889/) | F-EMNLP | las skills en prosa obligan a re-derivar la interfaz cada vez; contratos tipados **más** plantillas de acción concretas funcionan (el contrato solo, no) | sección opcional «Contrato» en `SKILL.md` (entradas, salidas y ejemplo de invocación) que se valida y se exporta. **F2.15** |
+| [Graph-of-Skills: Dependency-Aware Structural Retrieval](https://aclanthology.org/2026.emnlp-main.2614/) | EMNLP | con miles de skills, cargar la biblioteca satura el contexto; recuperar por grafo de dependencias recupera mejor las parejas | índice de skills con dependencias declaradas; se recupera la skill y sus prerrequisitos. **F2.13** |
+| [SKILL.state: Scalable Long-Horizon Agent Skills](https://aclanthology.org/2026.emnlp-industry.264/) | EMNLP Ind | estado de ejecución explícito en lugar de acumular historia: menos tokens en skills largas | las skills largas declaran checkpoints de estado que el bucle guarda fuera del historial. **F2.15** |
+| [Trace2Skill](https://aclanthology.org/2026.emnlp-main.758/) · [SKILL-DISCO](https://aclanthology.org/2026.findings-emnlp.2260/) | EMNLP · F-EMNLP | consolidar trazas en procedimientos operativos (SoP) portables y compilar trazas en skills reutilizables | destilador de skills a partir de trazas de tareas aceptadas con dificultad (2 o más intentos). **F6.01** |
+| [SKILLREVISE: Trace-Conditioned Skill Revision](https://aclanthology.org/2026.findings-emnlp.991/) | F-EMNLP | mejorar una skill inicial imperfecta (arranque en frío) usando trazas; la mejora se transfiere entre ejecutores | revisión de skills existentes con trazas nuevas, no solo creación. **F6.01** |
+| [GRASP: Gated Regression-Aware Skill Proposer](https://aclanthology.org/2026.emnlp-main.452/) | EMNLP | aceptar una skill nueva solo si no rompe comportamientos que ya funcionaban; las skills de un modelo fuerte mejoran a uno débil, no al revés | **puerta de regresión**: una skill candidata pasa evals con y sin ella antes de salir de cuarentena; las skills las escribe un modelo fuerte (Claude) para que las usen los pequeños (Haiku, GLM). **F6.02** |
+| [SkillsVote: Lifecycle Governance of Agent Skills](https://aclanthology.org/2026.emnlp-main.281/) | EMNLP | gobierno del ciclo de vida: recolección, recomendación y evolución con fronteras de aplicabilidad | metadatos de uso y éxito por skill, recomendación por tarea y retirada de skills que no aportan. **F6.03** |
+| [Evo-Harness](https://aclanthology.org/2026.emnlp-main.969/) · [Harness Updating Is Not Harness Benefit](https://aclanthology.org/2026.emnlp-main.2326/) | EMNLP | compilar experiencia en el arnés (prompts, skills, memoria, tools); **actualizar el arnés no implica mejorar**: hay que separar la capacidad de actualizar de la de beneficiarse | cada cambio automático del arnés se valida en el banco; sin mejora medida no se activa. **F6.02, F6.04** |
+| [When Not to Imitate: Boundary-Aware Skill Memory](https://aclanthology.org/2026.findings-emnlp.1141/) · [SkillForge](https://aclanthology.org/2026.emnlp-main.1954/) | F-EMNLP · EMNLP | las skills sacadas de éxitos no mejoran siempre; SkillForge empareja intentos fallidos y exitosos **de la misma tarea** para aislar las decisiones de procedimiento críticas | campo «no usar cuando» obligatorio; el destilador usa las parejas fallo/acierto que dejan los reintentos (en SO_IA hay 23 tareas con reintentos). **F6.01** |
+| [Agent Skill Evaluation and Evolution: Frameworks and Benchmarks](https://aclanthology.org/2026.findings-emnlp.1427/) | F-EMNLP | panorama: cuatro paradigmas de evolución y seis categorías de benchmarks de skills | referencia para diseñar el arnés de evals de skills. **F6.02** |
+
+## 5. Seguridad de skills, tools y repos
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [SkillSafetyBench](https://aclanthology.org/2026.emnlp-main.703/) · [SkillAttack](https://aclanthology.org/2026.emnlp-main.1926/) | EMNLP | las skills (guía + acceso a archivos, tools y entorno) son superficie de ataque; incluso skills bienintencionadas abren caminos de ataque ejecutables | las skills nunca amplían capacidades: heredan las del agente; suite de red teaming de skills. **F7.01** |
+| [EvoSkill Injection](https://aclanthology.org/2026.emnlp-main.353/) | EMNLP | los agentes que se auto-mejoran pueden aprender skills maliciosas que persisten y se reactivan | **cuarentena** obligatoria y procedencia firmada para toda skill aprendida; revisión humana opcional. **F6.02, F7.01** |
+| [Harmless Yet Harmful: Hallucination Steering in Agent Skills](https://aclanthology.org/2026.findings-emnlp.1274/) | F-EMNLP | prompts de apariencia neutra dentro de skills empujan a alucinar paquetes e instalarlos (`pip install`), y esquivan los escáneres estáticos, LLM y agénticos | una skill no puede instalar dependencias: toda instalación pasa por la lista de dependencias permitidas o por aprobación; el escáner solo no basta. **F1.13, F7.01** |
+| [Beyond the Payload: Coding Agent Vulnerability to Repository Poisoning](https://aclanthology.org/2026.emnlp-main.932/) | EMNLP | la vulnerabilidad al envenenamiento del repo depende de cómo y con qué configuración se invoca al agente | repos de terceros: lectura en N1 sin red y sin ejecutar scripts del repo hasta aprobarlo. **F7.02** |
+| [Will the User Ever Know? Covert Indirect Prompt Injection](https://aclanthology.org/2026.emnlp-main.2035/) · [RecoverAgent](https://aclanthology.org/2026.findings-emnlp.830/) | EMNLP · F-EMNLP | mide los ataques por inyección indirecta que **no dejan rastro** en la respuesta final; RecoverAgent reescribe las respuestas inseguras en alternativas seguras sin abandonar la tarea | la respuesta final no es prueba de nada: se revisan los **efectos** (diff y auditoría); las salidas de tools se marcan como datos no confiables y la política `intención` deniega acciones fuera del ámbito de la tarea. **F1.13, F7.02** |
+| [ToolSafe](https://aclanthology.org/2026.findings-acl.1850/) · [RiskGuard](https://aclanthology.org/2026.findings-emnlp.2066/) · [MCP-Guard](https://aclanthology.org/2026.findings-acl.240/) | F-ACL · F-EMNLP · F-ACL | guardarraíles por paso; control de riesgo previo a la ejecución sobre cadenas de dependencias (el 73 % de los fallos se propagan desde pasos tempranos); defensa en profundidad para MCP | comprobación de política **antes** de ejecutar y análisis de la cadena para efectos irreversibles. **F1.13, F2.16** |
+
+## 6. Memoria y experiencia
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [MemGovern: Learning from Governed Human Experiences](https://aclanthology.org/2026.findings-emnlp.898/) | F-EMNLP | aprovechar la experiencia humana histórica (issues, arreglos) con gobierno: +4,65 % en SWE-bench | memoria episódica alimentada con informes, REGISTRO y PR del propio proyecto (en SO_IA: `ci/informes/`). **F4.09** |
+| [Memory Transfer Learning in Coding Agents](https://aclanthology.org/2026.emnlp-main.2666/) | EMNLP | la memoria se transfiere entre dominios e incluso entre modelos | memoria compartida entre backends: lo que aprende Claude lo usa GLM. **F4.09** |
+| [MemGuard: Persisting Verifier Signals for Memory Governance](https://aclanthology.org/2026.emnlp-main.423/) | EMNLP | la memoria solo sirve si sigue siendo fiable; guardar la señal del verificador junto a cada recuerdo | cada entrada de memoria guarda si la tarea pasó `acepta`; las de tareas fallidas se marcan. **F4.09** |
+| [How Memory Management Impacts LLM Agents: Experience-Following](https://aclanthology.org/2026.acl-long.27/) | ACL | los agentes imitan la experiencia recuperada, buena o mala | recuperar solo experiencia **verificada**, nunca trazas sin aceptación. **F4.09** |
+| [From Memory to Skills: Evidence-Grounded Governance](https://aclanthology.org/2026.findings-emnlp.1637/) | F-EMNLP | convertir la memoria en skills ejecutables con evidencia | puente memoria → skill del ciclo F6. **F6.01** |
+| [Agent Memory Distillation for Small LLM Agents](https://aclanthology.org/2026.findings-emnlp.2407/) | F-EMNLP | memoria jerárquica de un maestro para alumnos pequeños; la memoria de subtareas es la que más aporta; los modelos de 4B se benefician más | Claude genera memoria de subtareas que consumen Haiku o GLM. **F4.09** |
+
+## 7. Verificación y revisión
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Dockerless: Environment-Free Program Verifier](https://aclanthology.org/2026.emnlp-main.640/) · [SWE-World: Docker-Free Environments](https://aclanthology.org/2026.findings-emnlp.1937/) | EMNLP · F-EMNLP | verificar o simular la ejecución sin montar el entorno completo (Docker) con resultados comparables | verificación en dos etapas: barata (N1, tests rápidos o verificador) antes de la cara (N2 con la imagen completa). **F3.05** |
+| [Agentic Rubrics as Contextual Verifiers for SWE Agents](https://aclanthology.org/2026.acl-long.697/) | ACL | rúbricas específicas del repo generadas por un agente como verificador granular | el revisor cruzado usa una rúbrica derivada de AGENTS.md y de la tarea. **F3.12** |
+| [CodeJudgeBench](https://aclanthology.org/2026.acl-long.888/) · [Can LLM-as-a-Judge Reliably Verify Rubrics?](https://aclanthology.org/2026.emnlp-main.2192/) | ACL · EMNLP | los jueces LLM de código son inconsistentes y sensibles a nombres y comentarios engañosos | el juez LLM **nunca** sustituye a `acepta`; solo añade información y nunca decide en solitario. **F3.12** |
+| [When "Correct" Is Not Safe](https://aclanthology.org/2026.acl-long.707/) | ACL | parches funcionalmente correctos pero vulnerables (40,7 % de éxito de ataque con GPT-5 Mini + OpenHands) | revisión de seguridad del diff como paso de integración, además de los tests. **F3.12** |
+
+## 8. Seguridad operativa y sandboxes
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [SABER: Operational Safety of Coding Agents in Stateful Workspaces](https://aclanthology.org/2026.emnlp-main.211/) | EMNLP | la seguridad de un agente de código está en las secuencias de acciones sobre un espacio de trabajo con estado, no en si se niega a un prompt | es justo el problema de SO_IA (`git stash`, `reset --hard`): mini sandbox + política de órdenes + eval tipo SABER en el banco. **F2.01–F2.04, F7.02** |
+| [WeClawArena: Auditable Sandbox](https://aclanthology.org/2026.findings-emnlp.1424/) | F-EMNLP | sandbox de ejecución auditable para agentes de distintos propietarios que colaboran sobre espacios de trabajo personales | auditoría encadenada por sandbox, agente y propietario (base para equipos con varias personas). **F1.15** |
+
+## 9. Evaluación
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [AgentLens: Trajectory Reviews for Coding Agent Evaluation](https://aclanthology.org/2026.emnlp-industry.94/) | EMNLP Ind | evaluar la trayectoria, no un bit de aprobado; integrado en regresión continua | SinapsisBench guarda y puntúa trayectorias, con regresión nocturna. **F6.04** |
+| [How Coding Agents Fail Their Users (20.574 sesiones reales)](https://aclanthology.org/2026.emnlp-main.1011/) | EMNLP | en sesiones reales crecen las violaciones de restricciones y los autoinformes inexactos | el informe del agente se contrasta con los hechos (diff real, salida real de `acepta`). **F1.18** |
+| [OctoBench: Scaffold-Aware Instruction Following](https://aclanthology.org/2026.acl-long.269/) | ACL | seguir instrucciones heterogéneas y persistentes del scaffold (tipo AGENTS.md) sigue siendo difícil | eval propia: % de reglas de AGENTS.md que cada backend respeta (medido por la política). **F0.06** |
+| [ChainSWE: Multi-Bug Software Maintenance](https://aclanthology.org/2026.emnlp-main.371/) | EMNLP | el rendimiento cae hasta un 70 % en cadenas de issues encadenados | SinapsisBench incluye cadenas de tareas dependientes (como ocurre en SO_IA). **F0.04** |
+| [LongCLI-Bench](https://aclanthology.org/2026.findings-acl.1497/) | F-ACL | tareas largas de programación en CLI con doble conjunto de tests | protocolo de doble test (cumple el requisito y no rompe nada) en las tareas del banco. **F0.04** |
+| [Quality, Not Just Outcome: Trajectory Quality Score](https://aclanthology.org/2026.findings-emnlp.2264/) | F-EMNLP | puntuación estructural de trayectorias sin juez LLM y en tiempo lineal | filtro barato de trazas para destilar skills y afinar modelos. **F6.05** |
+
+## 10. Modelos pequeños (Haiku 5.5, GLM y otros locales)
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Rethinking Scale: SLMs under Agent Paradigms](https://aclanthology.org/2026.acl-industry.123/) | ACL Ind | con modelos pequeños, los paradigmas multiagente añaden sobrecoste con poca ganancia; hace falta diseño centrado en el agente | con modelos pequeños: un solo agente con tareas muy acotadas; subagentes solo para exploración. Es la base del plan para Haiku 5.5. **docs/implementacion.md** |
+| [From Monolithic Prompts to Scaffolded Execution for SLMs](https://aclanthology.org/2026.findings-emnlp.968/) | F-EMNLP | adaptar a modelos pequeños exige **reestructurar la ejecución**, no reescribir prompts | las tareas para Haiku tienen pasos fijos (skill `tarea-haiku`) y el bucle impone el orden: leer → implementar → aceptar → informar. **F1.18** |
+| [FAMA: Failure-Aware Meta-Agentic Framework for Open-Source LLMs](https://aclanthology.org/2026.findings-acl.1716/) | F-ACL | agentes especializados que aportan el contexto justo contra los fallos típicos de modelos abiertos | «pistas por fallo típico» que se inyectan cuando el detector reconoce el patrón (p. ej. olvidar `cargo fmt`). **F1.21** |
+| [How to Speculate about Uncertainty in Agentic Coding?](https://aclanthology.org/2026.emnlp-industry.206/) | EMNLP Ind | señal de fallo predictiva para un agente de caja negra a partir de sus tokens: −6 a −8 pp de errores de ejecución y −14 a −19 % de tokens | puerta de incertidumbre antes de ejecutar acciones caras o irreversibles. **F4.08** |
+| [OPEN-SWE-TRACES](https://aclanthology.org/2026.findings-emnlp.131/) | F-EMNLP | 207.489 trayectorias en 9 lenguajes (Rust incluido) para destilar agentes de SWE abiertos | fuente de datos si se afina un modelo propio servido por LiteLLM. **F6.05** |
+| [ToFu: A White-Box, Token-Efficient Agent Harness](https://aclanthology.org/2026.emnlp-demos.22/) | EMNLP Demo | arnés de caja blanca e inspeccionable con buen rendimiento | principio de diseño: el arnés de PublicCode es inspeccionable (prompts y política en archivos versionados). **F1.16** |
+| [Ask or Assume? Clarification-Seeking in Coding Agents](https://aclanthology.org/2026.findings-emnlp.15/) | F-EMNLP | los agentes pueden aprender a detectar cuándo preguntar ante tareas poco especificadas | tool `preguntar` con presupuesto: en modo flujo se convierte en una pregunta al coordinador. **F4.11** |
+
+## 11. Específicos para SO_IA (kernel)
+
+| Paper | Venue | Qué propone | En PublicCode |
+|---|---|---|---|
+| [Code Agents Don't Understand Root Cause: Linux Kernel Fault Localization](https://aclanthology.org/2026.emnlp-main.2201/) · [Taming System Complexity: SWE Agents Diagnosing Linux Kernel Faults](https://aclanthology.org/2026.acl-long.862/) | EMNLP · ACL | los agentes localizan síntomas y no la causa raíz en el kernel; LinuxFL+ mejora la localización entre un 7,2 % y un 11,2 % | skill `kernel-causa-raiz` para las tareas de kernel de SO_IA (separar síntoma, causa y sitio del arreglo). **F6.01** |
