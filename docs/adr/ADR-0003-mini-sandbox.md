@@ -5,9 +5,8 @@
 
 ## Contexto
 
-En SO_IA, cada agente corre en Docker y las tareas `aislado` en un `git clone` propio. Las tareas de
-kernel comparten el árbol, y las reglas contra `git stash` o `reset --hard` son prosa. Hay 17 fallos
-de integración en el log. Necesitamos aislar cada orden y cada subagente de forma barata,
+Lo habitual es un contenedor Docker o un `git clone` por tarea, mientras que las tareas pesadas
+comparten el árbol y las reglas contra `git stash` o `reset --hard` son prosa. Necesitamos aislar cada orden y cada subagente de forma barata,
 paralelizable y reversible. Además, la seguridad operativa de los agentes de código está en las
 secuencias de acciones sobre un espacio de trabajo con estado (*SABER*, EMNLP 2026).
 

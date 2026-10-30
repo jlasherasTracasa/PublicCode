@@ -33,7 +33,7 @@ integración y evaluación.
 
 ## Consecuencias
 
-+ Cada tarea va al mejor agente; se comparan en igualdad de condiciones en SinapsisBench.
++ Cada tarea va al mejor agente; se comparan en igualdad de condiciones en PublicBench.
 + El trabajo propio se concentra donde nadie más lo hace: la orquestación y la seguridad.
 − Los adaptadores se rompen cuando cambian las CLIs. Mitigación: fixtures reales, tests de contrato
   y ACP donde exista.

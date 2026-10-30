@@ -23,7 +23,7 @@ enum Cmd {
         #[arg(long, default_value_t = 7878)]
         puerto: u16,
     },
-    /// Flujos de tareas (sustituye al orquestador de SO_IA).
+    /// Flujos de tareas: DAG, aceptación, reintentos e integración.
     #[command(subcommand)]
     Flow(flow_cmd::FlowCmd),
     /// Mini sandboxes (overlay copy-on-write sin privilegios).

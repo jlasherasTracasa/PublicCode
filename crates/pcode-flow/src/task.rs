@@ -1,4 +1,4 @@
-//! Lectura de tareas (cabeceras HTML de SO_IA y frontmatter propio).
+//! Lectura de tareas (cabeceras HTML `<!-- clave: valor -->` y frontmatter).
 use std::path::Path;
 
 /// Modo de ejecución.
@@ -153,7 +153,7 @@ pub fn load_dir(dir: &Path) -> Result<Vec<TaskDef>, String> {
 mod tests {
     use super::*;
     #[test]
-    fn parsea_cabecera_so_ia() {
+    fn parsea_cabecera_html() {
         let t = parse_task("T1.2", "<!-- acepta: make lint && cargo xtask test -->\n<!-- modo: aislado -->\n<!-- depende: T1.1, T1.0 -->\n# T\nx").unwrap();
         assert_eq!(t.accept, "make lint && cargo xtask test");
         assert_eq!(t.mode, Mode::Isolated);

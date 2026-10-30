@@ -53,8 +53,7 @@ aplica la que pase su aceptación.
 tools/minisandbox/minisandbox.py ejecutar --red --escribible ~/.cargo --estado /tmp/t-F1.02 -- claude --model claude-haiku-5-5 -p "Usa la skill tarea-haiku para ejecutar tareas/F1.02-tipos-mensajes.md"
 ```
 
-Las cabeceras `<!-- acepta -->`, `<!-- modo -->` y `<!-- depende -->` de cada tarea son compatibles
-con `ci/orquestador.py` de SO_IA, así que puede lanzarlas tal cual hasta que exista `pcode flow` (F3).
+Las cabeceras `<!-- acepta -->`, `<!-- modo -->` y `<!-- depende -->` de cada tarea las lee `pcode flow`.
 Desde F3, PublicCode se construye a sí mismo:
 
 ```bash
@@ -73,7 +72,7 @@ F0.01 ─► F1.01 config ──────────────────
                                                                                      │
   F2: sandbox (F2.01–05) ∥ backends (F2.06–12) ∥ skills (F2.13–15) ∥ MCP (F2.16) ◄───┘
                                                                                      │
-  F3: flujos ─► sustituye a orquestador.py en SO_IA (hito) ─► F4 ─► F6 ─► F7 ◄──────┘
+  F3: flujos (hito: PublicCode se construye a sí mismo) ─► F4 ─► F6 ─► F7 ◄──────┘
   F5 (en paralelo desde F2.18): protocolo ─► demonio ─► cliente ─┬─► terminal (CLI, TUI)
                                                                 ├─► UI común ─► escritorio Tauri
                                                                 └─► web, PWA, ACP, VS Code
@@ -89,9 +88,9 @@ nativas, proveedores, backends y exportadores de skills.
 | F0 | workspace, CI, línea base y banco smoke listos | CI en verde; `bench/linea-base.json` y `bench/smoke.jsonl` existen |
 | F1 | `pcode run` resuelve tareas aisladas con GLM vía LiteLLM | 3 de 5 tareas TP del smoke en verde |
 | F2 | la misma tarea corre con Claude Code, Copilot, Gemini, opencode y modelo propio, cada una en mini sandbox | `pcode run --backend X` con los 5 backends sobre una tarea de prueba |
-| F3 | `pcode flow` sustituye a `orquestador.py` | una semana en sombra en SO_IA sin integraciones fallidas por lockfiles ni CI fantasma |
-| F4 | +12 puntos de aceptación a la primera y −30 % de tokens frente a la línea base | SinapsisBench completo |
-| F5 | uso diario desde terminal (TUI), escritorio (Linux, macOS, Windows), web, móvil e IDE | paquetes de escritorio instalables en las 3 plataformas; la misma sesión se abre en la TUI y en el escritorio; aprobación resuelta desde el móvil |
+| F3 | `pcode flow` ejecuta el plan del propio repo | una semana de uso real sin integraciones fallidas por lockfiles ni falsos rojos de CI |
+| F4 | +12 puntos de aceptación a la primera y −30 % de tokens frente a la línea base medida en F0 | PublicBench completo |
+| F5 | uso diario desde terminal (TUI), escritorio (Linux y Windows), web, móvil e IDE | paquetes de escritorio instalables en Linux y Windows; la misma sesión se abre en la TUI y en el escritorio; aprobación resuelta desde el móvil |
 | F6 | skills aprendidas sin regresiones | regresión nocturna verde 7 días |
 | F7 | release firmada y red teaming superado | checklist de F7.03 |
 
@@ -122,7 +121,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F0.01-workspace](../tareas/F0.01-workspace.md) | Workspace Rust y binario `pcode --version` | haiku | — | hecha |
 | [F0.02-ci](../tareas/F0.02-ci.md) | CI de GitHub: Rust, tools de Python y plan de tareas | haiku | F0.01 | hecha |
 | [F0.03-verificar-clis](../tareas/F0.03-verificar-clis.md) | Verificar las CLIs de Claude Code, Copilot, Gemini y opencode (modo no interactivo) | coordinador | — | pendiente |
-| [F0.04-bench-smoke](../tareas/F0.04-bench-smoke.md) | Línea base y banco smoke de SinapsisBench (20 tareas) | coordinador | — | pendiente |
+| [F0.04-bench-smoke](../tareas/F0.04-bench-smoke.md) | Banco PublicBench: 20 tareas del propio plan con su commit base | coordinador | — | pendiente |
 | [F0.05-adrs](../tareas/F0.05-adrs.md) | ADRs iniciales: lenguaje, backends, sandbox, skills | coordinador | — | hecha |
 | [F0.06-eval-reglas](../tareas/F0.06-eval-reglas.md) | Eval de cumplimiento de reglas: archivos fuera de `toca` y órdenes git prohibidas | haiku | — | pendiente |
 
@@ -178,13 +177,12 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F2.18-cli-backend-sandbox](../tareas/F2.18-cli-backend-sandbox.md) | CLI: `pcode run --backend X --sandbox N1` y `pcode sandbox …` | haiku | F2.07, F2.08, F2.09, F2.10, F2.12 | pendiente |
 | [F2.19-proxy-salida](../tareas/F2.19-proxy-salida.md) | `pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría | haiku | F1.15 | pendiente |
 | [F2.20-puente-sandbox](../tareas/F2.20-puente-sandbox.md) | Puente TCP→Unix dentro de la sandbox y red `Filtered` | haiku | F2.19, F2.04 | pendiente |
-| [F2.21-sandbox-macos](../tareas/F2.21-sandbox-macos.md) | Mini sandbox en macOS (N1-mac): clon APFS del repo y perfil Seatbelt | haiku | F2.03 | pendiente |
 
 ### F3
 
 | Tarea | Qué | Ejecutor | Depende | Estado |
 |---|---|---|---|---|
-| [F3.01-tareas-parser](../tareas/F3.01-tareas-parser.md) | `pcode-flow`: leer tareas (frontmatter y cabeceras HTML de SO_IA) | haiku | F0.01 | pendiente |
+| [F3.01-tareas-parser](../tareas/F3.01-tareas-parser.md) | `pcode-flow`: leer tareas (frontmatter y cabeceras HTML) | haiku | F0.01 | pendiente |
 | [F3.02-dag](../tareas/F3.02-dag.md) | DAG de tareas: ciclos, dependencias inexistentes y tareas listas | haiku | F3.01 | pendiente |
 | [F3.03-eventos-flujo](../tareas/F3.03-eventos-flujo.md) | Estado del flujo por eventos en SQLite y su proyección | haiku | F3.02, F1.19 | pendiente |
 | [F3.04-planificador-ejecucion](../tareas/F3.04-planificador-ejecucion.md) | Planificador de ejecución: paralelismo por modo y exclusión de kernel | haiku | F3.03 | pendiente |
@@ -194,9 +192,8 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F3.08-clasificador-ci](../tareas/F3.08-clasificador-ci.md) | Clasificador de ejecuciones de GitHub Actions (sin tareas fantasma) | haiku | F3.01 | pendiente |
 | [F3.09-planificador-llm](../tareas/F3.09-planificador-llm.md) | Planificador LLM: generar tareas cuando la cola baja y validarlas antes de aceptarlas | haiku | F3.04, F2.07 | pendiente |
 | [F3.10-cli-flow](../tareas/F3.10-cli-flow.md) | `pcode flow run|estado|parar` y `estado.md` | haiku | F3.06, F3.07, F3.08, F2.18 | pendiente |
-| [F3.11-modo-so-ia](../tareas/F3.11-modo-so-ia.md) | Modo SO_IA: usar `ci/tareas` tal cual y ejecución en sombra frente a `orquestador.py` | coordinador | F3.10 | pendiente |
 | [F3.12-revision-cruzada](../tareas/F3.12-revision-cruzada.md) | Revisión cruzada del diff por otro backend (rúbrica del repo y seguridad del parche) | haiku | F3.10 | pendiente |
-| [F3.13-bench](../tareas/F3.13-bench.md) | `pcode bench`: ejecutar SinapsisBench con cualquier backend | haiku | F3.10, F0.04 | pendiente |
+| [F3.13-bench](../tareas/F3.13-bench.md) | `pcode bench`: ejecutar PublicBench con cualquier backend | haiku | F3.10 | pendiente |
 
 ### F4
 
@@ -239,7 +236,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F5.18-escritorio-base](../tareas/F5.18-escritorio-base.md) | `apps/desktop`: Tauri 2 con `apps/ui`, `pcoded` como sidecar y transporte Tauri | haiku | F5.12, F5.05 | pendiente |
 | [F5.19-escritorio-sistema](../tareas/F5.19-escritorio-sistema.md) | Escritorio: bandeja con estado, notificaciones nativas, enlaces `pcode://` y arranque con el sistema | haiku | F5.18, F5.03 | pendiente |
 | [F5.20-escritorio-credenciales](../tareas/F5.20-escritorio-credenciales.md) | Credenciales en el llavero del sistema y referencias `{llavero:…}` en la configuración | haiku | F5.18, F1.01 | pendiente |
-| [F5.21-escritorio-empaquetado](../tareas/F5.21-escritorio-empaquetado.md) | Empaquetado del escritorio para Linux, macOS y Windows, y actualizaciones firmadas | coordinador | F5.19, F5.20 | pendiente |
+| [F5.21-escritorio-empaquetado](../tareas/F5.21-escritorio-empaquetado.md) | Empaquetado del escritorio para Linux y Windows, y actualizaciones firmadas | coordinador | F5.19, F5.20 | pendiente |
 | [F5.22-web-servida](../tareas/F5.22-web-servida.md) | El demonio sirve `apps/ui` con token de un solo uso y CSP estricta | haiku | F5.13 | pendiente |
 | [F5.23-pwa-movil](../tareas/F5.23-pwa-movil.md) | PWA para el móvil: estado y aprobaciones | haiku | F5.22, F5.14 | pendiente |
 | [F5.24-acp](../tareas/F5.24-acp.md) | Servidor ACP (Agent Client Protocol) para editores | haiku | F5.03, F5.05 | pendiente |
@@ -254,7 +251,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F6.01-destilador-skills](../tareas/F6.01-destilador-skills.md) | Destilador de skills desde parejas fallo/acierto (a cuarentena) | haiku | F4.09, F2.15 | pendiente |
 | [F6.02-puerta-regresion](../tareas/F6.02-puerta-regresion.md) | Puerta de regresión: una skill sale de cuarentena solo si mejora sin romper nada | haiku | F6.01, F3.13 | pendiente |
 | [F6.03-gobierno-skills](../tareas/F6.03-gobierno-skills.md) | Gobierno de skills y subagentes reutilizables | haiku | F6.02 | pendiente |
-| [F6.04-regresion-nocturna](../tareas/F6.04-regresion-nocturna.md) | Regresión nocturna de SinapsisBench con aviso automático | coordinador | F3.13 | pendiente |
+| [F6.04-regresion-nocturna](../tareas/F6.04-regresion-nocturna.md) | Regresión nocturna de PublicBench con aviso automático | coordinador | F3.13 | pendiente |
 | [F6.05-trayectorias](../tareas/F6.05-trayectorias.md) | Puntuación estructural de trayectorias y exportación de trazas | haiku | F3.03 | pendiente |
 
 ### F7

@@ -81,7 +81,7 @@ Abreviaturas de venue: **EMNLP** / **ACL** = actas principales; **F-EMNLP** / **
 | [GRASP: Gated Regression-Aware Skill Proposer](https://aclanthology.org/2026.emnlp-main.452/) | EMNLP | aceptar una skill nueva solo si no rompe comportamientos que ya funcionaban; las skills de un modelo fuerte mejoran a uno débil, no al revés | **puerta de regresión**: una skill candidata pasa evals con y sin ella antes de salir de cuarentena; las skills las escribe un modelo fuerte (Claude) para que las usen los pequeños (Haiku, GLM). **F6.02** |
 | [SkillsVote: Lifecycle Governance of Agent Skills](https://aclanthology.org/2026.emnlp-main.281/) | EMNLP | gobierno del ciclo de vida: recolección, recomendación y evolución con fronteras de aplicabilidad | metadatos de uso y éxito por skill, recomendación por tarea y retirada de skills que no aportan. **F6.03** |
 | [Evo-Harness](https://aclanthology.org/2026.emnlp-main.969/) · [Harness Updating Is Not Harness Benefit](https://aclanthology.org/2026.emnlp-main.2326/) | EMNLP | compilar experiencia en el arnés (prompts, skills, memoria, tools); **actualizar el arnés no implica mejorar**: hay que separar la capacidad de actualizar de la de beneficiarse | cada cambio automático del arnés se valida en el banco; sin mejora medida no se activa. **F6.02, F6.04** |
-| [When Not to Imitate: Boundary-Aware Skill Memory](https://aclanthology.org/2026.findings-emnlp.1141/) · [SkillForge](https://aclanthology.org/2026.emnlp-main.1954/) | F-EMNLP · EMNLP | las skills sacadas de éxitos no mejoran siempre; SkillForge empareja intentos fallidos y exitosos **de la misma tarea** para aislar las decisiones de procedimiento críticas | campo «no usar cuando» obligatorio; el destilador usa las parejas fallo/acierto que dejan los reintentos (en SO_IA hay 23 tareas con reintentos). **F6.01** |
+| [When Not to Imitate: Boundary-Aware Skill Memory](https://aclanthology.org/2026.findings-emnlp.1141/) · [SkillForge](https://aclanthology.org/2026.emnlp-main.1954/) | F-EMNLP · EMNLP | las skills sacadas de éxitos no mejoran siempre; SkillForge empareja intentos fallidos y exitosos **de la misma tarea** para aislar las decisiones de procedimiento críticas | campo «no usar cuando» obligatorio; el destilador usa las parejas fallo/acierto que dejan los reintentos. **F6.01** |
 | [Agent Skill Evaluation and Evolution: Frameworks and Benchmarks](https://aclanthology.org/2026.findings-emnlp.1427/) | F-EMNLP | panorama: cuatro paradigmas de evolución y seis categorías de benchmarks de skills | referencia para diseñar el arnés de evals de skills. **F6.02** |
 
 ## 5. Seguridad de skills, tools y repos
@@ -99,7 +99,7 @@ Abreviaturas de venue: **EMNLP** / **ACL** = actas principales; **F-EMNLP** / **
 
 | Paper | Venue | Qué propone | En PublicCode |
 |---|---|---|---|
-| [MemGovern: Learning from Governed Human Experiences](https://aclanthology.org/2026.findings-emnlp.898/) | F-EMNLP | aprovechar la experiencia humana histórica (issues, arreglos) con gobierno: +4,65 % en SWE-bench | memoria episódica alimentada con informes, REGISTRO y PR del propio proyecto (en SO_IA: `ci/informes/`). **F4.09** |
+| [MemGovern: Learning from Governed Human Experiences](https://aclanthology.org/2026.findings-emnlp.898/) | F-EMNLP | aprovechar la experiencia humana histórica (issues, arreglos) con gobierno: +4,65 % en SWE-bench | memoria episódica alimentada con los informes (`informes/`) y los PR del propio proyecto. **F4.09** |
 | [Memory Transfer Learning in Coding Agents](https://aclanthology.org/2026.emnlp-main.2666/) | EMNLP | la memoria se transfiere entre dominios e incluso entre modelos | memoria compartida entre backends: lo que aprende Claude lo usa GLM. **F4.09** |
 | [MemGuard: Persisting Verifier Signals for Memory Governance](https://aclanthology.org/2026.emnlp-main.423/) | EMNLP | la memoria solo sirve si sigue siendo fiable; guardar la señal del verificador junto a cada recuerdo | cada entrada de memoria guarda si la tarea pasó `acepta`; las de tareas fallidas se marcan. **F4.09** |
 | [How Memory Management Impacts LLM Agents: Experience-Following](https://aclanthology.org/2026.acl-long.27/) | ACL | los agentes imitan la experiencia recuperada, buena o mala | recuperar solo experiencia **verificada**, nunca trazas sin aceptación. **F4.09** |
@@ -119,17 +119,17 @@ Abreviaturas de venue: **EMNLP** / **ACL** = actas principales; **F-EMNLP** / **
 
 | Paper | Venue | Qué propone | En PublicCode |
 |---|---|---|---|
-| [SABER: Operational Safety of Coding Agents in Stateful Workspaces](https://aclanthology.org/2026.emnlp-main.211/) | EMNLP | la seguridad de un agente de código está en las secuencias de acciones sobre un espacio de trabajo con estado, no en si se niega a un prompt | es justo el problema de SO_IA (`git stash`, `reset --hard`): mini sandbox + política de órdenes + eval tipo SABER en el banco. **F2.01–F2.04, F7.02** |
+| [SABER: Operational Safety of Coding Agents in Stateful Workspaces](https://aclanthology.org/2026.emnlp-main.211/) | EMNLP | la seguridad de un agente de código está en las secuencias de acciones sobre un espacio de trabajo con estado, no en si se niega a un prompt | es justo el problema de las órdenes destructivas (`git stash`, `reset --hard`): mini sandbox + política de órdenes + eval tipo SABER en el banco. **F2.01–F2.04, F7.02** |
 | [WeClawArena: Auditable Sandbox](https://aclanthology.org/2026.findings-emnlp.1424/) | F-EMNLP | sandbox de ejecución auditable para agentes de distintos propietarios que colaboran sobre espacios de trabajo personales | auditoría encadenada por sandbox, agente y propietario (base para equipos con varias personas). **F1.15** |
 
 ## 9. Evaluación
 
 | Paper | Venue | Qué propone | En PublicCode |
 |---|---|---|---|
-| [AgentLens: Trajectory Reviews for Coding Agent Evaluation](https://aclanthology.org/2026.emnlp-industry.94/) | EMNLP Ind | evaluar la trayectoria, no un bit de aprobado; integrado en regresión continua | SinapsisBench guarda y puntúa trayectorias, con regresión nocturna. **F6.04** |
+| [AgentLens: Trajectory Reviews for Coding Agent Evaluation](https://aclanthology.org/2026.emnlp-industry.94/) | EMNLP Ind | evaluar la trayectoria, no un bit de aprobado; integrado en regresión continua | PublicBench guarda y puntúa trayectorias, con regresión nocturna. **F6.04** |
 | [How Coding Agents Fail Their Users (20.574 sesiones reales)](https://aclanthology.org/2026.emnlp-main.1011/) | EMNLP | en sesiones reales crecen las violaciones de restricciones y los autoinformes inexactos | el informe del agente se contrasta con los hechos (diff real, salida real de `acepta`). **F1.18** |
 | [OctoBench: Scaffold-Aware Instruction Following](https://aclanthology.org/2026.acl-long.269/) | ACL | seguir instrucciones heterogéneas y persistentes del scaffold (tipo AGENTS.md) sigue siendo difícil | eval propia: % de reglas de AGENTS.md que cada backend respeta (medido por la política). **F0.06** |
-| [ChainSWE: Multi-Bug Software Maintenance](https://aclanthology.org/2026.emnlp-main.371/) | EMNLP | el rendimiento cae hasta un 70 % en cadenas de issues encadenados | SinapsisBench incluye cadenas de tareas dependientes (como ocurre en SO_IA). **F0.04** |
+| [ChainSWE: Multi-Bug Software Maintenance](https://aclanthology.org/2026.emnlp-main.371/) | EMNLP | el rendimiento cae hasta un 70 % en cadenas de issues encadenados | PublicBench incluye cadenas de tareas dependientes. **F0.04** |
 | [LongCLI-Bench](https://aclanthology.org/2026.findings-acl.1497/) | F-ACL | tareas largas de programación en CLI con doble conjunto de tests | protocolo de doble test (cumple el requisito y no rompe nada) en las tareas del banco. **F0.04** |
 | [Quality, Not Just Outcome: Trajectory Quality Score](https://aclanthology.org/2026.findings-emnlp.2264/) | F-EMNLP | puntuación estructural de trayectorias sin juez LLM y en tiempo lineal | filtro barato de trazas para destilar skills y afinar modelos. **F6.05** |
 
@@ -144,9 +144,3 @@ Abreviaturas de venue: **EMNLP** / **ACL** = actas principales; **F-EMNLP** / **
 | [OPEN-SWE-TRACES](https://aclanthology.org/2026.findings-emnlp.131/) | F-EMNLP | 207.489 trayectorias en 9 lenguajes (Rust incluido) para destilar agentes de SWE abiertos | fuente de datos si se afina un modelo propio servido por LiteLLM. **F6.05** |
 | [ToFu: A White-Box, Token-Efficient Agent Harness](https://aclanthology.org/2026.emnlp-demos.22/) | EMNLP Demo | arnés de caja blanca e inspeccionable con buen rendimiento | principio de diseño: el arnés de PublicCode es inspeccionable (prompts y política en archivos versionados). **F1.16** |
 | [Ask or Assume? Clarification-Seeking in Coding Agents](https://aclanthology.org/2026.findings-emnlp.15/) | F-EMNLP | los agentes pueden aprender a detectar cuándo preguntar ante tareas poco especificadas | tool `preguntar` con presupuesto: en modo flujo se convierte en una pregunta al coordinador. **F4.11** |
-
-## 11. Específicos para SO_IA (kernel)
-
-| Paper | Venue | Qué propone | En PublicCode |
-|---|---|---|---|
-| [Code Agents Don't Understand Root Cause: Linux Kernel Fault Localization](https://aclanthology.org/2026.emnlp-main.2201/) · [Taming System Complexity: SWE Agents Diagnosing Linux Kernel Faults](https://aclanthology.org/2026.acl-long.862/) | EMNLP · ACL | los agentes localizan síntomas y no la causa raíz en el kernel; LinuxFL+ mejora la localización entre un 7,2 % y un 11,2 % | skill `kernel-causa-raiz` para las tareas de kernel de SO_IA (separar síntoma, causa y sitio del arreglo). **F6.01** |

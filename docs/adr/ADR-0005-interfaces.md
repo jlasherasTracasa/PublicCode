@@ -5,7 +5,7 @@
 
 ## Contexto
 
-PublicCode debe usarse desde la terminal (CLI y TUI), como aplicación de escritorio en Linux, macOS y
+PublicCode debe usarse desde la terminal (CLI y TUI), como aplicación de escritorio en Linux y
 Windows, desde el navegador (servidores sin escritorio), desde el móvil (aprobaciones), desde el IDE
 y desde GitHub. Mantener lógica en cada cliente multiplicaría los errores; mantener una UI distinta
 para web y para escritorio duplicaría el trabajo. Además, las tareas las implementa sobre todo
@@ -38,5 +38,5 @@ Haiku 5.5, que rinde mejor con tecnologías muy extendidas.
   comando y CSP).
 + Las sesiones se mueven entre clientes porque el estado vive en el demonio.
 − Dos pilas (Rust y TypeScript): AGENTS.md fija convenciones y comprobaciones para cada una.
-− Las diferencias entre los webviews del sistema (WebKitGTK, WKWebView, WebView2) requieren pruebas
-  en las tres plataformas: lo hace la CI de empaquetado (F5.21).
+− Las diferencias entre los webviews del sistema (WebKitGTK y WebView2) requieren pruebas
+  en Linux y Windows: lo hace la CI de empaquetado (F5.21).

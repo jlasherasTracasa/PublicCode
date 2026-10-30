@@ -1,7 +1,6 @@
 //! Integración: aplicar los cambios de una sandbox al repo y commitear solo esas rutas.
 //!
-//! Elimina la clase de fallos de SO_IA (17 integraciones fallidas por conflictos en `Cargo.toml` y
-//! `Cargo.lock`): no hay rama que rebasar; se aplica el resultado ya validado y, si cambió algún
+//! Evita la clase de fallos por conflictos en `Cargo.toml` y `Cargo.lock`: no hay rama que rebasar; se aplica el resultado ya validado y, si cambió algún
 //! manifiesto de Cargo, el `Cargo.lock` se regenera en el repo.
 use pcode_sandbox::{ChangeKind, Sandbox};
 use std::path::Path;

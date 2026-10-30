@@ -22,9 +22,9 @@ por tarea y nada de pegamento escrito a mano alrededor.
 * Política de capacidades, hooks y auditoría encadenada.
 * Skills (formato único exportado a cada agente) y tools propias (nativas, MCP y WASM).
 * Contexto, memoria y caché pensados para modelos pequeños.
-* Evaluación continua (SinapsisBench) y telemetría.
+* Evaluación continua (PublicBench) y telemetría.
 * Interfaces sobre un demonio único: **terminal** (CLI para scripts y TUI interactiva), **aplicación
-  de escritorio** (Tauri 2 en Linux, macOS y Windows), **web**, **PWA móvil** de aprobaciones,
+  de escritorio** (Tauri 2 en Linux y Windows), **web**, **PWA móvil** de aprobaciones,
   **IDE** (ACP, VS Code y MCP) y **GitHub** ([interfaces.md](interfaces.md)).
 
 **Fuera (no-objetivos)**
@@ -50,19 +50,14 @@ por tarea y nada de pegamento escrito a mano alrededor.
 5. **Determinista donde se pueda.** El orquestador no es un LLM; el LLM solo decide lo que requiere
    juicio.
 6. **Local-first y abierto a cualquier modelo.** Ningún backend es obligatorio.
-7. **Todo se mide.** Un cambio en el arnés que no mejora SinapsisBench no se activa
+7. **Todo se mide.** Un cambio en el arnés que no mejora PublicBench no se activa
    (*Harness Updating Is Not Harness Benefit*).
 
-## 4. Relación con SO_IA
+## 4. Plataformas
 
-* **Cliente cero**: SO_IA ya funciona con opencode + GLM y un orquestador casero. PublicCode debe
-  sustituirlo en la fase F3 sin perder nada (prueba en sombra durante una semana).
-* **Banco de pruebas**: las 84 tareas de SO_IA, con su criterio `acepta` y su commit base, forman
-  SinapsisBench.
-* **Prototipo de `agentd` y `flujod`**: los documentos `docs/03-ia/06` y `docs/03-ia/09 §4` de SO_IA
-  prevén un orquestador nativo con capacidades auditadas, sandbox con snapshots y MCP. PublicCode es
-  ese diseño ejecutándose hoy en Linux, en Rust, con conceptos compatibles (efectos declarados,
-  capacidades atenuadas, auditoría con hash encadenado) para portarlo algún día.
+PublicCode se usa en **Linux y Windows**. El núcleo, la CLI, la TUI y el escritorio compilan para las
+dos; el aislamiento de las mini sandboxes es N1 nativo en Linux y, en Windows, N1 dentro de WSL2 (o N2
+con Docker Desktop). Detalle en [interfaces.md](interfaces.md) y [mini-sandboxes.md](mini-sandboxes.md).
 
 ## 5. Fases
 
@@ -74,7 +69,7 @@ coordinando y agentes (Haiku 5.5 o GLM) implementando.
 | **F0** Fundaciones | 1 | workspace, CI, verificación de CLIs, línea base, banco smoke, ADRs, eval de reglas | CI en verde, línea base reproducible |
 | **F1** Núcleo | 3–4 | configuración; modelos (OpenAI-compatible, Anthropic, Gemini; SSE; reparación); tools nativas; política por capas; análisis de shell; auditoría; bucle con presupuestos; compresión; hook de parada; detector de atasco; SQLite; `pcode run` | `pcode run` resuelve 3 de 5 tareas TP del smoke con GLM |
 | **F2** Backends, sandbox, skills, MCP | 4 | mini sandbox en Rust (overlay, namespaces, Landlock, seccomp, proxy de salida); backends Claude Code, Copilot CLI, Copilot coding agent, Gemini CLI, opencode y modelo propio; skills (registro, contrato, exportación); servidor MCP; sincronización de instrucciones | la misma tarea corre con los 5 backends |
-| **F3** Flujos | 4 | tareas, DAG, eventos, planificador de ejecución, aceptación en dos etapas, reintentos con relevo, cola de integración con lockfiles, clasificador de CI, planificador LLM, revisión cruzada, `pcode bench`, modo SO_IA | **sustituye a `orquestador.py`** |
+| **F3** Flujos | 4 | tareas, DAG, eventos, planificador de ejecución, aceptación en dos etapas, reintentos con relevo, cola de integración con lockfiles, clasificador de CI, planificador LLM, revisión cruzada, `pcode bench` | **orquestación completa sin pegamento externo** |
 | **F4** Contexto, memoria, router | 3–4 | contexto como tool, compactación con prefijo estable, memoria por facetas, tree-sitter, búsqueda híbrida y bibliotecario, contexto por rol, router por histórico, puerta de incertidumbre, memoria episódica verificada, búsqueda de tools, `preguntar`, modo guion | +12 pp de aceptación a la primera y −30 % de tokens |
 | **F5** Interfaces | 6–8 (en paralelo a F3–F4) | protocolo con tipos TS generados, demonio, aprobaciones, cliente Rust; terminal: CLI para máquinas y TUI (chat, órdenes, `@`, multiagente, atajos y temas); UI común React (sesión, revisión, centro de control, ajustes, skills y banco); escritorio Tauri (bandeja, notificaciones, enlaces, llavero, paquetes para las 3 plataformas, WSL); web servida, PWA, ACP, VS Code y GitHub | uso diario desde terminal, escritorio, web e IDE |
 | **F6** Aprendizaje | 3 | destilador de skills, puerta de regresión, gobierno, regresión nocturna, calidad de trayectorias | skills aprendidas sin regresiones |
@@ -85,17 +80,18 @@ mini sandboxes), la F1 y la F2 pueden comprimirse a la mitad.
 
 ## 6. Métricas de éxito
 
-Ver [evaluacion.md](evaluacion.md). Resumen frente a la línea base de SO_IA (commit `2ef8d59`):
+Ver [evaluacion.md](evaluacion.md). La línea base se mide en F0 con opencode y el mismo modelo; los
+objetivos son mejoras sobre ella:
 
-| Métrica | Hoy | Objetivo |
-|---|---|---|
-| Aceptación a la primera (mismo modelo GLM-5.3-Flash) | 72,6 % | ≥ 85 % |
-| Tareas con 3 o más intentos | 8 de 84 | ≤ 2 |
-| Integraciones fallidas | 17 | 0 |
-| Tareas de CI fantasma | ≥ 7 | 0 |
-| Violaciones de reglas de git | posibles | 0 (imposibles) |
-| Tokens por tarea aceptada | se mide en F0 | −30 % |
-| Pegamento escrito a mano | 456 líneas | 0 |
+| Métrica | Objetivo |
+|---|---|
+| Aceptación a la primera (mismo modelo) | +12 puntos |
+| Tareas con 3 o más intentos | mínimas; ninguna bloqueada |
+| Integraciones fallidas por lockfiles | 0 |
+| Falsos rojos de CI | 0 |
+| Violaciones de reglas de git | 0 (imposibles) |
+| Tokens por tarea aceptada | −30 % |
+| Pegamento escrito a mano | 0 |
 
 ## 7. Riesgos
 
@@ -106,9 +102,9 @@ Ver [evaluacion.md](evaluacion.md). Resumen frente a la línea base de SO_IA (co
 | Los namespaces de usuario no están disponibles (Ubuntu 24.04 con AppArmor, Docker con seccomp por defecto) | media | medio | detección al arrancar y caída a N2 (contenedor); documentar el ajuste de sysctl o del perfil |
 | GLM es demasiado débil para algunas tareas | media | medio | tareas desgranadas, hook de parada, detector de atasco y escalado a Claude en el tercer intento |
 | Las skills aprendidas envenenan el sistema | media | alto | cuarentena, puerta de regresión, procedencia y red teaming (F6.02, F7.01) |
-| Alcance enorme | alta | alto | orden por valor: F1→F3 entrega lo que más falta en SO_IA; F5 (interfaces) puede esperar |
+| Alcance enorme | alta | alto | orden por valor: F1→F3 entrega el núcleo útil |
 | Haiku se sale del guion (toca archivos de más) | media | bajo | eval de reglas (F0.06), `toca` en cada tarea y revisión de la integración |
-| Diferencias entre webviews (WebKitGTK, WKWebView, WebView2) | media | medio | CI de empaquetado con prueba de humo en las tres plataformas (F5.21); UI sin APIs exóticas |
+| Diferencias entre webviews (WebKitGTK y WebView2) | media | medio | CI de empaquetado con prueba de humo en Linux y Windows (F5.21); UI sin APIs exóticas |
 | Dos pilas (Rust y TypeScript) | alta | bajo | AGENTS.md fija convenciones y comprobaciones por área; tipos de la API generados desde Rust (`ts-rs`) |
 | Dependencia de un solo coordinador humano | media | medio | tareas `coordinador` mínimas (3 en F0–F1); el resto, autónomas |
 
@@ -120,11 +116,11 @@ Ver [evaluacion.md](evaluacion.md). Resumen frente a la línea base de SO_IA (co
 | Nombre del CLI | `pcode` | confirmación |
 | Repo público | desde F3 | confirmación |
 | Planificador por defecto | Claude Code (Opus) | presupuesto de API |
-| Copilot coding agent en SO_IA | sí, para tareas `aislado` asíncronas | plan de Copilot con coding agent habilitado |
+| Copilot coding agent | sí, para tareas `aislado` asíncronas | plan de Copilot con coding agent habilitado |
 
 ## 9. Primeros pasos (esta semana)
 
-1. Coordinador: F0.03 (verificar CLIs) y F0.04 (línea base y smoke en un clon completo de SO_IA).
+1. Coordinador: F0.03 (verificar CLIs) y F0.04 (banco PublicBench y línea base con opencode).
 2. Haiku 5.5: F0.01 → F0.02 → F0.06, y después F1.01, F1.02, F1.08 y F1.19 en paralelo (no dependen
    entre sí más allá de F0.01).
 3. Revisar el primer informe de Haiku y ajustar el formato de tarea si hace falta, antes de lanzar

@@ -143,7 +143,7 @@ docs/              plan, arquitectura, interfaces, backends, sandboxes, evaluaci
 - JSON-RPC 2.0 para peticiones; eventos por SSE (web) o eventos de Tauri (escritorio).
 - `PROTOCOL_VERSION` (semver). Dentro de una versión mayor, solo cambios compatibles: campos nuevos
   opcionales y métodos nuevos.
-- Transporte local: socket Unix (`.pcode/pcoded.sock`) en Linux y macOS; en Windows, TCP en loopback
+- Transporte local: socket Unix (`.pcode/pcoded.sock`) en Linux; en Windows, TCP en loopback
   con token. Remoto (PWA, otra máquina): TCP con token y TLS si no es loopback.
 
 ### 6.3 Terminal: CLI (`pcode`) y TUI (`pcode tui`, o `pcode` sin argumentos en una TTY)
@@ -216,7 +216,6 @@ Versiones exactas (sin `^` ni `~`) y `package-lock.json` versionado.
 | Plataforma | Núcleo y CLI | TUI | Escritorio | Mini sandbox |
 |---|---|---|---|---|
 | Linux x86_64 / aarch64 | ✓ | ✓ | ✓ (.deb, .rpm, AppImage) | **N1** (namespaces + overlay) |
-| macOS (Apple Silicon e Intel) | ✓ | ✓ | ✓ (.dmg) | N1-mac (clon APFS + Seatbelt) o N2 |
 | Windows 10/11 | ✓ | ✓ | ✓ (.msi) | vía WSL2 (N1 dentro) o N2 |
 
 La CI ejecuta los tests en Linux; las tareas de otras plataformas aíslan su lógica en funciones

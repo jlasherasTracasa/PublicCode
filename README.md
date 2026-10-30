@@ -7,7 +7,7 @@ comparte las mismas **skills** y **tools** y responde ante un **criterio de acep
 Todo se audita y se mide.
 
 Se usa desde donde trabajes: **terminal** (CLI para scripts y TUI interactiva), **aplicación de
-escritorio** (Linux, macOS y Windows), **navegador**, **móvil** (aprobaciones), **IDE** (ACP, VS Code
+escritorio** (Linux y Windows), **navegador**, **móvil** (aprobaciones), **IDE** (ACP, VS Code
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
@@ -21,12 +21,12 @@ se sigue en el escritorio.
 > | Mini sandbox | overlay CoW sin privilegios, sin red, aplicar/descartar/diff, `pcode sandbox …` | F2.01–F2.03 |
 > | Backends | Claude Code, Gemini CLI, Copilot CLI, opencode y modelo propio; `pcode run --backend X` | F2.06–F2.12, F2.18 |
 > | Skills | registro, exportación a Claude/AGENTS/Copilot/Gemini/opencode, contratos | F2.13–F2.15 |
-> | Flujos | tareas (cabeceras de SO_IA), DAG, estado por eventos (importa el `estado.json` real de SO_IA), planificador, integración sin conflictos de lockfile, clasificador de CI, `pcode flow run` | F3.01–F3.08, F3.10 |
+> | Flujos | tareas con criterio de aceptación, DAG, estado por eventos, planificador, integración sin conflictos de lockfile, clasificador de CI, `pcode flow run` | F3.01–F3.08, F3.10 |
 > | Demonio | API JSON-RPC + eventos SSE + página web + cola de aprobaciones, tipos TypeScript generados, `pcode daemon` | F5.01–F5.03 |
 >
 > **Pendiente**: de F0, la verificación de CLIs (F0.03), el banco (F0.04) y la eval de reglas (F0.06); de F3, el
-> planificador LLM, la revisión cruzada, `pcode bench` y el modo sombra. Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
-> seccomp, proxy de salida y red filtrada, sandbox en macOS, servidor MCP, TUI, UI React y app de
+> planificador LLM, la revisión cruzada y `pcode bench`. Además (en [docs/implementacion.md](docs/implementacion.md) figura como `pendiente`): Landlock y
+> seccomp, proxy de salida y red filtrada, servidor MCP, TUI, UI React y app de
 > escritorio, PWA, ACP, VS Code, GitHub, contexto/memoria/router (F4), aprendizaje de skills (F6) y
 > endurecimiento (F7). Los adaptadores de CLIs de terceros usan fixtures sintéticas hasta que F0.03
 > (verificación con las CLIs instaladas) aporte salidas reales.
@@ -63,23 +63,11 @@ fortalezas distintas, configuraciones distintas (`CLAUDE.md`, `.github/copilot-i
 `GEMINI.md`, `AGENTS.md`) y ninguno de ellos sabe coordinar a los demás. Cuando un proyecto quiere
 usarlos en serio acaba escribiendo su propio pegamento.
 
-El proyecto hermano [SO_IA](https://github.com/jlasherasTracasa/SO_IA) (un sistema operativo en
-Rust construido por agentes) es el caso real que motiva PublicCode. Allí opencode + GLM-5.3-Flash
-trabajan coordinados por un orquestador casero (`ci/orquestador.py`, 356 líneas, más varios scripts
-de shell). Los datos de su `ci/estado.json` y `ci/orquestador.log` en el commit `2ef8d59`:
-
-| Señal | Valor | Qué indica |
-|---|---|---|
-| Tareas aceptadas a la primera | 61 de 84 (**73 %**) | el agente se da por terminado sin haber verificado |
-| Tareas que necesitaron 3 o más intentos | 8 (una de ellas, T2.17, sigue **bloqueada**) | los reintentos no aprenden del fallo anterior |
-| Fallos al integrar ramas | **17** (conflictos en `Cargo.toml`/`Cargo.lock`) | no hay cola de integración con regeneración de lockfiles |
-| Tareas `CI-arreglo-*` | **27**, varias «fantasma» por un error del clasificador | el estado de la CI no se clasifica bien |
-| Reinicios del orquestador | 15 | el estado no es durable y el proceso depende de hacks de recarga |
-| Reglas críticas escritas en prosa | `AGENTS.md` prohíbe `git stash`, `git add -A`, `reset --hard`… | el modelo puede ignorarlas: nada las impone |
-| Clave de API en el repo | `opencode.json` lleva la clave de LiteLLM en claro | los secretos no tienen un sitio propio |
-
-PublicCode convierte todo ese pegamento en producto: tareas, verificación, reintentos, integración,
-políticas, sandboxes y evaluación, sea cual sea el agente que haga el trabajo.
+Lo que falta no es otro agente, sino lo que hay **alrededor**: tareas con criterio de aceptación,
+verificación, reintentos que aprenden del fallo anterior, una cola de integración que no se rompe con
+los lockfiles, reglas que el motor impone en lugar de pedirlas en un prompt, aislamiento barato para
+cada subagente y una forma de medir si algo mejora. PublicCode convierte todo ese pegamento en
+producto, sea cual sea el agente que haga el trabajo.
 
 ## Qué hace mejor que opencode
 
@@ -99,9 +87,9 @@ lo que sé de opencode hasta mediados de 2026 y se verificará contra la versió
 | No terminar sin verificar | depende del modelo | **hook de parada**: no hay «terminado» sin la aceptación en verde |
 | Revisión cruzada | — | un agente distinto revisa el diff (p. ej. Gemini revisa lo que escribió GLM) |
 | Elegir el mejor agente para cada tarea | un modelo por sesión | **enrutado** por tipo de tarea, coste y resultados históricos del banco |
-| Medir mejoras | — | **SinapsisBench**: re-ejecuta tareas reales de SO_IA y compara agentes |
+| Medir mejoras | — | **PublicBench**: re-ejecuta un conjunto de tareas con cada agente y los compara |
 | Auditoría | logs de sesión | registro **append-only con hash encadenado** de cada efecto |
-| Dónde se usa | TUI y modo servidor | **TUI + CLI + app de escritorio (Linux, macOS, Windows) + web + PWA móvil + ACP/VS Code**, todos sobre el mismo demonio: el trabajo multiagente se ve y se controla desde cualquiera |
+| Dónde se usa | TUI y modo servidor | **TUI + CLI + app de escritorio (Linux y Windows) + web + PWA móvil + ACP/VS Code**, todos sobre el mismo demonio: el trabajo multiagente se ve y se controla desde cualquiera |
 
 ## Agentes y modelos que integra
 
@@ -119,7 +107,7 @@ Hay dos clases de backend:
 | **Claude Code** | agente | modo headless (`claude -p … --output-format stream-json`) o Claude Agent SDK; skills en `.claude/skills/`; MCP | planificación, refactors grandes, depuración difícil |
 | **GitHub Copilot** | agente | Copilot CLI en modo no interactivo; **Copilot coding agent** asíncrono vía issue y PR en GitHub; `.github/copilot-instructions.md` y `AGENTS.md` | trabajo asíncrono sobre issues y revisión de PR |
 | **Gemini** | agente o modelo | Gemini CLI headless (`gemini -p …`) o ACP; o la API de Gemini como modelo en el bucle propio | contexto muy largo: lectura de repos enteros y revisión |
-| **opencode** | agente | `opencode run` / `opencode serve` | continuidad con el flujo actual de SO_IA |
+| **opencode** | agente | `opencode run` / `opencode serve` | continuidad con flujos ya montados sobre opencode |
 | **LiteLLM** (GLM, Qwen, DeepSeek, vLLM, Ollama…) | modelo | cualquier endpoint OpenAI-compatible; bucle propio optimizado para modelos abiertos | volumen: implementación masiva barata y en local, con datos confidenciales |
 | **API de Anthropic / Gemini / OpenAI** | modelo | proveedores nativos en el bucle propio | roles concretos (planificador, juez) con control total del contexto |
 
@@ -177,7 +165,7 @@ API única (`pcode-protocol`). Diseño completo en [docs/interfaces.md](docs/int
 |---|---|---|
 | **CLI** `pcode …` | órdenes con `--formato json\|stream-json` y autocompletado | scripts, CI, uso rápido |
 | **TUI** `pcode` | terminal interactiva (ratatui): chat, `@archivo`, `/órdenes`, `!shell`, árbol de agentes y subagentes, aprobaciones en línea, diff por archivo, atajos y temas configurables | trabajo diario en terminal, también por SSH |
-| **Escritorio** | app Tauri 2 para Linux, macOS y Windows: centro de control multiagente, revisión de diffs, aprobaciones con notificaciones nativas, skills, banco, ajustes con **llavero del sistema**, icono en la bandeja | supervisar varios agentes en paralelo y revisar con calma |
+| **Escritorio** | app Tauri 2 para Linux y Windows: centro de control multiagente, revisión de diffs, aprobaciones con notificaciones nativas, skills, banco, ajustes con **llavero del sistema**, icono en la bandeja | supervisar varios agentes en paralelo y revisar con calma |
 | **Web** | la misma UI servida por el demonio con token | servidores sin escritorio (por túnel SSH o Tailscale) |
 | **Móvil** | PWA de estado y aprobaciones | no bloquear a los agentes cuando no estás delante |
 | **IDE** | `pcode acp` (editores con ACP), extensión fina de VS Code, `pcode mcp` | trabajar desde el editor |
@@ -188,7 +176,7 @@ API única (`pcode-protocol`). Diseño completo en [docs/interfaces.md](docs/int
 │ ● s-12 GLM   ⏳ paso 7  │ tú › arregla el test que falla en sinvirtio     │ M lib/sinvirtio/src/q.rs │
 │   └ explorador ✓        │ glm › leo lib/sinvirtio/src/queue.rs …          │ [a] aplicar [d] descartar│
 │ ⚠ s-10 Copilot ⧗ aprob. │   ▸ bash cargo test -p sinvirtio  ✗ exit=101    ├ Aprobaciones (1) ────────┤
-│ Flujo SO_IA: 3 ⏳ 41 ✓  │   ▸ editar queue.rs  ✓                          │ s-10 git push … [p] [n]  │
+│ Flujo: 3 ⏳ 41 ✓        │   ▸ editar queue.rs  ✓                          │ s-10 git push … [p] [n]  │
 ├─────────────────────────┴─────────────────────────────────────────────────┴──────────────────────────┤
 │ › /backend claude  @lib/sinvirtio/src/queue.rs  explica por qué falla_                                │
 │ GLM-5.3-Flash · sandbox N1 sin red · 41k↑ 3k↓ tokens · acepta: cargo test -p sinvirtio · F1 ayuda     │
@@ -199,7 +187,7 @@ API única (`pcode-protocol`). Diseño completo en [docs/interfaces.md](docs/int
 
 | Concepto | Qué es |
 |---|---|
-| **Tarea** | archivo Markdown con cabecera (`acepta`, `modo`, `depende`, `presupuesto`, `backend`, `skills`). Compatible con el formato de `ci/tareas/` de SO_IA |
+| **Tarea** | archivo Markdown con cabecera (`acepta`, `modo`, `depende`, `presupuesto`, `backend`, `skills`). Admite cabeceras HTML (`<!-- acepta: … -->`) o frontmatter |
 | **Backend** | adaptador a un agente externo o a un modelo. Interfaz común: `preparar → ejecutar → resultado {diff, traza, uso, salida}` |
 | **Subagente** | instancia de un backend lanzada por otro agente, con capacidades atenuadas, presupuesto propio y salida estructurada |
 | **Skill** | carpeta con `SKILL.md` (estándar abierto Agent Skills) más scripts y recursos. Solo el nombre y la descripción entran en el contexto; el resto se carga al usarla |
@@ -218,7 +206,7 @@ PublicCode define **cuatro niveles** y usa el más ligero que baste:
 |---|---|---|---|
 | **N0** | WASM (wasmtime) sin capacidades | µs | tools puras: parsear, formatear, transformar |
 | **N1 · mini sandbox** | namespaces de usuario + **overlay CoW** sobre el repo + raíz de solo lectura + sin red + PIDs propios (más adelante, Landlock y seccomp) | **~55 ms** (prototipo, medido) | cada orden de shell y cada subagente. Paralelismo sin clones; deshacer = descartar la capa |
-| **N2** | contenedor (Docker/Podman) con imagen del proyecto | segundos | toolchains completos (p. ej. la imagen `sinapsis-dev` con QEMU) |
+| **N2** | contenedor (Docker/Podman) con imagen del proyecto | segundos | toolchains completos (p. ej. la imagen del proyecto con QEMU) |
 | **N3** | microVM (Firecracker / Cloud Hypervisor) | ~100 ms–1 s | código no confiable, red abierta, cargas tipo kernel |
 
 El prototipo [`tools/minisandbox/minisandbox.py`](tools/minisandbox/minisandbox.py) ya implementa
@@ -230,7 +218,7 @@ N1 sin privilegios:
 * sin red por defecto, el resto del disco en solo lectura, `/tmp` y `HOME` privados y `--tiempo` máximo;
 * 9 tests en [`test_minisandbox.py`](tools/minisandbox/test_minisandbox.py), todos en verde.
 
-Ventaja sobre el flujo actual de SO_IA: cuatro agentes en paralelo comparten una única copia del repo
+Ventaja: cuatro agentes en paralelo comparten una única copia del repo
 como capa inferior, y cada uno tiene su capa superior. Desaparecen los `git clone` por tarea y la
 integración pasa a ser «aplicar diff + re-validar». Diseño completo en
 [docs/mini-sandboxes.md](docs/mini-sandboxes.md).
@@ -256,7 +244,7 @@ Skills de este repo, en [`.claude/skills/`](.claude/skills/):
 | `tarea-haiku` | ejecutar una tarea de `tareas/` con disciplina de modelo pequeño: leer, implementar, aceptar una vez, informar |
 | `papers-acl-emnlp` | buscar papers de ACL/EMNLP con la tool del repo y adaptarlos al plan sin inventar nada |
 | `mini-sandbox` | ejecutar órdenes aisladas y revisar o aplicar sus cambios |
-| `sinapsis-bench` | construir y correr el banco de evaluación y comparar backends |
+| `banco` | construir y correr el banco de evaluación y comparar backends |
 | `adr` | registrar una decisión de arquitectura |
 
 ## Tools propias
@@ -265,7 +253,6 @@ Skills de este repo, en [`.claude/skills/`](.claude/skills/):
 |---|---|---|
 | [`tools/minisandbox/`](tools/minisandbox/) | ✅ prototipo con tests | mini sandbox N1: `ejecutar`, `cambios`, `aplicar`, `descartar` |
 | [`tools/papers/`](tools/papers/) | ✅ funciona | busca en la ACL Anthology (ACL 2026 + EMNLP 2026 por defecto) y puntúa por temas del plan |
-| [`tools/bench/`](tools/bench/) | ✅ funciona | línea base del orquestador de SO_IA y extracción de tareas para SinapsisBench |
 | servidor MCP `pcode-mcp` | planificado (F2) | expone sandbox, aceptación, memoria del repo y papers a **cualquier** agente: Claude Code, Copilot, Gemini y opencode usan las mismas tools |
 
 ## Políticas de seguridad aplicadas por el motor
@@ -317,20 +304,19 @@ Las actas de **ACL 2026** y **EMNLP 2026** ya están en la ACL Anthology: 10.341
 
 ## Cómo se mide que es mejor
 
-**SinapsisBench**: las tareas reales de SO_IA (cada una con su commit base y su orden `acepta`) se
-re-ejecutan con cada backend en el mismo contenedor. Objetivos frente a la línea base actual
-(opencode + GLM-5.3-Flash + orquestador casero):
+**PublicBench**: las tareas del propio plan (cada una con su commit base y su orden `acepta`) se
+re-ejecutan con cada backend en el mismo entorno. La línea base se **mide en F0** con opencode y los
+objetivos son mejoras sobre ella:
 
-| Métrica | Línea base | Objetivo |
-|---|---|---|
-| Aceptación a la primera | 73 % | **≥ 85 %** con el mismo modelo |
-| Tareas con 3 o más intentos | 8 de 84 | ≤ 2 |
-| Tareas bloqueadas | 1 | 0 |
-| Fallos de integración por lockfiles | 17 | **0** |
-| Tareas de CI fantasma | ≥ 7 | **0** |
-| Violaciones de reglas de git | posibles | **imposibles** (política) |
-| Tokens por tarea aceptada | medir en F0 | −30 % |
-| Pegamento fuera de la herramienta | ~450 líneas | 0 (configuración declarativa) |
+| Métrica | Objetivo |
+|---|---|
+| Aceptación a la primera (mismo modelo) | **+12 puntos** |
+| Tareas que necesitan 3 o más intentos | mínimas, ninguna bloqueada |
+| Fallos de integración por lockfiles | **0** |
+| Falsos rojos de CI | **0** |
+| Violaciones de reglas de git | **imposibles** (política) |
+| Tokens por tarea aceptada | −30 % |
+| Pegamento fuera de la herramienta | 0 (configuración declarativa) |
 
 Además se publica una comparación externa en un benchmark público (SWE-bench Verified o
 Terminal-Bench) con el mismo modelo abierto en opencode y en PublicCode. Detalle en
@@ -343,9 +329,9 @@ Terminal-Bench) con el mismo modelo abierto en opencode y en PublicCode. Detalle
 | **F0** Fundaciones | workspace Rust, CI, ADRs, banco y línea base, verificar CLIs | `cargo test` en verde; línea base reproducible |
 | **F1** Núcleo | bucle propio, proveedor LiteLLM, tools nativas, política, sesiones, `pcode run` | resuelve tareas aisladas del banco con GLM |
 | **F2** Backends y sandbox | adaptadores para Claude Code, Copilot, Gemini y opencode; mini sandbox en Rust; servidor MCP; skills | la misma tarea corre con cualquier backend |
-| **F3** Flujos | tareas, DAG, aceptación, reintentos, integración, CI | **sustituye a `orquestador.py` en SO_IA** |
+| **F3** Flujos | tareas, DAG, aceptación, reintentos, integración, CI | **orquestación completa sin pegamento externo** |
 | **F4** Contexto y memoria | gestión de contexto, caché de prefijos, memoria de archivos, router por histórico | +12 puntos de aceptación y −30 % de tokens |
-| **F5** Interfaces | protocolo y demonio; terminal (CLI para máquinas, TUI con chat, órdenes, multiagente y temas); UI común (sesión, revisión, centro de control, ajustes, skills); escritorio Tauri (bandeja, notificaciones, llavero, paquetes para Linux, macOS y Windows); web, PWA, ACP, VS Code y GitHub. **En paralelo a F3–F4** | uso diario desde terminal, escritorio, web e IDE |
+| **F5** Interfaces | protocolo y demonio; terminal (CLI para máquinas, TUI con chat, órdenes, multiagente y temas); UI común (sesión, revisión, centro de control, ajustes, skills); escritorio Tauri (bandeja, notificaciones, llavero, paquetes para Linux y Windows); web, PWA, ACP, VS Code y GitHub. **En paralelo a F3–F4** | uso diario desde terminal, escritorio, web e IDE |
 | **F6** Aprendizaje | skills destiladas con cuarentena y evals continuos | regresión nocturna automática |
 | **F7** Endurecimiento | red teaming de skills y tools, publicación | release firmada |
 
@@ -390,12 +376,6 @@ Buscar papers de ACL y EMNLP 2026 sobre skills y sandboxes (la primera vez desca
 
 ```bash
 tools/papers/buscar_papers.py --tema skills --tema sandbox-seguridad --top 30
-```
-
-Calcular la línea base del orquestador de SO_IA:
-
-```bash
-tools/bench/linea_base.py --repo ../SO_IA
 ```
 
 ## Configuración prevista
@@ -453,7 +433,7 @@ PublicCode/
 │   ├── arquitectura.md       ← subsistemas en detalle
 │   ├── backends.md           ← integración de Claude Code, Copilot, Gemini, opencode y LiteLLM
 │   ├── mini-sandboxes.md     ← niveles N0–N3, diseño y amenazas
-│   ├── evaluacion.md         ← SinapsisBench, métricas y protocolo
+│   ├── evaluacion.md         ← PublicBench, métricas y protocolo
 │   ├── papers.md             ← ACL/EMNLP 2026 adaptados al plan
 │   ├── implementacion.md     ← plan de implementación desgranado para Haiku 5.5
 │   ├── interfaces.md         ← terminal, escritorio, web, móvil, IDE y GitHub
@@ -468,13 +448,12 @@ PublicCode/
 ├── tools/
 │   ├── minisandbox/          ← mini sandbox N1 (prototipo + tests)
 │   ├── papers/               ← buscador de papers en la ACL Anthology
-│   └── bench/                ← línea base y extracción de tareas de SO_IA
 └── .claude/skills/           ← skills del repo (formato SKILL.md)
 ```
 
 ## Desarrollar PublicCode con agentes
 
-PublicCode se construye como SO_IA: con agentes. El plan de implementación está partido en
+PublicCode se construye con agentes. El plan de implementación está partido en
 **110 tareas** (103 para **Claude Haiku 5.5** y 7 para el coordinador), todas generadas desde
 [`tareas/plan.toml`](tareas/plan.toml) y validadas por `tools/tareas/generar.py`. Cada tarea toca 1–3 archivos, da las firmas
 exactas, los tests que hay que escribir y una única orden de aceptación. Reglas en
@@ -494,7 +473,7 @@ claude --model claude-haiku-5-5 -p "Ejecuta la tarea tareas/F0.01-workspace.md s
 
 | Decisión | Propuesta | Por qué |
 |---|---|---|
-| Lenguaje del núcleo | **Rust** (ADR-0001) | binario único, rendimiento, sandboxes con Landlock/seccomp nativos, coherencia con SO_IA (puede convertirse en `agentd`/`flujod`) |
+| Lenguaje del núcleo | **Rust** (ADR-0001) | binario único, rendimiento, sandboxes con Landlock/seccomp nativos |
 | Licencia | Apache-2.0 | permisiva con patentes; pendiente de confirmar |
 | Nombre del CLI | `pcode` | corto; pendiente de confirmar |
 | Planificador por defecto | Claude Code | mejor planificación; GLM como alternativa local |

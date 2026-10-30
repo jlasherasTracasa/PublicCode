@@ -92,7 +92,7 @@ incertidumbre.
 
 `pcode-store` (F1.19; F3.03). SQLite en `.pcode/pcode.db`: sesiones, eventos y, desde F3, el estado
 de los flujos **por eventos**. El estado se reconstruye leyendo eventos, así que un reinicio no
-pierde nada; esto sustituye a `estado.json` y a los hacks de recarga del orquestador de SO_IA.
+pierde nada; un fichero de estado y los reinicios con recarga dejan de hacer falta.
 
 ## Sandbox
 
@@ -146,13 +146,13 @@ crítico** del fallo anterior (*TRAJDEBUG*, *Handoff Debt*).
 
 `pcode-flow` (F3.x).
 
-* Tarea: Markdown con frontmatter o con las cabeceras HTML de SO_IA (compatibles).
+* Tarea: Markdown con frontmatter o con cabeceras HTML (`<!-- acepta: … -->`).
 * DAG con detección de ciclos; cola con paralelismo por modo (`kernel` = 1 a la vez; `aislado` = N).
 * Aceptación en **dos etapas**: primero barata en N1 y después completa en N2 con la imagen del
   proyecto (*Dockerless*, *SWE-World*).
 * Reintentos con informe de relevo y escalado de backend en el tercer intento.
 * Cola de integración: aplicar el diff, rebase, **regenerar lockfiles** si chocan (`Cargo.lock`) y
-  re-validar después del merge. Esto elimina los 17 fallos de integración de SO_IA.
+  re-validar después del merge. Esto evita los fallos de integración por conflictos de lockfile.
 * Clasificador de CI con fixtures (éxito, fallo real, cancelado, infraestructura). Esto elimina las
   tareas fantasma.
 * Revisión cruzada: otro backend revisa el diff con la rúbrica del repo y comprueba la seguridad del
@@ -195,4 +195,4 @@ Diseño completo en [interfaces.md](interfaces.md) y [ADR-0005](adr/ADR-0005-int
 ## Telemetría
 
 `tracing` con exportación OpenTelemetry opcional: una traza por tarea, un span por paso, por tool y
-por subagente, y tokens y coste por backend. SinapsisBench lee estas trazas.
+por subagente, y tokens y coste por backend. PublicBench lee estas trazas.

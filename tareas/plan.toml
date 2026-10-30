@@ -93,23 +93,22 @@ tests = ["(manual): ejecutar cada orden documentada y pegar la salida"]
 [[tarea]]
 id = "F0.04"
 nombre = "bench-smoke"
-titulo = "Línea base y banco smoke de SinapsisBench (20 tareas)"
+titulo = "Banco PublicBench: 20 tareas del propio plan con su commit base"
 fase = "F0"
 ejecutor = "coordinador"
 depende = []
-toca = ["bench/linea-base.json", "bench/smoke.jsonl", "bench/README.md"]
-acepta = "test $(wc -l < bench/smoke.jsonl) -eq 20 && python3 -c \"import json; d=json.load(open('bench/linea-base.json')); assert d['tareas'] > 0\""
-contexto = ["docs/evaluacion.md", ".claude/skills/sinapsis-bench/SKILL.md"]
+toca = ["bench/smoke.jsonl", "bench/README.md"]
+acepta = "test $(wc -l < bench/smoke.jsonl) -eq 20 && python3 -c \"import json; [json.loads(l)['base'] for l in open('bench/smoke.jsonl')]\""
+contexto = ["docs/evaluacion.md", ".claude/skills/banco/SKILL.md"]
 objetivo = '''
-1. En un clon COMPLETO de SO_IA (`git fetch --unshallow`):
-   `tools/bench/linea_base.py --repo ../SO_IA --json > bench/linea-base.json`.
-2. `tools/bench/extraer_tareas.py --repo ../SO_IA --solo-aceptadas > /tmp/todas.jsonl`.
-3. Elegir 20 para `bench/smoke.jsonl`: 10 `aislado` (crates de host, `cargo test -p …`), 6 `kernel`
-   (QEMU) y 4 que formen 2 **cadenas** dependientes (ChainSWE). Incluir al menos 3 de las tareas que
-   costaron 3 o más intentos (TP.8, TP.18, TP.19, T1.27…) y la bloqueada T2.17.
-4. `bench/README.md`: criterio de selección y cómo reproducir.
+1. Elegir 20 tareas ya hechas de `tareas/` (con informe en `informes/`): 12 de una sola crate, 4 que toquen
+   varias y 4 que formen 2 **cadenas** dependientes.
+2. Para cada una, guardar en `bench/smoke.jsonl` una línea JSON: `{"id", "acepta", "tarea": "tareas/<id>.md",
+   "base": "<commit anterior al de la tarea>", "aceptada_en": "<commit de la tarea>"}`; los commits salen de
+   `git log --format=%h -- informes/<id>.md`.
+3. `bench/README.md`: criterio de selección y cómo reproducir.
 '''
-tests = ["(manual): cada tarea del smoke tiene `base` no nulo y su `acepta` pasa en `aceptada_en`"]
+tests = ["(manual): en el commit `base` de cada tarea, `acepta` falla y en `aceptada_en` pasa"]
 papers = ["ChainSWE (EMNLP 2026): cadenas de tareas dependientes", "LongCLI-Bench (Findings ACL 2026): doble conjunto de tests"]
 
 [[tarea]]
@@ -1446,7 +1445,7 @@ ejecutor = "haiku"
 depende = ["F2.06", "F0.03"]
 toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/opencode.rs", "crates/pcode-backends/tests/fixtures/opencode.txt"]
 acepta = "cargo test -p pcode-backends opencode"
-contexto = ["docs/backends-verificado.md (sección opencode)", "../SO_IA/ci/agente.sh (cómo se invoca hoy)"]
+contexto = ["docs/backends-verificado.md (sección opencode)", "docs/backends.md (opencode)"]
 objetivo = "Mismo patrón que F2.07, con `opencode run` y su configuración por `OPENCODE_CONFIG`."
 firmas = '''
 pub struct OpencodeCfg { pub binary: String, pub model: Option<String>, pub config: Option<std::path::PathBuf> }
@@ -1720,33 +1719,6 @@ objetivo = '''
 tests = ["puente_reenvia", "filtered_permite_dominio (se salta sin userns)", "filtered_deniega_otro (se salta sin userns)"]
 
 
-[[tarea]]
-id = "F2.21"
-nombre = "sandbox-macos"
-titulo = "Mini sandbox en macOS (N1-mac): clon APFS del repo y perfil Seatbelt"
-fase = "F2"
-ejecutor = "haiku"
-depende = ["F2.03"]
-toca = ["crates/pcode-sandbox/src/macos.rs", "crates/pcode-sandbox/src/lib.rs"]
-acepta = "cargo test -p pcode-sandbox macos"
-contexto = ["docs/mini-sandboxes.md (macOS y Windows)", "crates/pcode-sandbox/src/run.rs"]
-objetivo = '''
-macOS no tiene namespaces ni overlay; el equivalente ligero es:
-1. **Copia CoW**: `cp -c -R <repo> <estado>/vista` (clon APFS, instantáneo y sin duplicar bloques).
-   Los cambios son el diff entre la vista y el repo (reutiliza la lógica de `apply`).
-2. **Perfil Seatbelt** generado (`sandbox_profile(spec)`): `(deny default)` más lectura en todo `/`,
-   escritura solo en la vista, el tmp privado y `--escribible`, ejecución de procesos y red denegada
-   salvo el socket del proxy de F2.19 si `Network::Filtered`. Se ejecuta con
-   `sandbox-exec -f <perfil> <argv>`.
-3. Todo lo testeable es puro (`sandbox_profile`, `clone_argv`) y se prueba en Linux; la ejecución real
-   va tras `#[cfg(target_os = "macos")]` con un test que solo corre en macOS.
-'''
-firmas = '''
-pub fn clone_argv(repo: &std::path::Path, view: &std::path::Path) -> Vec<String>;
-pub fn sandbox_profile(view: &std::path::Path, tmp: &std::path::Path, writable: &[std::path::PathBuf], proxy_socket: Option<&std::path::Path>) -> String;
-'''
-tests = ["perfil_deniega_por_defecto", "perfil_escritura_solo_en_vista", "perfil_red_solo_socket_proxy", "clone_argv_usa_cp_c", "ejecucion_real (solo macOS)"]
-
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # F3 — Flujos: tareas, DAG, aceptación, reintentos, integración, CI (sustituye a orquestador.py)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -1754,16 +1726,16 @@ tests = ["perfil_deniega_por_defecto", "perfil_escritura_solo_en_vista", "perfil
 [[tarea]]
 id = "F3.01"
 nombre = "tareas-parser"
-titulo = "`pcode-flow`: leer tareas (frontmatter y cabeceras HTML de SO_IA)"
+titulo = "`pcode-flow`: leer tareas (frontmatter y cabeceras HTML)"
 fase = "F3"
 ejecutor = "haiku"
 depende = ["F0.01"]
 toca = ["crates/pcode-flow/Cargo.toml", "crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/task.rs"]
 acepta = "cargo test -p pcode-flow task"
-contexto = ["tareas/F1.01-config.md (formato propio)", "../SO_IA/ci/tareas/T1.2.md (formato SO_IA)", "../SO_IA/ci/orquestador.py (función cabecera)"]
+contexto = ["tareas/F1.01-config.md (formato de tarea)"]
 objetivo = '''
 1. Acepta las cabeceras `<!-- acepta: … -->`, `<!-- modo: … -->` y `<!-- depende: a, b -->` (como
-   `cabecera()` de SO_IA) y, además, un frontmatter `---` con `acepta`, `modo`, `depende`, `toca`,
+   `<!-- clave: valor -->`) y, además, un frontmatter `---` con `acepta`, `modo`, `depende`, `toca`,
    `backend`, `skills`, `presupuesto_minutos`.
 2. Si están los dos, manda el frontmatter.
 3. `id` = nombre del archivo sin `.md`. `body` = el resto.
@@ -1777,7 +1749,7 @@ pub struct TaskDef { pub id: String, pub accept: String, pub mode: Mode, pub dep
 pub fn parse_task(id: &str, text: &str) -> Result<TaskDef, String>;
 pub fn load_dir(dir: &std::path::Path) -> Result<Vec<TaskDef>, String>;
 '''
-tests = ["parsea_cabecera_so_ia", "parsea_frontmatter", "frontmatter_gana", "modo_por_defecto_kernel (como SO_IA)", "sin_acepta_se_ignora_en_load_dir"]
+tests = ["parsea_cabecera_html", "parsea_frontmatter", "frontmatter_gana", "modo_por_defecto_kernel", "sin_acepta_se_ignora_en_load_dir"]
 
 [[tarea]]
 id = "F3.02"
@@ -1810,7 +1782,7 @@ ejecutor = "haiku"
 depende = ["F3.02", "F1.19"]
 toca = ["crates/pcode-flow/Cargo.toml", "crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/events.rs"]
 acepta = "cargo test -p pcode-flow events"
-contexto = ["crates/pcode-store/src/lib.rs", "../SO_IA/ci/estado.json (lo que sustituye)"]
+contexto = ["crates/pcode-store/src/lib.rs"]
 objetivo = '''
 1. `FlowEvent` (serde, etiquetado por `tipo`): `Lanzada{tarea, intento, backend}`,
    `AceptacionOk{tarea, intento}`, `AceptacionFallo{tarea, intento, resumen}`, `Integrada{tarea, commit}`,
@@ -1818,7 +1790,6 @@ objetivo = '''
 2. Se guardan como eventos de `pcode-store` con `kind = "flujo"`.
 3. `FlowState::replay(events)`: estados por tarea (`Pendiente`, `EnMarcha(intento)`, `Aceptada`,
    `Integrada`, `Bloqueada`) e intentos. Reabrir el proceso = replay: **no hay estado que se pierda**.
-4. `import_so_ia_estado(json)`: convierte un `ci/estado.json` de SO_IA en eventos equivalentes.
 '''
 firmas = '''
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1827,9 +1798,8 @@ pub enum FlowEvent { /* variantes del objetivo */ }
 #[derive(Debug, Clone, PartialEq, Eq)] pub enum TaskState { Pending, Running(u32), Accepted, Integrated, Blocked(String) }
 #[derive(Debug, Default)] pub struct FlowState { pub tasks: std::collections::BTreeMap<String, TaskState>, pub attempts: std::collections::BTreeMap<String, u32> }
 impl FlowState { pub fn replay(events: &[FlowEvent]) -> FlowState; }
-pub fn import_so_ia_estado(json: &serde_json::Value) -> Vec<FlowEvent>;
 '''
-tests = ["replay_ciclo_completo", "replay_reintentos", "persistir_y_releer (Store en memoria)", "importa_estado_so_ia (fixture con 3 tareas)"]
+tests = ["replay_ciclo_completo", "replay_reintentos", "persistir_y_releer (Store en memoria)"]
 
 [[tarea]]
 id = "F3.04"
@@ -1840,11 +1810,11 @@ ejecutor = "haiku"
 depende = ["F3.03"]
 toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/scheduler.rs"]
 acepta = "cargo test -p pcode-flow scheduler"
-contexto = ["crates/pcode-flow/src/dag.rs", "../SO_IA/ci/orquestador.py (MAX_PAR, KERNEL-OCUPADO)"]
+contexto = ["crates/pcode-flow/src/dag.rs"]
 objetivo = '''
 Función PURA `plan(dag, state, limits, flags)` → lista de tareas a lanzar ahora:
 1. Como mucho `limits.max_parallel` en marcha en total.
-2. `Kernel`: como mucho 1 a la vez, y ninguna si `flags.kernel_busy` (equivale a `ci/KERNEL-OCUPADO`).
+2. `Kernel`: como mucho 1 a la vez, y ninguna si `flags.kernel_busy` (el coordinador está editando el árbol principal).
 3. Una tarea `CI-arreglo-*` lista va antes que cualquier otra de kernel.
 4. `Coordinator`: nunca se lanza sola; aparece en `needs_coordinator`.
 5. Tras `max_attempts` fallos → `Bloqueada`.
@@ -1866,12 +1836,12 @@ ejecutor = "haiku"
 depende = ["F3.04", "F2.03", "F1.18"]
 toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/accept.rs"]
 acepta = "cargo test -p pcode-flow accept"
-contexto = ["docs/arquitectura.md (Flujos)", "docs/papers.md (Dockerless, SWE-World)", "../SO_IA/ci/en-imagen.sh"]
+contexto = ["docs/arquitectura.md (Flujos)", "docs/papers.md (Dockerless, SWE-World)"]
 objetivo = '''
 1. Etapa rápida (opcional, `acepta_rapida` del frontmatter): `run_acceptance` en una sandbox N1
    sobre el resultado del agente. Si falla, no se pasa a la etapa completa.
 2. Etapa completa: `docker run --rm -v <copia limpia>:/work -w /work <imagen> sh -c '<acepta>'` con el
-   tiempo máximo de la tarea (por defecto 50 min, como SO_IA), o en N1 si no hay imagen configurada.
+   tiempo máximo de la tarea (por defecto 50 min), o en N1 si no hay imagen configurada.
 3. Salida: `ok`, salida completa en `informes/validaciones/<id>.txt` y **líneas clave** delante (las
    que contienen `error`, `FAILED`, `panicked`, `test result`, `TESTS DONE`).
 4. La orden de docker se construye en una función pura (testeable sin docker).
@@ -1922,7 +1892,7 @@ ejecutor = "haiku"
 depende = ["F3.05"]
 toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/integrate.rs", "crates/pcode-flow/tests/integrate.rs"]
 acepta = "cargo test -p pcode-flow --test integrate"
-contexto = ["../SO_IA/ci/integrar.sh", "../SO_IA/ci/orquestador.log (los 17 fallos de integración: conflictos en Cargo.toml y Cargo.lock)"]
+contexto = ["crates/pcode-flow/src/integrate.rs"]
 objetivo = '''
 En un worktree de integración (`git worktree add .pcode/integracion main`), de una en una:
 1. Aplica los cambios de la tarea (desde su rama o desde la capa de la sandbox) y hace un commit
@@ -1951,7 +1921,7 @@ ejecutor = "haiku"
 depende = ["F3.01"]
 toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/ci.rs", "crates/pcode-flow/tests/fixtures/ci_runs.json"]
 acepta = "cargo test -p pcode-flow ci"
-contexto = ["../SO_IA/ci/orquestador.py (ci_github y el comentario sobre los rojos fantasma)", "../SO_IA/ci/orquestador.log (líneas «CI de GitHub en …»)"]
+contexto = ["docs/arquitectura.md (Flujos)"]
 objetivo = '''
 `classify(run, jobs)` a partir del JSON de la API de Actions:
 1. `success` → `Verde`.
@@ -1959,7 +1929,7 @@ objetivo = '''
 3. `cancelled`, o `failure` SIN ningún paso fallido → `NoAccionable` (no genera tarea).
 4. `startup_failure` o error de infraestructura (runner perdido) → `Infra` (reintentar más tarde).
 5. Run en curso → `EnCurso`.
-Fixtures sacados de los casos reales del log de SO_IA (rojo real, cancelado, fantasma).
+Fixtures con los casos típicos: rojo real, cancelado y «fantasma» (fallo sin ningún paso fallido).
 '''
 firmas = '''
 #[derive(Debug, PartialEq)] pub enum CiVerdict { Green, Red { failing: Vec<(String, String)> }, NotActionable(String), Infra(String), InProgress }
@@ -1976,12 +1946,11 @@ ejecutor = "haiku"
 depende = ["F3.04", "F2.07"]
 toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/planner.rs"]
 acepta = "cargo test -p pcode-flow planner"
-contexto = ["../SO_IA/ci/planificador.md (prompt actual)", "tools/tareas/generar.py (reglas de validación de tareas)"]
+contexto = ["tools/tareas/generar.py (reglas de validación de tareas)"]
 objetivo = '''
 1. `should_plan(state, dag)`: verdadero si hay menos de `min_ready` tareas listas y no hay una
    planificación en marcha.
-2. `planner_prompt(ctx)`: prompt del planificador con el estado (como el orquestador de SO_IA, que
-   antepone el estado a `planificador.md`).
+2. `planner_prompt(ctx)`: prompt del planificador con el estado (estado del flujo + instrucciones del planificador).
 3. `validate_new_tasks(dir_before, dir_after)`: cada tarea nueva debe parsear (`parse_task`), tener
    `acepta`, no repetir un id, no depender de inexistentes y, si es para Haiku, tocar ≤ 4 archivos.
    Las inválidas se rechazan con su motivo y no entran en el DAG.
@@ -2003,7 +1972,7 @@ ejecutor = "haiku"
 depende = ["F3.06", "F3.07", "F3.08", "F2.18"]
 toca = ["crates/pcode-flow/src/runner.rs", "crates/pcode-flow/src/lib.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/flow_cmd.rs"]
 acepta = "cargo test -p pcode-flow runner && cargo test -p pcode-cli"
-contexto = ["crates/pcode-flow/src/scheduler.rs", "../SO_IA/ci/orquestador.py (ciclo principal)", "../SO_IA/ci/README.md"]
+contexto = ["crates/pcode-flow/src/scheduler.rs"]
 objetivo = '''
 1. `Runner::tick()`: un ciclo = recoger lo que ha terminado → aceptar → integrar → CI → `plan()` →
    lanzar → escribir `estado.md` → planificador si toca. Cada paso emite eventos.
@@ -2018,25 +1987,6 @@ impl Runner { pub async fn tick(&mut self) -> Result<TickSummary, String>; pub f
 pub struct TickSummary { pub launched: Vec<String>, pub accepted: Vec<String>, pub integrated: Vec<String>, pub failed: Vec<String> }
 '''
 tests = ["runner_tres_tareas_con_mock", "runner_stop_para", "estado_md_tiene_secciones"]
-
-[[tarea]]
-id = "F3.11"
-nombre = "modo-so-ia"
-titulo = "Modo SO_IA: usar `ci/tareas` tal cual y ejecución en sombra frente a `orquestador.py`"
-fase = "F3"
-ejecutor = "coordinador"
-depende = ["F3.10"]
-toca = ["docs/so-ia-migracion.md", "crates/pcode-flow/src/shadow.rs"]
-acepta = "test -s docs/so-ia-migracion.md && cargo test -p pcode-flow shadow"
-contexto = ["../SO_IA/ci/README.md", "../SO_IA/docs/08-adr/ADR-0012-agentes-de-codigo.md"]
-objetivo = '''
-1. Modo sombra: `pcode flow run --sombra` lee `ci/tareas` y `ci/estado.json` de SO_IA, calcula qué
-   lanzaría e integraría y lo registra SIN actuar; compara con `ci/orquestador.log` cada hora.
-2. Una semana en sombra; documentar las diferencias en `docs/so-ia-migracion.md`.
-3. Plan de corte: parar `orquestador.sh`, importar el estado (`import_so_ia_estado`), arrancar
-   `pcode flow run` con backend opencode+GLM (idéntico) y después probar backends nuevos.
-'''
-tests = ["shadow_no_ejecuta_nada", "shadow_compara_con_log (fixture)"]
 
 [[tarea]]
 id = "F3.12"
@@ -2070,15 +2020,15 @@ papers = ["Agentic Rubrics (ACL 2026)", "CodeJudgeBench (ACL 2026)", "When \"Cor
 [[tarea]]
 id = "F3.13"
 nombre = "bench"
-titulo = "`pcode bench`: ejecutar SinapsisBench con cualquier backend"
+titulo = "`pcode bench`: ejecutar PublicBench con cualquier backend"
 fase = "F3"
 ejecutor = "haiku"
-depende = ["F3.10", "F0.04"]
+depende = ["F3.10"]
 toca = ["crates/pcode-flow/src/bench.rs", "crates/pcode-flow/src/lib.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/bench_cmd.rs"]
 acepta = "cargo test -p pcode-flow bench && cargo test -p pcode-cli"
-contexto = ["docs/evaluacion.md", "bench/README.md", ".claude/skills/sinapsis-bench/SKILL.md"]
+contexto = ["docs/evaluacion.md", ".claude/skills/banco/SKILL.md"]
 objetivo = '''
-1. `pcode bench --conjunto bench/smoke.jsonl --backend X --repo ../SO_IA [--intentos 3]`: por cada
+1. `pcode bench --conjunto bench/smoke.jsonl --backend X [--intentos 3]`: por cada
    tarea, worktree en `base`, sandbox, backend, aceptación y reintentos con relevo.
 2. Resultado por línea en `bench/resultados/<fecha>-<backend>.jsonl`: id, ok_primera, ok_final,
    intentos, tokens, ms, violaciones (`tools/bench/reglas.py`), archivos.
@@ -2346,7 +2296,7 @@ ejecutor = "haiku"
 depende = ["F4.05", "F3.03"]
 toca = ["crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/episodic.rs"]
 acepta = "cargo test -p pcode-memory episodic"
-contexto = ["docs/papers.md (MemGovern, MemGuard, Experience-Following, Memory Transfer, Agent Memory Distillation)", "../SO_IA/ci/informes/ (ejemplos reales)"]
+contexto = ["docs/papers.md (MemGovern, MemGuard, Experience-Following, Memory Transfer, Agent Memory Distillation)", "informes/ (ejemplos reales)"]
 objetivo = '''
 1. Episodio = {tarea, resumen del informe, archivos, verificado: bool, intentos, backend, lecciones}.
    Se alimenta de `informes/*.md` y de los eventos del flujo (`AceptacionOk`/`Fallo`).
@@ -2365,7 +2315,7 @@ impl EpisodicMemory {
     pub fn render(eps: &[&Episode]) -> String;
 }
 '''
-tests = ["recall_solo_verificados", "fallidos_aparte", "render_compacto", "carga_informes_reales (fixture con 3 informes de SO_IA)"]
+tests = ["recall_solo_verificados", "fallidos_aparte", "render_compacto", "carga_informes_reales (fixture con 3 informes)"]
 papers = ["MemGovern (Findings EMNLP 2026)", "MemGuard (EMNLP 2026)", "How Memory Management Impacts LLM Agents (ACL 2026)", "Agent Memory Distillation (Findings EMNLP 2026)"]
 
 [[tarea]]
@@ -3035,17 +2985,16 @@ tests = ["llavero_sustituye_en_config (MemoryStore)", "llavero_falta_es_error", 
 [[tarea]]
 id = "F5.21"
 nombre = "escritorio-empaquetado"
-titulo = "Empaquetado del escritorio para Linux, macOS y Windows, y actualizaciones firmadas"
+titulo = "Empaquetado del escritorio para Linux y Windows, y actualizaciones firmadas"
 fase = "F5"
 ejecutor = "coordinador"
 depende = ["F5.19", "F5.20"]
 toca = [".github/workflows/escritorio.yml", "apps/desktop/src-tauri/tauri.conf.json", "docs/interfaces.md"]
-acepta = "grep -q 'macos' .github/workflows/escritorio.yml && grep -q 'windows' .github/workflows/escritorio.yml && grep -q 'ubuntu' .github/workflows/escritorio.yml"
+acepta = "grep -q 'windows' .github/workflows/escritorio.yml && grep -q 'ubuntu' .github/workflows/escritorio.yml"
 contexto = ["docs/interfaces.md (Plataformas y empaquetado)", "docs/adr/ADR-0005-interfaces.md"]
 objetivo = '''
-1. Matriz de CI: `ubuntu-22.04` (.deb, .rpm, AppImage), `macos-latest` (.dmg universal) y
-   `windows-latest` (.msi); prueba de humo en cada una (arrancar y comprobar `server.info`).
-2. Firma: claves del actualizador de Tauri y certificados de macOS y Windows como secretos de CI;
+1. Matriz de CI: `ubuntu-22.04` (.deb, .rpm, AppImage) y `windows-latest` (.msi); prueba de humo en cada una (arrancar y comprobar `server.info`).
+2. Firma: claves del actualizador de Tauri y el certificado de Windows como secretos de CI;
    nunca en el repo.
 3. `updater` apuntando a las releases de GitHub con firma obligatoria.
 '''
@@ -3236,14 +3185,14 @@ papers = ["SkillsVote (EMNLP 2026)", "AgentFactory (ACL 2026 Demo)"]
 [[tarea]]
 id = "F6.04"
 nombre = "regresion-nocturna"
-titulo = "Regresión nocturna de SinapsisBench con aviso automático"
+titulo = "Regresión nocturna de PublicBench con aviso automático"
 fase = "F6"
 ejecutor = "coordinador"
 depende = ["F3.13"]
 toca = [".github/workflows/bench-nocturno.yml", "docs/evaluacion.md"]
 acepta = "grep -q 'pcode bench' .github/workflows/bench-nocturno.yml"
 contexto = ["docs/evaluacion.md (Informes)"]
-objetivo = "Ejecución programada (runner propio con acceso a LiteLLM y a la imagen de SO_IA) de `pcode bench --conjunto smoke` cada noche; compara con el último verde; si algo cae más de 3 pp, abre un issue con la tabla y las trayectorias de las tareas que empeoraron."
+objetivo = "Ejecución programada (runner propio con acceso a LiteLLM y a la imagen del proyecto) de `pcode bench --conjunto smoke` cada noche; compara con el último verde; si algo cae más de 3 pp, abre un issue con la tabla y las trayectorias de las tareas que empeoraron."
 tests = ["(manual): una ejecución forzada genera la tabla y, con un resultado empeorado a mano, el issue"]
 papers = ["AgentLens (EMNLP 2026 Industry)"]
 
@@ -3331,5 +3280,5 @@ depende = ["F7.02", "F5.21", "F5.22", "F6.04"]
 toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "install.sh"]
 acepta = "test -s docs/usuario.md && test -s CHANGELOG.md && grep -q sha256 .github/workflows/release.yml"
 contexto = ["docs/PLAN.md (decisiones abiertas: licencia, nombre)"]
-objetivo = "Binarios para Linux x86_64 y aarch64 (y macOS sin N1, con N2 por defecto), `SHA256SUMS` firmado, instalación en una línea con verificación, guía de usuario (configurar backends, primer `pcode run`, `pcode flow`, sandboxes, skills) y checklist de seguridad superado (F7.01 y F7.02)."
+objetivo = "Binarios para Linux (x86_64 y aarch64) y Windows (x86_64) , `SHA256SUMS` firmado, instalación en una línea con verificación, guía de usuario (configurar backends, primer `pcode run`, `pcode flow`, sandboxes, skills) y checklist de seguridad superado (F7.01 y F7.02)."
 tests = ["(manual): instalar en una máquina limpia y ejecutar el tutorial de docs/usuario.md"]

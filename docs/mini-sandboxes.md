@@ -1,9 +1,9 @@
 # Mini sandboxes
 
 Un agente necesita poder romper cosas sin romper nada: probar dos enfoques a la vez, ejecutar código
-que no es suyo, equivocarse con `git` y deshacerlo. Hoy SO_IA lo resuelve con un contenedor Docker y
-un `git clone` por tarea, y aun así los agentes comparten el árbol en el modo `kernel`. PublicCode
-usa el aislamiento **más ligero que baste**.
+que no es suyo, equivocarse con `git` y deshacerlo. Lo habitual es un contenedor Docker o un `git clone` por tarea: caro, lento y, aun así,
+los agentes comparten el árbol cuando la tarea es pesada. PublicCode usa el aislamiento **más ligero
+que baste**.
 
 ## Niveles
 
@@ -82,11 +82,10 @@ ni red filtrada.
 | Arranque de `true` (5 ejecuciones) | 53–66 ms, incluido el arranque de Python dos veces |
 | Tests | 9 en verde: capa, aplicar, descartar, solo lectura fuera, escribible explícito, sin red, tiempo, PIDs, git |
 
-## macOS y Windows
+## Windows
 
 | Plataforma | Mecanismo | Tarea |
 |---|---|---|
-| macOS (**N1-mac**) | copia CoW con **clon APFS** (`cp -c -R`, instantánea) + perfil **Seatbelt** (`sandbox-exec`) que deniega por defecto y solo deja escribir en la vista, el tmp privado y `--escribible`; red solo hacia el socket del proxy | F2.21 |
 | Windows | el demonio corre **dentro de WSL2** y allí usa N1; la app de escritorio de Windows se conecta por TCP en loopback. Sin WSL2: N2 (Docker Desktop) | F5.27 |
 
 ## Requisitos y límites conocidos
@@ -98,7 +97,7 @@ ni red filtrada.
 | Kernel < 5.11 | sin overlay en namespaces de usuario | `fuse-overlayfs` o N2 |
 | Borrar un **directorio entero** dentro de la sandbox (`rm -r d`) | con overlay sin privilegios en kernels recientes devuelve `EIO` (borrar archivos sí funciona; medido en Linux 6.18) | borrar los archivos uno a uno; si hace falta mover directorios, N2 |
 | Cambios en `.git/` dentro de la sandbox | se aplican también | no hacer commits dentro; en F3 los commits los hace la integración |
-| QEMU/KVM (tareas `kernel` de SO_IA) | requiere `/dev/kvm` | N2 con `--device /dev/kvm`, como hoy |
+| Tareas que necesitan QEMU/KVM | requiere `/dev/kvm` | N2 con `--device /dev/kvm` |
 
 ## Amenazas que cubre y que no
 
@@ -113,5 +112,5 @@ ni red filtrada.
 
 F2.01 (capa y cambios), F2.02 (ejecutar en namespaces), F2.03 (aplicar y descartar), F2.04
 (Landlock), F2.05 (seccomp y límites), F2.19 (proxy de salida), F2.20 (puente en la sandbox),
-F2.21 (macOS) y F5.27 (Windows con WSL2). Ver
+F5.27 (Windows con WSL2). Ver
 [implementacion.md](implementacion.md).

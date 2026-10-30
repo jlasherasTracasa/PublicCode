@@ -14,7 +14,7 @@ en `crates/pcode-protocol` (JSON-RPC 2.0 más eventos). Consecuencias:
 ```
                        ┌──────────────── pcoded (un proceso por usuario) ─────────────────┐
  pcode (CLI) ──────────┤                                                                  │
- pcode tui ────────────┤  socket Unix (Linux, macOS) · TCP en loopback con token (Windows) │
+ pcode tui ────────────┤  socket Unix (Linux) · TCP en loopback con token (Windows) │
  escritorio (Tauri) ───┤                                                                  │
  navegador / PWA ──────┤  HTTP + SSE con token (local o por túnel SSH/Tailscale)          │
  IDE (ACP / VS Code) ──┤                                                                  │
@@ -44,11 +44,11 @@ en `crates/pcode-protocol` (JSON-RPC 2.0 más eventos). Consecuencias:
 |---|---|
 | `pcode` | en una TTY abre la TUI; si no, muestra la ayuda |
 | `pcode run "<tarea>" [--backend X] [--sandbox N1] [--acepta CMD] [--formato json\|stream-json]` | una tarea de principio a fin |
-| `pcode flow run\|estado\|parar` | flujos de tareas (sustituye a `orquestador.py`) |
+| `pcode flow run\|estado\|parar` | flujos de tareas (DAG, aceptación, reintentos e integración) |
 | `pcode sandbox ejecutar\|cambios\|aplicar\|descartar` | mini sandboxes a mano |
 | `pcode skills listar\|exportar\|cuarentena` | skills |
 | `pcode instrucciones sincronizar [--comprobar]` | AGENTS.md → CLAUDE.md, GEMINI.md, copilot-instructions |
-| `pcode bench …` | SinapsisBench |
+| `pcode bench …` | PublicBench |
 | `pcode daemon` · `pcode mcp` · `pcode acp` | servidores |
 | `pcode completions bash\|zsh\|fish\|powershell` | autocompletado |
 
@@ -64,7 +64,7 @@ salida estables, nada interactivo sin TTY y `NO_COLOR` respetado.
 │ ○ s-11 Claude ✓ hecha   │   ▸ leer queue.rs (210 líneas)                   │                          │
 │ ⚠ s-10 Copilot ⧗ aprob. │   ▸ bash cargo test -p sinvirtio  ✗ exit=101     │ [a] aplicar [d] descartar│
 │                         │ glm › el índice de anillo no hace wrap …         ├ Aprobaciones (1) ────────┤
-│ Flujo SO_IA: 3 ⏳ 41 ✓  │   ▸ editar queue.rs  ✓                           │ s-10 git push origin …   │
+│ Flujo: 3 ⏳ 41 ✓        │   ▸ editar queue.rs  ✓                           │ s-10 git push origin …   │
 │                         │                                                  │ procedencia: agente:s-10 │
 │                         │                                                  │ [p] permitir [n] negar   │
 ├─────────────────────────┴──────────────────────────────────────────────────┴──────────────────────────┤
@@ -85,7 +85,7 @@ salida estables, nada interactivo sin TTY y `NO_COLOR` respetado.
 * **Atajos** configurables en `keybindings.toml`; temas claro, oscuro y alto contraste; funciona a
   80×24 (los paneles se pliegan).
 
-## Escritorio (Tauri 2: Linux, macOS, Windows)
+## Escritorio (Tauri 2: Linux y Windows)
 
 Es el **centro de control** del trabajo multiagente. Carga la misma UI que la web (`apps/ui`) y lanza
 `pcoded` como sidecar.
@@ -109,7 +109,7 @@ actualizaciones firmadas.
 ## Web
 
 `pcoded` sirve la misma UI en `http://127.0.0.1:<puerto>` con un token de un solo uso. Es el modo
-para **servidores sin escritorio**: por ejemplo, la máquina donde corre SO_IA, accesible por túnel
+para **servidores sin escritorio**: por ejemplo, un servidor de desarrollo, accesible por túnel
 SSH (`ssh -L`) o Tailscale. Sin credenciales en el navegador: los ajustes de credenciales solo están
 en el escritorio o en `pcode.toml` con `{env:…}`.
 
@@ -149,7 +149,6 @@ local).
 | Plataforma | Escritorio | CLI y TUI | Sandbox por defecto |
 |---|---|---|---|
 | Linux | `.deb`, `.rpm`, AppImage | binario estático o paquete | N1 |
-| macOS | `.dmg` firmado y notarizado | binario universal | N1-mac (clon APFS + Seatbelt) o N2 |
 | Windows | `.msi` | binario | WSL2 (N1 dentro de WSL) o N2 |
 
 ## Tareas

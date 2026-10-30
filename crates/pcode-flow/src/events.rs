@@ -1,6 +1,5 @@
 //! Estado del flujo reconstruido por eventos (un reinicio no pierde nada).
 use pcode_store::Store;
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Evento del flujo.
@@ -120,53 +119,9 @@ pub fn load(store: &Store, session: i64) -> Result<Vec<FlowEvent>, pcode_store::
         .collect())
 }
 
-/// Convierte un `ci/estado.json` de SO_IA en eventos equivalentes.
-pub fn import_so_ia_estado(json: &Value) -> Vec<FlowEvent> {
-    let mut out = vec![];
-    let Some(m) = json.as_object() else {
-        return out;
-    };
-    for (id, v) in m {
-        let n = v.get("intentos").and_then(Value::as_u64).unwrap_or(1) as u32;
-        for i in 1..=n {
-            out.push(FlowEvent::Lanzada {
-                tarea: id.clone(),
-                intento: i,
-                backend: "opencode".into(),
-            });
-            if i < n {
-                out.push(FlowEvent::AceptacionFallo {
-                    tarea: id.clone(),
-                    intento: i,
-                    resumen: String::new(),
-                });
-            }
-        }
-        match v.get("estado").and_then(Value::as_str) {
-            Some("hecha") => {
-                out.push(FlowEvent::AceptacionOk {
-                    tarea: id.clone(),
-                    intento: n,
-                });
-                out.push(FlowEvent::Integrada {
-                    tarea: id.clone(),
-                    commit: String::new(),
-                });
-            }
-            Some("bloqueada") => out.push(FlowEvent::Bloqueada {
-                tarea: id.clone(),
-                motivo: "importada de SO_IA".into(),
-            }),
-            _ => {}
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     fn l(t: &str, i: u32) -> FlowEvent {
         FlowEvent::Lanzada {
             tarea: t.into(),
@@ -212,24 +167,5 @@ mod tests {
         let ev = load(&st, sid).unwrap();
         assert_eq!(ev.len(), 2);
         assert!(FlowState::replay(&ev).stop);
-    }
-    #[test]
-    fn importa_estado_so_ia() {
-        let ev = import_so_ia_estado(
-            &json!({"T1":{"estado":"hecha","intentos":2},"T2":{"estado":"bloqueada","intentos":3},"T3":{"estado":"hecha","intentos":1}}),
-        );
-        let s = FlowState::replay(&ev);
-        assert_eq!(s.state("T1"), TaskState::Integrated);
-        assert_eq!(s.attempts["T1"], 2);
-        assert!(matches!(s.state("T2"), TaskState::Blocked(_)));
-        assert_eq!(s.done().len(), 2);
-    }
-    #[test]
-    fn importa_estado_real_de_so_ia_si_existe() {
-        let p = std::path::Path::new("/home/user/SO_IA/ci/estado.json");
-        if let Ok(t) = std::fs::read_to_string(p) {
-            let ev = import_so_ia_estado(&serde_json::from_str(&t).unwrap());
-            assert!(FlowState::replay(&ev).done().len() > 50);
-        }
     }
 }

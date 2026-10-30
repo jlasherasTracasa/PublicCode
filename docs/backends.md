@@ -70,9 +70,9 @@ Dos modos complementarios:
 
 | Aspecto | Previsto |
 |---|---|
-| Invocación | `opencode run "<prompt>"` (como hoy en `ci/agente.sh` de SO_IA) o `opencode serve` y su API |
+| Invocación | `opencode run "<prompt>"` o `opencode serve` y su API |
 | Instrucciones | `AGENTS.md` y `opencode.json` (`instructions`) |
-| Uso | continuidad con SO_IA y comparación directa en el banco |
+| Uso | continuidad con flujos ya montados sobre opencode y comparación directa en el banco |
 | Tarea | F2.10 |
 
 ## Modelos propios (LiteLLM) y APIs directas
@@ -80,7 +80,7 @@ Dos modos complementarios:
 | Aspecto | Previsto |
 |---|---|
 | Invocación | bucle propio `pcode-core` con `OpenAiCompatProvider`, `AnthropicProvider` o `GeminiProvider` |
-| Modelos | GLM-5.3-Flash (hoy en SO_IA), Qwen, DeepSeek, cualquier vLLM u Ollama |
+| Modelos | GLM-5.3-Flash, Qwen, DeepSeek, cualquier vLLM u Ollama |
 | Ventajas | control total: reparación de tool calls, compresión, caché de prefijos, detector de atasco, contexto por rol |
 | Tarea | F2.12 |
 
@@ -95,4 +95,4 @@ Dos modos complementarios:
 | crítico de plan (barato) | Haiku 5.5 o GLM | — |
 | destilador de skills | Claude Code | — |
 
-El router (F4.07) cambia esta tabla según los resultados de SinapsisBench por tipo de tarea.
+El router (F4.07) cambia esta tabla según los resultados de PublicBench por tipo de tarea.
