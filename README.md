@@ -51,7 +51,7 @@ de shell). Los datos de su `ci/estado.json` y `ci/orquestador.log` en el commit 
 | Señal | Valor | Qué indica |
 |---|---|---|
 | Tareas aceptadas a la primera | 61 de 84 (**73 %**) | el agente se da por terminado sin haber verificado |
-| Tareas que necesitaron 3 o más intentos | 8, más 1 **bloqueada** (T2.17) | los reintentos no aprenden del fallo anterior |
+| Tareas que necesitaron 3 o más intentos | 8 (una de ellas, T2.17, sigue **bloqueada**) | los reintentos no aprenden del fallo anterior |
 | Fallos al integrar ramas | **17** (conflictos en `Cargo.toml`/`Cargo.lock`) | no hay cola de integración con regeneración de lockfiles |
 | Tareas `CI-arreglo-*` | **27**, varias «fantasma» por un error del clasificador | el estado de la CI no se clasifica bien |
 | Reinicios del orquestador | 15 | el estado no es durable y el proceso depende de hacks de recarga |
