@@ -41,6 +41,18 @@ pub struct Config {
     /// Servidores MCP cuyas tools se añaden al agente.
     #[serde(rename = "mcp")]
     pub mcp: BTreeMap<String, McpCfg>,
+    /// Servidores de lenguaje por grupo (`rust`, `typescript`, `python`, `go`, `c`).
+    #[serde(rename = "lsp")]
+    pub lsp: BTreeMap<String, LspCfg>,
+}
+
+/// Un servidor de lenguaje (`[lsp.<grupo>]`).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct LspCfg {
+    /// Orden y argumentos, p. ej. `["pylsp"]`.
+    #[serde(rename = "orden")]
+    pub command: Vec<String>,
 }
 
 /// Un servidor MCP (`[mcp.<nombre>]`).
@@ -210,6 +222,7 @@ impl Config {
         c.backends.extend(project.backends);
         c.roles.extend(project.roles);
         c.mcp.extend(project.mcp);
+        c.lsp.extend(project.lsp);
         if !project.project.instructions.is_empty() {
             c.project = project.project;
         }

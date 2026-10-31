@@ -1601,6 +1601,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcode-lsp"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "pcode-models"
 version = "0.5.0"
 dependencies = [
@@ -1660,6 +1671,7 @@ dependencies = [
  "axum",
  "futures",
  "http-body-util",
+ "pcode-lsp",
  "pcode-policy",
  "pcode-protocol",
  "pcode-tools",

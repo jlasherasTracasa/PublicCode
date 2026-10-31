@@ -102,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
                 std::env::current_exe()?,
                 Some(token.clone()),
             );
+            apply_lsp_config(&st);
             let host = if escuchar.is_unspecified() {
                 "<IP-de-este-equipo>".to_string()
             } else {
@@ -127,6 +128,7 @@ async fn main() -> anyhow::Result<()> {
                 std::env::current_exe()?,
                 Some(token.clone()),
             );
+            apply_lsp_config(&st);
             let l = tokio::net::TcpListener::bind(("127.0.0.1", puerto)).await?;
             let url = format!("http://{}/?t={token}", l.local_addr()?);
             eprintln!("PublicCode Studio: {url}\n(Ctrl+C para cerrar)");
@@ -152,6 +154,19 @@ async fn main() -> anyhow::Result<()> {
             println!();
             Ok(())
         }
+    }
+}
+
+/// Aplica `[lsp.*]` de la configuración (global y del proyecto) al demonio.
+fn apply_lsp_config(st: &pcode_server::AppState) {
+    if let Ok((cfg, _)) = pcode_config::Config::load_layered(std::path::Path::new("pcode.toml")) {
+        st.lsp.set_overrides(
+            cfg.lsp
+                .into_iter()
+                .filter(|(_, l)| !l.command.is_empty())
+                .map(|(k, l)| (k, l.command))
+                .collect(),
+        );
     }
 }
 

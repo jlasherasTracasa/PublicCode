@@ -206,6 +206,25 @@
   details.opciones summary { font-size: 12px; color: var(--primario); cursor: pointer; }
   details.opciones input { width: 100%; margin-top: 4px; border: 1.5px solid var(--linea); border-radius: 10px; padding: 5px 8px; background: var(--superficie); }
 
+  /* Diagnósticos, hover y problemas (LSP) */
+  .capa-diag { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .subr { position: absolute; height: 3px; border-radius: 2px; }
+  .subr.s1 { background: repeating-linear-gradient(90deg, var(--error) 0 3px, transparent 3px 5px); }
+  .subr.s2 { background: repeating-linear-gradient(90deg, #d97706 0 3px, transparent 3px 5px); }
+  .subr.s3, .subr.s4 { background: repeating-linear-gradient(90deg, var(--primario) 0 2px, transparent 2px 6px); }
+  .marca { position: absolute; left: 0; width: 3px; height: 21px; border-radius: 0 3px 3px 0; }
+  .marca.s1 { background: var(--error); } .marca.s2 { background: #d97706; } .marca.s3, .marca.s4 { background: var(--primario); }
+  .hover { position: fixed; z-index: 40; max-width: min(560px, 80vw); max-height: 320px; overflow: auto; background: var(--superficie);
+           color: var(--texto); border-radius: 12px; box-shadow: var(--sombra-2); padding: 10px 12px; font: 12.5px/1.5 var(--mono);
+           white-space: pre-wrap; word-break: break-word; border: 1px solid var(--linea); }
+  .hover .diag-msg { font-family: Roboto, "Segoe UI", system-ui, sans-serif; margin-bottom: 6px; }
+  .hover .diag-msg.s1 { color: var(--error); } .hover .diag-msg.s2 { color: #b45309; }
+  .problema { display: flex; gap: 8px; width: calc(100% - 12px); margin: 0 6px; padding: 4px 10px; border-radius: 8px; text-align: left; font-size: 12.5px; }
+  .problema:hover { background: var(--contenedor); }
+  .problema .sev { flex: none; width: 14px; } .problema .sev.s1 { color: var(--error); } .problema .sev.s2 { color: #b45309; } .problema .sev.s3, .problema .sev.s4 { color: var(--primario); }
+  .problema .txt { flex: 1; min-width: 0; } .problema .pos { color: var(--texto-2); font: 11px var(--mono); flex: none; }
+  .cuenta-diag { cursor: pointer; } .cuenta-diag .e { color: var(--error); } .cuenta-diag .w { color: #b45309; }
+
   /* Buscar y reemplazar en el archivo */
   .buscador { position: absolute; top: 8px; right: 18px; z-index: 5; background: var(--superficie); border-radius: 14px; box-shadow: var(--sombra-2);
               padding: 8px; display: grid; grid-template-columns: 220px auto; gap: 6px; align-items: center; font-size: 12px; }
@@ -270,6 +289,7 @@
   <nav class="actividad" aria-label="Vistas">
     <button data-panel="archivos" aria-pressed="true" title="Explorador (Ctrl+Shift+E)"><svg class="i" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4l2 2h7A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></svg></button>
     <button data-panel="buscar" aria-pressed="false" title="Buscar en el proyecto (Ctrl+Shift+F)"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>
+    <button data-panel="problemas" aria-pressed="false" title="Problemas (Ctrl+Shift+M)"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5M12 17.5v.01"/></svg><span id="n-diag" class="insignia oculto"></span></button>
     <button data-panel="git" aria-pressed="false" title="Git (Ctrl+Shift+G)"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="8.5" r="2.5"/><path d="M6 8v8M18 11c0 4-6 3.5-11 6"/></svg><span id="n-git" class="insignia oculto"></span></button>
   </nav>
 
@@ -288,6 +308,10 @@
         <button id="t-regex" class="toggle" aria-pressed="false" title="Expresión regular">.*</button>
       </div>
       <div id="resultados" class="scroll"></div>
+    </section>
+    <section id="p-problemas" class="panel oculto">
+      <header id="t-problemas">Problemas</header>
+      <div id="problemas" class="scroll"></div>
     </section>
     <section id="p-git" class="panel oculto">
       <header>Cambios <div class="acciones"><button id="b-git" title="Refrescar">⟳</button></div></header>
@@ -317,6 +341,9 @@
             <kbd>Ctrl F</kbd><span>Buscar y reemplazar en el archivo</span>
             <kbd>Ctrl G</kbd><span>Ir a una línea</span>
             <kbd>Ctrl L</kbd><span>Preguntar al agente por la selección</span>
+            <kbd>F12</kbd><span>Ir a la definición (también Ctrl+clic)</span>
+            <kbd>Mayús F12</kbd><span>Referencias</span>
+            <kbd>Ctrl K</kbd><span>Información del símbolo (hover)</span>
           </div>
         </div>
       </div>
@@ -324,6 +351,7 @@
         <div id="gutter" class="gutter" aria-hidden="true"></div>
         <div class="codigo">
           <div id="resalte-linea" class="resalte-linea"></div>
+          <div id="capa-diag" class="capa-diag" aria-hidden="true"></div>
           <pre id="hl" aria-hidden="true"><code id="hl-code"></code></pre>
           <textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Editor"></textarea>
         </div>
@@ -339,6 +367,8 @@
     </div>
     <div class="estado-ed">
       <span id="e-archivo">Sin archivo</span>
+      <span id="e-diag" class="cuenta-diag" title="Problemas (Ctrl+Shift+M)"></span>
+      <span id="e-lsp" title="Servidor de lenguaje"></span>
       <div class="derecha"><button id="b-preguntar" class="oculto" title="Preguntar al agente sobre la selección (Ctrl+L)">✦ Preguntar al agente</button><span id="e-pos"></span><span id="e-lang"></span><span>UTF-8</span></div>
     </div>
     <section id="terminal" class="terminal" aria-label="Terminal">
@@ -375,6 +405,7 @@
   <button data-vista="terminal" aria-pressed="false">❯<span>Terminal</span></button>
 </nav>
 
+<div id="hover" class="hover oculto" role="tooltip"></div>
 <div id="velo" class="velo oculto" role="dialog" aria-modal="true" aria-label="Abrir archivo">
   <div class="dialogo"><input id="q-archivo" placeholder="Nombre de archivo…" aria-label="Nombre de archivo"><ul id="l-archivos" role="listbox"></ul></div>
 </div>
@@ -472,7 +503,7 @@ function muestra() {
   if (!t) { $("e-pos").textContent = ""; marcaArbol(); return; }
   if (t.kind === "diff") pintaDiff(t);
   else if (!t.binary) {
-    ta.value = t.content; repinta(); ta.scrollTop = t.scroll || 0; ta.scrollLeft = 0; sincroniza();
+    ta.value = t.content; repinta(); ta.scrollTop = t.scroll || 0; ta.scrollLeft = 0; sincroniza(); pintaDiags(); pintaEstadoLsp();
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(t.sel || 0, t.sel || 0); if (t.irA) { irALinea(t.irA); t.irA = null; } posicion(); });
   }
   marcaArbol();
@@ -488,7 +519,7 @@ async function abre(path, linea) {
   try {
     const f = await rpc("fs.read", { path });
     const t = { id: "f:" + path, kind: "file", path, content: f.content, saved: f.content, binary: f.binary, dirty: false, lang: langDe(path), irA: linea };
-    S.tabs.push(t); activa(t.id);
+    S.tabs.push(t); activa(t.id); lspSync(t, true);
   } catch (e) { aviso(e.message); }
 }
 async function abreDiff(path, staged) {
@@ -509,7 +540,10 @@ function cierra(id) {
 }
 async function guarda() {
   const t = tabActiva(); if (!t || t.kind !== "file" || t.binary) return;
-  try { await rpc("fs.write", { path: t.path, content: t.content }); t.saved = t.content; t.dirty = false; pintaPestanas(); muestra(); aviso("Guardado " + base(t.path)); }
+  try {
+    await rpc("fs.write", { path: t.path, content: t.content }); t.saved = t.content; t.dirty = false; pintaPestanas(); muestra(); aviso("Guardado " + base(t.path));
+    if (LSP_EXT.test(t.path) && !S.lspError[grupoLsp(t.path)]) rpc("lsp.saved", { path: t.path }).catch(() => {});
+  }
   catch (e) { aviso("No se pudo guardar: " + e.message); }
 }
 let pendiente = 0;
@@ -521,6 +555,7 @@ function repinta() {
 }
 function sincroniza() {
   hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; gutter.scrollTop = ta.scrollTop;
+  $("capa-diag").style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
   const l = ta.value.slice(0, ta.selectionStart).split("\n").length;
   $("resalte-linea").style.top = (10 + (l - 1) * 21 - ta.scrollTop) + "px";
 }
@@ -538,6 +573,7 @@ ta.addEventListener("input", () => {
   t.content = ta.value; const sucia = t.content !== t.saved;
   if (sucia !== t.dirty) { t.dirty = sucia; pintaPestanas(); $("e-archivo").textContent = t.path + (sucia ? " ●" : ""); }
   cancelAnimationFrame(pendiente); pendiente = requestAnimationFrame(() => { repinta(); sincroniza(); });
+  lspSync(t);
 });
 ta.addEventListener("scroll", sincroniza);
 ["click", "keyup", "select"].forEach((ev) => ta.addEventListener(ev, posicion));
@@ -620,6 +656,121 @@ function preguntaSeleccion() {
 $("b-preguntar").onclick = preguntaSeleccion;
 ta.addEventListener("select", () => $("b-preguntar").classList.toggle("oculto", ta.selectionStart === ta.selectionEnd));
 ta.addEventListener("keyup", () => $("b-preguntar").classList.toggle("oculto", ta.selectionStart === ta.selectionEnd));
+
+/* ───────── Servidor de lenguaje (LSP) ───────── */
+const LSP_EXT = /\.(rs|ts|tsx|mts|cts|js|jsx|mjs|cjs|py|pyi|go|c|h|cc|cpp|cxx|hpp|hh)$/i;
+S.diags = {}; S.lspError = {};
+let tSync = 0, anchoCar = 0;
+function grupoLsp(path) { const e = path.split(".").pop().toLowerCase(); return { rs: "rust", py: "python", pyi: "python", go: "go", c: "c", h: "c", cc: "c", cpp: "c", cxx: "c", hpp: "c", hh: "c" }[e] || "typescript"; }
+async function lspSync(t, inmediato) {
+  if (!t || t.kind !== "file" || t.binary || !LSP_EXT.test(t.path) || S.lspError[grupoLsp(t.path)]) return;
+  clearTimeout(tSync);
+  const enviar = async () => {
+    try { await rpc("lsp.sync", { path: t.path, content: t.content }); $("e-lsp").textContent = "LSP ✓"; $("e-lsp").title = "Servidor de lenguaje activo"; }
+    catch (e) { S.lspError[grupoLsp(t.path)] = e.message; pintaEstadoLsp(); }
+  };
+  if (inmediato) await enviar(); else tSync = setTimeout(enviar, 450);
+}
+function pintaEstadoLsp() {
+  const t = tabActiva(); const err = t && LSP_EXT.test(t.path) && S.lspError[grupoLsp(t.path)];
+  $("e-lsp").textContent = !t || !LSP_EXT.test(t.path) ? "" : err ? "LSP ✗" : "LSP ✓";
+  $("e-lsp").title = err || "Servidor de lenguaje";
+}
+function medirCaracter() {
+  if (anchoCar) return anchoCar;
+  const c = document.createElement("canvas").getContext("2d"); const st = getComputedStyle(ta);
+  c.font = `${st.fontSize} ${st.fontFamily}`; anchoCar = c.measureText("MMMMMMMMMM").width / 10 || 8;
+  return anchoCar;
+}
+function colVisual(linea, col) { let v = 0; for (let i = 0; i < Math.min(col, linea.length); i++) v = linea[i] === "\t" ? v + 4 - (v % 4) : v + 1; return v + Math.max(0, col - linea.length); }
+function pintaDiags() {
+  const capa = $("capa-diag"); capa.replaceChildren();
+  const t = tabActiva(); if (!t || t.kind !== "file") return;
+  const ds = S.diags[t.path] || [], lineas = ta.value.split("\n"), cw = medirCaracter();
+  for (const d of ds) {
+    const l = lineas[d.line] || "";
+    const fin = d.endLine === d.line ? d.endCharacter : l.length;
+    const x1 = colVisual(l, d.character), x2 = Math.max(x1 + 1, colVisual(l, fin));
+    const u = el("div", "subr s" + d.severity); u.style.top = (10 + d.line * 21 + 17) + "px"; u.style.left = (16 + x1 * cw) + "px"; u.style.width = ((x2 - x1) * cw) + "px";
+    const m = el("div", "marca s" + d.severity); m.style.top = (10 + d.line * 21) + "px";
+    capa.append(u, m);
+  }
+  sincroniza();
+}
+function pintaProblemas() {
+  const box = $("problemas"); box.replaceChildren(); let e = 0, w = 0;
+  for (const [p, ds] of Object.entries(S.diags)) {
+    if (!ds.length) continue;
+    const g = el("div", "grupo"); const tt = el("div", "grupo-titulo"); tt.append(el("span", "", base(p)), el("span", "dir", dir(p)), el("span", "", "· " + ds.length)); g.appendChild(tt);
+    for (const d of [...ds].sort((a, b) => a.severity - b.severity || a.line - b.line)) {
+      if (d.severity === 1) e++; else if (d.severity === 2) w++;
+      const b = el("button", "problema"); b.append(el("span", "sev s" + d.severity, d.severity === 1 ? "✗" : d.severity === 2 ? "⚠" : "ℹ"), el("span", "txt", d.message), el("span", "pos", `${d.line + 1}:${d.character + 1}`));
+      b.title = (d.source ? d.source + ": " : "") + d.message; b.onclick = () => abre(p, d.line + 1); g.appendChild(b);
+    }
+    box.appendChild(g);
+  }
+  if (!box.children.length) box.appendChild(el("div", "vacio", "Sin problemas en los archivos abiertos."));
+  $("t-problemas").textContent = "Problemas";
+  $("n-diag").textContent = e + w; $("n-diag").classList.toggle("oculto", e + w === 0);
+  const ed = $("e-diag"); ed.replaceChildren(); if (e || w) ed.append(el("span", "e", "✗ " + e), document.createTextNode("  "), el("span", "w", "⚠ " + w));
+}
+$("e-diag").onclick = () => panel("problemas");
+function posCursor() { const antes = ta.value.slice(0, ta.selectionStart).split("\n"); return { line: antes.length - 1, character: antes[antes.length - 1].length }; }
+async function irADefinicion(pos) {
+  const t = tabActiva(); if (!t || t.kind !== "file" || !LSP_EXT.test(t.path)) return;
+  await lspSync(t, true);
+  try {
+    const locs = await rpc("lsp.definition", { path: t.path, ...(pos || posCursor()) });
+    if (!locs.length) { aviso("No se encontró la definición"); return; }
+    abre(locs[0].path, locs[0].line + 1);
+  } catch (e) { aviso(e.message); }
+}
+async function referencias() {
+  const t = tabActiva(); if (!t || t.kind !== "file" || !LSP_EXT.test(t.path)) return;
+  await lspSync(t, true);
+  try {
+    const locs = await rpc("lsp.references", { path: t.path, ...posCursor() });
+    panel("problemas");
+    const box = $("problemas"); box.replaceChildren(); $("t-problemas").textContent = `Referencias · ${locs.length}`;
+    for (const l of locs) { const b = el("button", "problema"); b.append(el("span", "sev s3", "→"), el("span", "txt", l.path), el("span", "pos", `${l.line + 1}:${l.character + 1}`)); b.onclick = () => abre(l.path, l.line + 1); box.appendChild(b); }
+    if (!locs.length) box.appendChild(el("div", "vacio", "Sin referencias."));
+  } catch (e) { aviso(e.message); }
+}
+function ocultaHover() { $("hover").classList.add("oculto"); }
+async function muestraHover(pos, x, y) {
+  const t = tabActiva(); if (!t || t.kind !== "file") return;
+  const diags = (S.diags[t.path] || []).filter((d) => pos.line >= d.line && pos.line <= d.endLine && (pos.line !== d.line || pos.character >= d.character) && (pos.line !== d.endLine || pos.character <= d.endCharacter));
+  let texto = "";
+  if (LSP_EXT.test(t.path) && !S.lspError[grupoLsp(t.path)]) { try { texto = await rpc("lsp.hover", { path: t.path, ...pos }); } catch { texto = ""; } }
+  texto = texto.replace(/^```\w*\n?|```$/gm, "").trim();
+  if (!texto && !diags.length) { ocultaHover(); return; }
+  const h = $("hover"); h.replaceChildren();
+  for (const d of diags) h.appendChild(el("div", "diag-msg s" + d.severity, (d.severity === 1 ? "✗ " : "⚠ ") + d.message));
+  if (texto) h.appendChild(document.createTextNode(texto));
+  h.classList.remove("oculto");
+  h.style.left = Math.min(x, innerWidth - h.offsetWidth - 12) + "px"; h.style.top = Math.max(8, y - h.offsetHeight - 8) + "px";
+}
+function posRaton(e) {
+  const r = ta.getBoundingClientRect(), cw = medirCaracter();
+  const line = Math.floor((e.clientY - r.top + ta.scrollTop - 10) / 21);
+  const lineas = ta.value.split("\n"); if (line < 0 || line >= lineas.length) return null;
+  const vis = Math.floor((e.clientX - r.left + ta.scrollLeft - 16) / cw); if (vis < 0) return null;
+  const l = lineas[line]; let v = 0, c = 0; while (c < l.length && v < vis) { v = l[c] === "\t" ? v + 4 - (v % 4) : v + 1; c++; }
+  if (c >= l.length && vis > v) return null;
+  return { line, character: c };
+}
+let tHover = 0;
+ta.addEventListener("mousemove", (e) => {
+  clearTimeout(tHover); ocultaHover();
+  tHover = setTimeout(() => { const p = posRaton(e); if (p) muestraHover(p, e.clientX, e.clientY); }, 550);
+});
+ta.addEventListener("mouseleave", () => { clearTimeout(tHover); ocultaHover(); });
+ta.addEventListener("keydown", (e) => {
+  ocultaHover();
+  if (e.key === "F12") { e.preventDefault(); e.shiftKey ? referencias() : irADefinicion(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); const r = ta.getBoundingClientRect(), p = posCursor(); muestraHover(p, r.left + 16 + colVisual(ta.value.split("\n")[p.line] || "", p.character) * medirCaracter() - ta.scrollLeft, r.top + 10 + p.line * 21 - ta.scrollTop); }
+});
+ta.addEventListener("mousedown", (e) => { if (e.ctrlKey || e.metaKey) { const p = posRaton(e); if (p) { e.preventDefault(); irADefinicion(p); } } });
 
 /* ───────── Diff ───────── */
 function pintaDiff(t) {
@@ -892,7 +1043,8 @@ $("b-abrir").onclick = abreRapido;
 
 /* ───────── Vistas, atajos y eventos ───────── */
 function panel(nombre) {
-  for (const p of ["archivos", "buscar", "git"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
+  for (const p of ["archivos", "buscar", "problemas", "git"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
+  if (nombre === "problemas" && !$("problemas").children.length) pintaProblemas();
   document.querySelectorAll(".actividad button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.panel === nombre));
   if (nombre === "buscar") setTimeout(() => $("q").focus(), 0);
   if (nombre === "git") refrescaGit();
@@ -912,6 +1064,7 @@ document.addEventListener("keydown", (e) => {
   else if (k === "f" && e.shiftKey) { e.preventDefault(); panel("buscar"); }
   else if (k === "e" && e.shiftKey) { e.preventDefault(); panel("archivos"); }
   else if (k === "g" && e.shiftKey) { e.preventDefault(); panel("git"); }
+  else if (k === "m" && e.shiftKey) { e.preventDefault(); pintaProblemas(); panel("problemas"); }
   else if (k === "`" || e.code === "Backquote") { e.preventDefault(); terminal(); }
   else if (k === "i") { e.preventDefault(); agente(); }
   else if (k === "w" && S.activa) { e.preventDefault(); cierra(S.activa); }
@@ -928,7 +1081,7 @@ async function alCambiarArchivos() {
     S.todos = null; refrescaArbol(); refrescaGit();
     for (const t of S.tabs) {
       if (t.kind === "file" && !t.dirty && !t.binary) {
-        try { const f = await rpc("fs.read", { path: t.path }); if (f.content !== t.saved) { t.content = t.saved = f.content; if (t.id === S.activa) muestra(); } } catch { /* borrado */ }
+        try { const f = await rpc("fs.read", { path: t.path }); if (f.content !== t.saved) { t.content = t.saved = f.content; if (t.id === S.activa) muestra(); lspSync(t, true); } } catch { /* borrado */ }
       } else if (t.kind === "diff") { try { t.text = await rpc("git.diff", { path: t.path, staged: t.staged }); if (t.id === S.activa) pintaDiff(t); } catch { /* ya no hay diff */ } }
     }
   }, 250);
@@ -959,6 +1112,7 @@ function conecta() {
         if (e.id === S.terminal) { escribeSalida(el("span", e.code === 0 ? "fin-ok" : "fin-mal", (e.code === 0 ? "✓ terminado" : `✗ salió con ${e.code ?? "señal"}`) + "\n")); $("t-estado").textContent = ""; S.terminal = null; }
         break;
       case "filesChanged": alCambiarArchivos(); break;
+      case "diagnostics": S.diags[e.path] = e.items; pintaProblemas(); if (tabActiva()?.path === e.path) pintaDiags(); break;
     }
   };
 }

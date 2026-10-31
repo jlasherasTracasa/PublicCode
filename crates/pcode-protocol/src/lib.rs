@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Versión del protocolo.
-pub const PROTOCOL_VERSION: &str = "0.2.0";
+pub const PROTOCOL_VERSION: &str = "1.0.0";
 
 /// Estado de una sesión.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -163,6 +163,13 @@ pub enum Event {
     },
     /// Cambiaron archivos del proyecto (para refrescar el explorador y git).
     FilesChanged {},
+    /// Diagnósticos del servidor de lenguaje para un archivo (reemplazan a los anteriores).
+    Diagnostics {
+        /// Ruta relativa.
+        path: String,
+        /// Diagnósticos (vacío = ninguno).
+        items: Vec<DiagnosticDto>,
+    },
     /// Trozo de texto del asistente según llega (streaming); el mensaje completo llega después
     /// como `transcript` con una entrada `assistant`.
     AssistantDelta {
@@ -171,6 +178,27 @@ pub enum Event {
         /// Texto nuevo.
         text: String,
     },
+}
+
+/// Un diagnóstico del servidor de lenguaje (posiciones desde 0, columnas en UTF-16).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DiagnosticDto {
+    /// Línea inicial.
+    pub line: u32,
+    /// Columna inicial.
+    pub character: u32,
+    /// Línea final.
+    pub end_line: u32,
+    /// Columna final.
+    pub end_character: u32,
+    /// 1 error, 2 aviso, 3 información, 4 pista.
+    pub severity: u8,
+    /// Mensaje.
+    pub message: String,
+    /// Origen.
+    pub source: String,
 }
 
 /// Entrada del explorador de archivos.
@@ -313,6 +341,18 @@ pub mod methods {
     pub const GIT_UNSTAGE: &str = "git.unstage";
     /// Commit de lo preparado: `{message}` → texto de git.
     pub const GIT_COMMIT: &str = "git.commit";
+    /// Abre o actualiza un documento en el servidor de lenguaje: `{path, content}`.
+    pub const LSP_SYNC: &str = "lsp.sync";
+    /// Avisa de que se guardó: `{path}`.
+    pub const LSP_SAVED: &str = "lsp.saved";
+    /// Ir a la definición: `{path, line, character}` → `{path, line, character}[]`.
+    pub const LSP_DEFINITION: &str = "lsp.definition";
+    /// Referencias: `{path, line, character}` → `{path, line, character}[]`.
+    pub const LSP_REFERENCES: &str = "lsp.references";
+    /// Hover: `{path, line, character}` → texto.
+    pub const LSP_HOVER: &str = "lsp.hover";
+    /// Servidores de lenguaje arrancados: `{}` → `[grupo, estado][]`.
+    pub const LSP_STATUS: &str = "lsp.status";
     /// Lanza una orden en la terminal integrada: `{command}` → `{id}`.
     pub const TERMINAL_RUN: &str = "terminal.run";
     /// Detiene una orden: `{id}`.

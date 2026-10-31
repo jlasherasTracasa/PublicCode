@@ -35,13 +35,36 @@ pub struct AppState {
     terminals: Mutex<HashMap<u64, oneshot::Sender<()>>>,
     next_terminal: std::sync::atomic::AtomicU64,
     inputs: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<tokio::process::ChildStdin>>>>,
+    /// Servidores de lenguaje del proyecto.
+    pub lsp: pcode_lsp::LspManager,
 }
 
 impl AppState {
     /// Crea el estado.
     pub fn new(repo: PathBuf, pcode_bin: PathBuf, token: Option<String>) -> Arc<AppState> {
         let (events, _) = broadcast::channel(1024);
+        let ev = events.clone();
+        let lsp = pcode_lsp::LspManager::new(
+            &repo,
+            HashMap::new(),
+            Arc::new(move |path, items| {
+                let items = items
+                    .into_iter()
+                    .map(|d| DiagnosticDto {
+                        line: d.line,
+                        character: d.character,
+                        end_line: d.end_line,
+                        end_character: d.end_character,
+                        severity: d.severity,
+                        message: d.message,
+                        source: d.source,
+                    })
+                    .collect();
+                let _ = ev.send(Event::Diagnostics { path, items });
+            }),
+        );
         Arc::new(AppState {
+            lsp,
             repo,
             pcode_bin,
             token,
@@ -711,6 +734,42 @@ async fn rpc(
             let sid = p.get("session").and_then(|v| v.as_i64()).unwrap_or(-1);
             ws_reply(id, st.send(sid, str_param(&p, "text")).await.map(|_| true))
         }
+        methods::LSP_SYNC | methods::LSP_SAVED => {
+            let (rel, content) = (str_param(&p, "path"), str_param(&p, "content"));
+            if let Err(e) = crate::workspace::safe_path(&st.repo, &rel) {
+                return rpc_err(id, -32000, e).into_response();
+            }
+            let r = match st.lsp.client_for(&rel).await {
+                Ok(c) if req.method == methods::LSP_SYNC => c.sync(&rel, &content).await,
+                Ok(c) => c.saved(&rel).await,
+                Err(e) => Err(e),
+            };
+            ws_reply(id, r.map(|_| true))
+        }
+        methods::LSP_DEFINITION | methods::LSP_REFERENCES | methods::LSP_HOVER => {
+            let rel = str_param(&p, "path");
+            let line = p.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let ch = p.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let r = match st.lsp.client_for(&rel).await {
+                Err(e) => Err(e),
+                Ok(c) => match req.method.as_str() {
+                    methods::LSP_DEFINITION => c
+                        .definition(&rel, line, ch)
+                        .await
+                        .map(|v| serde_json::to_value(v).unwrap_or_default()),
+                    methods::LSP_REFERENCES => c
+                        .references(&rel, line, ch)
+                        .await
+                        .map(|v| serde_json::to_value(v).unwrap_or_default()),
+                    _ => c.hover(&rel, line, ch).await.map(serde_json::Value::String),
+                },
+            };
+            ws_reply(id, r)
+        }
+        methods::LSP_STATUS => rpc_ok(
+            id,
+            serde_json::to_value(st.lsp.status().await).unwrap_or_default(),
+        ),
         methods::TERMINAL_RUN => ws_reply(
             id,
             st.run_terminal(str_param(&p, "command"))
