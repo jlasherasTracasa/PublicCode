@@ -1,5 +1,7 @@
 //! `pcoded`: demonio con JSON-RPC, eventos SSE y la página web.
 pub mod approvals;
+pub mod assist;
+pub mod outline;
 mod server;
 pub mod workspace;
 

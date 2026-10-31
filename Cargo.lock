@@ -1672,6 +1672,7 @@ dependencies = [
  "axum",
  "futures",
  "http-body-util",
+ "pcode-core",
  "pcode-lsp",
  "pcode-policy",
  "pcode-protocol",

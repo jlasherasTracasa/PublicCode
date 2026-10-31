@@ -248,7 +248,7 @@ pub fn tasks(root: &Path) -> Vec<Task> {
     v
 }
 
-fn git(root: &Path, args: &[&str]) -> WsResult<String> {
+pub(crate) fn git(root: &Path, args: &[&str]) -> WsResult<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
@@ -448,6 +448,135 @@ pub fn git_commit(root: &Path, message: &str) -> WsResult<String> {
     git(root, &["commit", "-m", message])
 }
 
+/// Marca del margen del editor para una línea cambiada respecto al último commit.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LineChange {
+    /// Línea (desde 1) del archivo actual.
+    pub line: u32,
+    /// `added`, `modified` o `deleted` (se borraron líneas justo después de esta).
+    pub kind: &'static str,
+}
+
+/// Interpreta un `git diff -U0` y devuelve las marcas por línea del archivo nuevo.
+pub fn parse_line_changes(diff: &str) -> Vec<LineChange> {
+    let mut out = vec![];
+    for l in diff.lines().filter(|l| l.starts_with("@@ ")) {
+        // @@ -a[,b] +c[,d] @@
+        let mut it = l.split_whitespace().skip(1);
+        let (Some(old), Some(new)) = (it.next(), it.next()) else {
+            continue;
+        };
+        let count = |s: &str| -> (u32, u32) {
+            let s = &s[1..];
+            match s.split_once(',') {
+                Some((a, b)) => (a.parse().unwrap_or(0), b.parse().unwrap_or(0)),
+                None => (s.parse().unwrap_or(0), 1),
+            }
+        };
+        let ((_, removed), (start, added)) = (count(old), count(new));
+        if added == 0 {
+            out.push(LineChange {
+                line: start.max(1),
+                kind: "deleted",
+            });
+            continue;
+        }
+        let kind = if removed == 0 { "added" } else { "modified" };
+        for n in start..start + added {
+            out.push(LineChange { line: n, kind });
+        }
+    }
+    out
+}
+
+/// Líneas cambiadas de un archivo respecto a `HEAD` (todas «añadidas» si no está versionado).
+pub fn git_line_changes(root: &Path, rel: &str) -> WsResult<Vec<LineChange>> {
+    safe_path(root, rel)?;
+    if !is_git(root) {
+        return Ok(vec![]);
+    }
+    let tracked = git(root, &["ls-files", "--error-unmatch", "--", rel]).is_ok();
+    if !tracked {
+        let n = read(root, rel)
+            .map(|c| c.content.lines().count())
+            .unwrap_or(0);
+        return Ok((1..=n as u32)
+            .map(|line| LineChange {
+                line,
+                kind: "added",
+            })
+            .collect());
+    }
+    let base = if git(root, &["rev-parse", "--verify", "-q", "HEAD"]).is_ok() {
+        "HEAD"
+    } else {
+        // Sin commits: contra el índice.
+        ""
+    };
+    let mut args = vec!["diff", "-U0", "--no-color", "--no-ext-diff"];
+    if !base.is_empty() {
+        args.push(base);
+    }
+    args.extend(["--", rel]);
+    Ok(parse_line_changes(&git(root, &args)?))
+}
+
+/// Una acción del agente registrada en la auditoría.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Activity {
+    /// Número de la entrada.
+    pub seq: u64,
+    /// Milisegundos desde 1970.
+    pub ts_ms: u64,
+    /// Quién (agente).
+    pub actor: String,
+    /// Tool o acción.
+    pub action: String,
+    /// `allow`, `deny`, `ask-allowed`, `ask-denied`…
+    pub decision: String,
+    /// Archivo, orden o consulta (recortado).
+    pub target: String,
+}
+
+/// Últimas `n` acciones de `.pcode/audit.jsonl` (la más reciente primero) y si la cadena de hashes
+/// está íntegra.
+pub fn activity(root: &Path, n: usize) -> (Vec<Activity>, bool) {
+    let path = root.join(".pcode").join("audit.jsonl");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return (vec![], true);
+    };
+    let intact = pcode_policy::AuditLog::verify(&path).is_ok();
+    let items = text
+        .lines()
+        .rev()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .take(n)
+        .map(|v| {
+            let d = &v["detail"];
+            let target = ["path", "command", "pattern", "query", "url"]
+                .iter()
+                .find_map(|k| d[*k].as_str())
+                .map(String::from)
+                .unwrap_or_else(|| {
+                    if d.is_null() {
+                        String::new()
+                    } else {
+                        d.to_string()
+                    }
+                });
+            Activity {
+                seq: v["seq"].as_u64().unwrap_or(0),
+                ts_ms: v["ts_ms"].as_u64().unwrap_or(0),
+                actor: v["actor"].as_str().unwrap_or("").to_string(),
+                action: v["action"].as_str().unwrap_or("").to_string(),
+                decision: v["decision"].as_str().unwrap_or("").to_string(),
+                target: target.chars().take(200).collect(),
+            }
+        })
+        .collect();
+    (items, intact)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -591,5 +720,86 @@ mod tests {
         git_commit(d.path(), "cambia main").unwrap();
         let (_, st) = git_status(d.path()).unwrap();
         assert!(!st.iter().any(|f| f.path == "src/main.rs"));
+    }
+
+    #[test]
+    fn marcas_del_margen_desde_el_diff() {
+        let d = "diff --git a/x b/x\n@@ -2,0 +3,2 @@\n+a\n+b\n@@ -5 +7 @@\n-x\n+y\n@@ -9,2 +10,0 @@\n-p\n-q\n@@ -1,1 +0,0 @@\n";
+        let v: Vec<_> = parse_line_changes(d)
+            .into_iter()
+            .map(|c| (c.line, c.kind))
+            .collect();
+        assert_eq!(
+            v,
+            vec![
+                (3, "added"),
+                (4, "added"),
+                (7, "modified"),
+                (10, "deleted"),
+                (1, "deleted")
+            ]
+        );
+    }
+
+    #[test]
+    fn marcas_del_margen_en_un_repo() {
+        let d = repo();
+        let r = d.path();
+        let v = git_line_changes(r, "src/main.rs").unwrap();
+        assert!(v.is_empty(), "sin cambios: {v:?}");
+        std::fs::write(
+            r.join("src/main.rs"),
+            "fn main() {\n    println!(\"adiós\");\n}\n// fin\n",
+        )
+        .unwrap();
+        let v: Vec<_> = git_line_changes(r, "src/main.rs")
+            .unwrap()
+            .into_iter()
+            .map(|c| (c.line, c.kind))
+            .collect();
+        assert_eq!(v, vec![(2, "modified"), (4, "added")]);
+        std::fs::write(r.join("nuevo.txt"), "x\ny\n").unwrap();
+        assert_eq!(git_line_changes(r, "nuevo.txt").unwrap().len(), 2);
+        assert!(git_line_changes(r, "../fuera").is_err());
+    }
+
+    #[test]
+    fn actividad_lee_las_ultimas_acciones() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join(".pcode")).unwrap();
+        let mut log = pcode_policy::AuditLog::open(&d.path().join(".pcode/audit.jsonl")).unwrap();
+        log.append(
+            "chat",
+            "agente:chat",
+            "leer",
+            serde_json::json!({"path": "a.rs"}),
+            "allow",
+        )
+        .unwrap();
+        log.append(
+            "chat",
+            "agente:chat",
+            "bash",
+            serde_json::json!({"command": "rm -rf /"}),
+            "deny",
+        )
+        .unwrap();
+        let (v, intact) = activity(d.path(), 10);
+        assert!(intact);
+        assert_eq!(v.len(), 2);
+        assert_eq!(
+            (v[0].action.as_str(), v[0].target.as_str()),
+            ("bash", "rm -rf /")
+        );
+        assert_eq!(v[0].decision, "deny");
+        assert_eq!(v[1].target, "a.rs");
+        assert_eq!(activity(d.path(), 1).0.len(), 1);
+    }
+
+    #[test]
+    fn actividad_sin_auditoria_vacia() {
+        let d = tempfile::tempdir().unwrap();
+        let (v, intact) = activity(d.path(), 10);
+        assert!(v.is_empty() && intact);
     }
 }

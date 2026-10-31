@@ -178,6 +178,30 @@ pub enum Event {
         /// Texto nuevo.
         text: String,
     },
+    /// Terminó un turno de una sesión de conversación: archivos que tocó (para «Deshacer el turno»).
+    TurnFinished {
+        /// Sesión.
+        session: i64,
+        /// Archivos cambiados en el turno.
+        changes: Vec<TurnChangeDto>,
+    },
+}
+
+/// Un archivo cambiado en un turno del agente.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TurnChangeDto {
+    /// Ruta relativa.
+    pub path: String,
+    /// Líneas añadidas.
+    pub added: u32,
+    /// Líneas quitadas.
+    pub removed: u32,
+    /// Lo creó el turno.
+    pub created: bool,
+    /// Lo borró el turno.
+    pub deleted: bool,
 }
 
 /// Un diagnóstico del servidor de lenguaje (posiciones desde 0, columnas en UTF-16).
@@ -353,6 +377,24 @@ pub mod methods {
     pub const LSP_HOVER: &str = "lsp.hover";
     /// Servidores de lenguaje arrancados: `{}` → `[grupo, estado][]`.
     pub const LSP_STATUS: &str = "lsp.status";
+    /// Esquema de un archivo: `{path, content?}` → `{name, kind, line, depth}[]`.
+    pub const FS_OUTLINE: &str = "fs.outline";
+    /// Símbolos del proyecto: `{query}` → `{path, name, kind, line}[]`.
+    pub const SEARCH_SYMBOLS: &str = "search.symbols";
+    /// Marcas del margen respecto a `HEAD`: `{path}` → `{line, kind}[]`.
+    pub const GIT_LINE_CHANGES: &str = "git.lineChanges";
+    /// Turnos del agente con puntos de control: `{}` → `{turn, time, label, undone, changes}[]`.
+    pub const CHECKPOINT_LIST: &str = "checkpoint.list";
+    /// Deshace el último turno del agente: `{}` → turno o `null`.
+    pub const CHECKPOINT_UNDO: &str = "checkpoint.undo";
+    /// Rehace el turno deshecho: `{}` → turno o `null`.
+    pub const CHECKPOINT_REDO: &str = "checkpoint.redo";
+    /// Últimas acciones del agente (auditoría): `{limit?}` → `{items, intact}`.
+    pub const WORKSPACE_ACTIVITY: &str = "workspace.activity";
+    /// Prompt con contexto para el agente: `{kind, path?, diagnostics?, text?, lines?}` → texto.
+    pub const ASSIST_PROMPT: &str = "assist.prompt";
+    /// Respuesta directa del modelo (sin tools): mismos parámetros → `{text}`.
+    pub const ASSIST_RUN: &str = "assist.run";
     /// Lanza una orden en la terminal integrada: `{command}` → `{id}`.
     pub const TERMINAL_RUN: &str = "terminal.run";
     /// Detiene una orden: `{id}`.

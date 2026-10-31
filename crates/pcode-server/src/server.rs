@@ -257,9 +257,9 @@ impl AppState {
         });
         let cancelled = tokio::select! {
             _ = child.wait() => false,
-            _ = &mut cancel => { let _ = child.kill().await; true }
+            _ = &mut cancel => { kill_tree(&mut child).await; true }
         };
-        let _ = tokio::join!(t1, t2);
+        join_readers(t1, t2).await;
         self.inputs.lock().unwrap().remove(&id);
         self.cancels.lock().unwrap().remove(&id);
         let st = if cancelled {
@@ -364,6 +364,22 @@ impl AppState {
                         SessionState::Done
                     },
                 );
+                let changes: Vec<pcode_protocol::TurnChangeDto> = v["cambios"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|c| pcode_protocol::TurnChangeDto {
+                        path: c["ruta"].as_str().unwrap_or_default().to_string(),
+                        added: c["mas"].as_u64().unwrap_or(0) as u32,
+                        removed: c["menos"].as_u64().unwrap_or(0) as u32,
+                        created: c["creado"].as_bool().unwrap_or(false),
+                        deleted: c["borrado"].as_bool().unwrap_or(false),
+                    })
+                    .collect();
+                self.emit(Event::TurnFinished {
+                    session: id,
+                    changes,
+                });
                 self.emit(Event::FilesChanged {});
             }
             _ => {}
@@ -443,9 +459,9 @@ impl AppState {
                 Some(4) => SessionState::Stuck,
                 _ => SessionState::Failed,
             },
-            _ = &mut cancel => { let _ = child.kill().await; SessionState::Cancelled }
+            _ = &mut cancel => { kill_tree(&mut child).await; SessionState::Cancelled }
         };
-        let _ = tokio::join!(t1, t2);
+        join_readers(t1, t2).await;
         self.cancels.lock().unwrap().remove(&id);
         self.set_state(id, state);
         self.emit(Event::FilesChanged {});
@@ -516,10 +532,10 @@ impl AppState {
             // Tiempo máximo: 30 minutos.
             let code = tokio::select! {
                 st = child.wait() => st.ok().and_then(|s| s.code()),
-                _ = &mut cancel => { let _ = child.kill().await; None }
-                _ = tokio::time::sleep(Duration::from_secs(1800)) => { let _ = child.kill().await; None }
+                _ = &mut cancel => { kill_tree(&mut child).await; None }
+                _ = tokio::time::sleep(Duration::from_secs(1800)) => { kill_tree(&mut child).await; None }
             };
-            let _ = tokio::join!(out, err);
+            join_readers(out, err).await;
             me.terminals.lock().unwrap().remove(&id);
             me.emit(Event::TerminalExit { id, code });
             me.emit(Event::FilesChanged {});
@@ -535,6 +551,128 @@ async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(f)
         .await
         .unwrap_or_else(|e| Err(e.to_string()))
+}
+
+/// Para `child` y sus descendientes: en Linux los busca en `/proc` (antes de matar al padre, para
+/// no perder el árbol); en Windows usa `taskkill /T`. Así una orden que lanza otras (`npm run dev`,
+/// un agente externo) no deja procesos ni tuberías abiertas al cancelarla.
+async fn kill_tree(child: &mut tokio::process::Child) {
+    if let Some(pid) = child.id() {
+        #[cfg(target_os = "linux")]
+        {
+            let pids = descendants(pid);
+            if !pids.is_empty() {
+                let _ = tokio::process::Command::new("kill")
+                    .arg("-KILL")
+                    .args(pids.iter().map(|p| p.to_string()))
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .await;
+            }
+        }
+        #[cfg(windows)]
+        {
+            let _ = tokio::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .await;
+        }
+    }
+    let _ = child.kill().await;
+}
+
+/// Descendientes de `root` (hijos, nietos…) según `/proc/<pid>/stat`.
+#[cfg(target_os = "linux")]
+fn descendants(root: u32) -> Vec<u32> {
+    let mut parent: Vec<(u32, u32)> = vec![];
+    for e in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else {
+            continue;
+        };
+        // «pid (nombre) estado ppid …»: el nombre puede tener espacios y paréntesis.
+        if let Some(ppid) = stat
+            .rsplit_once(')')
+            .and_then(|(_, rest)| rest.split_whitespace().nth(1))
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            parent.push((pid, ppid));
+        }
+    }
+    let mut out: Vec<u32> = vec![];
+    let mut frontier = vec![root];
+    while let Some(p) = frontier.pop() {
+        for (c, pp) in &parent {
+            if *pp == p && !out.contains(c) {
+                out.push(*c);
+                frontier.push(*c);
+            }
+        }
+    }
+    out
+}
+
+/// Espera a que terminen de leerse stdout y stderr, como mucho 3 s (un nieto que siga vivo puede
+/// mantener abiertas las tuberías); después deja de leer.
+async fn join_readers(a: tokio::task::JoinHandle<()>, b: tokio::task::JoinHandle<()>) {
+    let (ha, hb) = (a.abort_handle(), b.abort_handle());
+    let both = async {
+        let _ = tokio::join!(a, b);
+    };
+    if tokio::time::timeout(Duration::from_secs(3), both)
+        .await
+        .is_err()
+    {
+        ha.abort();
+        hb.abort();
+    }
+}
+
+/// Un turno con puntos de control para el cliente.
+fn turn_json(t: &pcode_core::TurnInfo, changes: &[pcode_core::FileChange]) -> serde_json::Value {
+    serde_json::json!({
+        "turn": t.turn,
+        "time": t.time,
+        "label": t.label,
+        "undone": t.undone,
+        "changes": changes.iter().map(|c| serde_json::json!({
+            "path": c.path,
+            "added": c.added,
+            "removed": c.removed,
+            "created": c.created,
+            "deleted": c.deleted,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// Prompt del asistente según `kind` (`commit`, `revisar`, `arreglar`, `concretar`, `explicar`,
+/// `tests`).
+fn assist_prompt(root: &std::path::Path, p: &serde_json::Value) -> Result<String, String> {
+    let path = str_param(p, "path");
+    let lines = p.get("lines").and_then(|v| {
+        let a = v.get(0)?.as_u64()? as u32;
+        let b = v.get(1)?.as_u64()? as u32;
+        (a >= 1 && b >= a).then_some((a, b))
+    });
+    match str_param(p, "kind").as_str() {
+        "commit" => crate::assist::commit_prompt(root),
+        "revisar" => crate::assist::review_prompt(root),
+        "concretar" => crate::assist::refine_prompt(root, &str_param(p, "text")),
+        "arreglar" => {
+            let diags: Vec<crate::assist::Diag> = p
+                .get("diagnostics")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            crate::assist::fix_prompt(root, &path, &diags)
+        }
+        k @ ("explicar" | "tests") => crate::assist::file_prompt(root, &path, k, lines),
+        k => Err(format!("tipo de ayuda desconocido: {k}")),
+    }
 }
 
 fn str_param(p: &serde_json::Value, k: &str) -> String {
@@ -770,6 +908,101 @@ async fn rpc(
             id,
             serde_json::to_value(st.lsp.status().await).unwrap_or_default(),
         ),
+        methods::FS_OUTLINE => {
+            let (root, rel) = (st.repo.clone(), str_param(&p, "path"));
+            let content = p.get("content").and_then(|v| v.as_str()).map(String::from);
+            ws_reply(
+                id,
+                blocking(move || {
+                    let text = match content {
+                        Some(c) => {
+                            crate::workspace::safe_path(&root, &rel)?;
+                            c
+                        }
+                        None => crate::workspace::read(&root, &rel)?.content,
+                    };
+                    Ok(crate::outline::outline(
+                        &text,
+                        crate::outline::language_of(&rel),
+                    ))
+                })
+                .await,
+            )
+        }
+        methods::SEARCH_SYMBOLS => {
+            let (root, q) = (st.repo.clone(), str_param(&p, "query"));
+            ws_reply(
+                id,
+                blocking(move || {
+                    let files = crate::workspace::files(&root)?;
+                    Ok(crate::outline::workspace_symbols(&root, &files, &q, 100))
+                })
+                .await,
+            )
+        }
+        methods::GIT_LINE_CHANGES => {
+            let (root, rel) = (st.repo.clone(), str_param(&p, "path"));
+            ws_reply(
+                id,
+                blocking(move || crate::workspace::git_line_changes(&root, &rel)).await,
+            )
+        }
+        methods::CHECKPOINT_LIST => {
+            let root = st.repo.clone();
+            ws_reply(
+                id,
+                blocking(move || {
+                    let cp = pcode_core::Checkpoints::open(&root);
+                    Ok(cp
+                        .list()
+                        .into_iter()
+                        .take(30)
+                        .map(|t| turn_json(&t, &cp.changes(t.turn)))
+                        .collect::<Vec<_>>())
+                })
+                .await,
+            )
+        }
+        methods::CHECKPOINT_UNDO | methods::CHECKPOINT_REDO => {
+            let root = st.repo.clone();
+            let redo = req.method == methods::CHECKPOINT_REDO;
+            let r = blocking(move || {
+                let mut cp = pcode_core::Checkpoints::open(&root);
+                let t = if redo { cp.redo() } else { cp.undo() }.map_err(|e| e.to_string())?;
+                Ok(t.map(|t| turn_json(&t, &cp.changes(t.turn))))
+            })
+            .await;
+            st.emit(Event::FilesChanged {});
+            ws_reply(id, r)
+        }
+        methods::WORKSPACE_ACTIVITY => {
+            let root = st.repo.clone();
+            let n = p.get("limit").and_then(|v| v.as_u64()).unwrap_or(200) as usize;
+            ws_reply(
+                id,
+                blocking(move || {
+                    let (items, intact) = crate::workspace::activity(&root, n.min(2000));
+                    Ok(serde_json::json!({"items": items, "intact": intact}))
+                })
+                .await,
+            )
+        }
+        methods::ASSIST_PROMPT | methods::ASSIST_RUN => {
+            let root = st.repo.clone();
+            let run = req.method == methods::ASSIST_RUN;
+            let pp = p.clone();
+            let prompt = blocking(move || assist_prompt(&root, &pp)).await;
+            match prompt {
+                Err(e) => rpc_err(id, -32000, e),
+                Ok(prompt) if !run => rpc_ok(id, serde_json::Value::String(prompt)),
+                Ok(prompt) => ws_reply(
+                    id,
+                    crate::assist::ask(&st.pcode_bin, &st.repo, &prompt)
+                        .await
+                        .map(|t| serde_json::json!({"text": t})),
+                ),
+            }
+        }
         methods::TERMINAL_RUN => ws_reply(
             id,
             st.run_terminal(str_param(&p, "command"))
@@ -1260,5 +1493,132 @@ echo '{"tipo":"fin","problema":null}'
             t.contains(r#"\"permitir\":true"#),
             "la decisión llegó al agente: {t}"
         );
+    }
+
+    #[tokio::test]
+    async fn rpc_esquema_simbolos_puntos_de_control_actividad_y_asistente() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::write(
+            root.join("lib.rs"),
+            "pub struct Caja;\nimpl Caja {\n    pub fn abre(&self) {}\n}\n",
+        )
+        .unwrap();
+        let st = AppState::new(root.clone(), "/bin/true".into(), None);
+        let a = router(st);
+        let (_, v) = call(
+            &a,
+            "fs.outline",
+            serde_json::json!({"path": "lib.rs"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"][2]["name"], "abre", "{v}");
+        assert_eq!(v["result"][2]["depth"], 1);
+        let (_, v) = call(
+            &a,
+            "fs.outline",
+            serde_json::json!({"path": "x.py", "content": "def f():\n    pass\n"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"][0]["name"], "f", "contenido sin guardar: {v}");
+        let (_, v) = call(
+            &a,
+            "search.symbols",
+            serde_json::json!({"query": "abr"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"][0]["path"], "lib.rs", "{v}");
+
+        // Un turno del agente con punto de control, y deshacerlo por RPC.
+        let mut cp = pcode_core::Checkpoints::open(&root);
+        cp.begin_turn("renombra");
+        cp.save("lib.rs").unwrap();
+        std::fs::write(root.join("lib.rs"), "pub struct Cofre;\n").unwrap();
+        let (_, v) = call(&a, "checkpoint.list", serde_json::json!({}), None).await;
+        assert_eq!(v["result"][0]["label"], "renombra", "{v}");
+        assert_eq!(v["result"][0]["changes"][0]["path"], "lib.rs");
+        let (_, v) = call(&a, "checkpoint.undo", serde_json::json!({}), None).await;
+        assert_eq!(v["result"]["undone"], true, "{v}");
+        assert!(
+            std::fs::read_to_string(root.join("lib.rs"))
+                .unwrap()
+                .contains("Caja")
+        );
+        let (_, v) = call(&a, "checkpoint.undo", serde_json::json!({}), None).await;
+        assert!(v["result"].is_null());
+        let (_, v) = call(&a, "checkpoint.redo", serde_json::json!({}), None).await;
+        assert_eq!(v["result"]["undone"], false);
+
+        let (_, v) = call(&a, "workspace.activity", serde_json::json!({}), None).await;
+        assert_eq!(v["result"]["intact"], true, "{v}");
+        let (_, v) = call(
+            &a,
+            "assist.prompt",
+            serde_json::json!({"kind": "arreglar", "path": "lib.rs",
+                "diagnostics": [{"line": 0, "message": "nombre raro", "severity": 2}]}),
+            None,
+        )
+        .await;
+        assert!(v["result"].as_str().unwrap().contains("nombre raro"), "{v}");
+        let (_, v) = call(
+            &a,
+            "assist.prompt",
+            serde_json::json!({"kind": "otro"}),
+            None,
+        )
+        .await;
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("desconocido")
+        );
+        let (_, v) = call(
+            &a,
+            "git.lineChanges",
+            serde_json::json!({"path": "lib.rs"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"], serde_json::json!([]), "sin git, sin marcas");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn cancelar_mata_tambien_a_los_nietos() {
+        let mut child = tokio::process::Command::new("sh")
+            .args(["-c", "sleep 30 & sleep 30; true"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let mut found = vec![];
+        for _ in 0..50 {
+            found = descendants(pid);
+            if found.len() >= 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(found.len() >= 2, "{found:?}");
+        let out = child.stdout.take().unwrap();
+        let reader = tokio::spawn(async move {
+            let mut r = BufReader::new(out);
+            let mut s = String::new();
+            while r.read_line(&mut s).await.unwrap_or(0) > 0 {}
+        });
+        let t0 = std::time::Instant::now();
+        kill_tree(&mut child).await;
+        join_readers(reader, tokio::spawn(async {})).await;
+        assert!(t0.elapsed() < Duration::from_secs(5));
+        for p in found {
+            let alive = std::fs::read_to_string(format!("/proc/{p}/stat"))
+                .map(|s| !s.contains(") Z "))
+                .unwrap_or(false);
+            assert!(!alive, "el proceso {p} sigue vivo");
+        }
     }
 }

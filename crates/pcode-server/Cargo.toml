@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 pcode-protocol = { path = "../pcode-protocol" }
+pcode-core = { path = "../pcode-core" }
 pcode-policy = { path = "../pcode-policy" }
 pcode-tools = { path = "../pcode-tools" }
 pcode-lsp = { path = "../pcode-lsp" }

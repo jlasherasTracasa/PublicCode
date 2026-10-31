@@ -4,6 +4,7 @@ import type { DiagnosticDto } from "./DiagnosticDto";
 import type { SessionInfo } from "./SessionInfo";
 import type { TaskDto } from "./TaskDto";
 import type { TranscriptEntry } from "./TranscriptEntry";
+import type { TurnChangeDto } from "./TurnChangeDto";
 
 /**
  * Evento del servidor.
@@ -68,4 +69,12 @@ session: bigint,
 /**
  * Texto nuevo.
  */
-text: string, };
+text: string, } | { "tipo": "turnFinished", 
+/**
+ * Sesión.
+ */
+session: bigint, 
+/**
+ * Archivos cambiados en el turno.
+ */
+changes: Array<TurnChangeDto>, };
