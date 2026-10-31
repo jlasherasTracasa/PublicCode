@@ -230,9 +230,11 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
             pending: pending.clone(),
             always: always.clone(),
         }));
+    let context_limit = agent.context_limit();
     let agent = Arc::new(Mutex::new(agent));
 
     let mut app = App::new(opts.lang, opts.theme, opts.model);
+    app.context_limit = context_limit;
     for n in opts.notices {
         app.entries.push(crate::Entry::Info(format!("· {n}")));
     }
@@ -310,6 +312,8 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                     turn = None;
                     if let Ok(a) = agent.try_lock() {
                         note = changes_summary(lang, &a.turn_changes());
+                        app.context_used = a.context_tokens();
+                        app.context_limit = a.context_limit();
                     }
                     let ev = Event::TurnDone {
                         problem: problem(lang, &report),

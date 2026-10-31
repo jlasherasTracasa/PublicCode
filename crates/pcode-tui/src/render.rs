@@ -307,22 +307,40 @@ pub fn render(app: &App, f: &mut Frame) {
         }
     }
 
-    // Barra de estado: tokens y atajos.
+    // Barra de estado: tokens, medidor de contexto y atajos.
     let left = format!(
         " ↑{} ↓{} {} ",
         app.usage.input_tokens,
         app.usage.output_tokens,
         t(app.lang, "tokens")
     );
-    let right = t(app.lang, "hint");
-    let pad =
-        (status.width as usize).saturating_sub(left.chars().count() + right.chars().count() + 1);
-    let bar = if pad > 0 {
-        format!("{left}{}{right} ", " ".repeat(pad))
-    } else {
-        left
-    };
-    f.render_widget(Paragraph::new(Span::styled(bar, th.dimmed())), status);
+    let mut spans = vec![Span::styled(left.clone(), th.dimmed())];
+    let mut used = left.chars().count();
+    if app.context_limit > 0 {
+        // ▰▰▱▱▱▱▱▱ 23 %: se avisa en amarillo a partir del 75 % (al 100 % se compacta sola).
+        let pct = app.context_percent();
+        let filled = ((pct.min(100) as usize) * 8).div_ceil(100);
+        let gauge = format!("{}{}", "▰".repeat(filled), "▱".repeat(8 - filled));
+        let label = format!(" {} {pct} % ", t(app.lang, "context"));
+        let style = if pct >= 75 { th.warning() } else { th.strong() };
+        used += 3 + gauge.chars().count() + label.chars().count();
+        spans.push(Span::styled("·  ", th.dimmed()));
+        spans.push(Span::styled(gauge, style));
+        spans.push(Span::styled(label, th.dimmed()));
+    }
+    let width = status.width as usize;
+    let right = [t(app.lang, "hint"), t(app.lang, "hint_short")]
+        .into_iter()
+        .find(|h| used + h.chars().count() + 2 <= width)
+        .unwrap_or("");
+    let pad = width.saturating_sub(used + right.chars().count() + 1);
+    if pad > 0 {
+        spans.push(Span::styled(
+            format!("{}{right} ", " ".repeat(pad)),
+            th.dimmed(),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), status);
 
     // Aprobación.
     if let Some((action, reason)) = &app.approval {
@@ -425,6 +443,30 @@ mod tests {
         assert!(s[20].starts_with("╭ Mensaje"), "{}", s[20]);
         assert!(s[22].starts_with("╰"), "{}", s[22]);
         assert!(s[23].starts_with(" ↑0 ↓0 tokens"), "{}", s[23]);
+    }
+
+    #[test]
+    fn medidor_de_contexto_en_la_barra_80x24_y_120x40() {
+        for (w, h) in [(80u16, 24u16), (120, 40)] {
+            let mut a = App::new(Lang::Es, Theme::by_name("oscuro", true).unwrap(), "m");
+            a.context_limit = 160_000;
+            a.context_used = 40_000;
+            let s = screen(&a, w, h);
+            let bar = &s[h as usize - 1];
+            assert!(bar.contains("▰▰▱▱▱▱▱▱ contexto 25 %"), "{bar}");
+            assert!(
+                bar.trim_end().ends_with("Ctrl+C sale"),
+                "atajos al final: {bar}"
+            );
+            a.context_used = 150_000;
+            let s = screen(&a, w, h);
+            assert!(s[h as usize - 1].contains("▰▰▰▰▰▰▰▰ contexto 93 %"));
+        }
+        let a = App::new(Lang::Es, Theme::by_name("oscuro", true).unwrap(), "m");
+        assert!(
+            !screen(&a, 80, 24)[23].contains("contexto"),
+            "sin límite no hay medidor"
+        );
     }
 
     #[test]
@@ -570,6 +612,8 @@ mod tests {
         )));
         a.usage.input_tokens = 3120;
         a.usage.output_tokens = 410;
+        a.context_used = 41_200;
+        a.context_limit = 160_000;
         a.input = "ahora documenta el módulo".into();
         let html = to_html(&a, 100, 30, "#0b1626", "#e3ecfb");
         assert!(

@@ -145,6 +145,10 @@ pub struct App {
     pub model: String,
     /// Tokens acumulados.
     pub usage: Usage,
+    /// Tokens que ocupa el contexto en la última petición.
+    pub context_used: u64,
+    /// Límite a partir del que se compacta (0 = sin medidor).
+    pub context_limit: u64,
     /// Fotograma del indicador de actividad.
     pub spinner: usize,
     /// Modo plan (el agente solo lee y propone).
@@ -155,6 +159,25 @@ pub struct App {
     pub suggestions: Vec<String>,
     /// Sugerencia seleccionada.
     pub suggestion: usize,
+}
+
+/// Tokens en corto: `950`, `3.1k`, `1.2M`.
+pub fn human_tokens(n: u64) -> String {
+    match n {
+        0..1_000 => n.to_string(),
+        1_000..1_000_000 => format!("{:.1}k", n as f64 / 1_000.0).replace(".0k", "k"),
+        _ => format!("{:.1}M", n as f64 / 1_000_000.0).replace(".0M", "M"),
+    }
+}
+
+impl App {
+    /// Porcentaje del contexto ocupado respecto al límite de compactación (0 si no hay límite).
+    pub fn context_percent(&self) -> u64 {
+        (self.context_used * 100)
+            .checked_div(self.context_limit)
+            .unwrap_or(0)
+            .min(999)
+    }
 }
 
 /// Puntuación difusa de `pattern` en `candidate` (subsecuencia, sin distinguir mayúsculas), con
@@ -234,6 +257,8 @@ impl App {
             expand_tools: false,
             model: model.into(),
             usage: Usage::default(),
+            context_used: 0,
+            context_limit: 0,
             spinner: 0,
             plan: false,
             files: vec![],
@@ -607,6 +632,15 @@ impl App {
                         self.usage.cached_input_tokens,
                         self.usage.output_tokens
                     )));
+                    if self.context_limit > 0 {
+                        self.entries.push(Entry::Info(format!(
+                            "{}: {} / {} ({} %)",
+                            t(self.lang, "context"),
+                            human_tokens(self.context_used),
+                            human_tokens(self.context_limit),
+                            self.context_percent()
+                        )));
+                    }
                     vec![]
                 }
                 _ => {
@@ -757,6 +791,24 @@ mod tests {
         a.update(Event::Cancelled);
         assert!(!a.busy);
         assert!(matches!(a.entries.last(), Some(Entry::Error(_))));
+    }
+
+    #[test]
+    fn tokens_en_corto_y_porcentaje_de_contexto() {
+        assert_eq!(human_tokens(950), "950");
+        assert_eq!(human_tokens(3_120), "3.1k");
+        assert_eq!(human_tokens(160_000), "160k");
+        assert_eq!(human_tokens(1_250_000), "1.2M");
+        let mut a = app();
+        assert_eq!(a.context_percent(), 0);
+        a.context_limit = 160_000;
+        a.context_used = 40_000;
+        assert_eq!(a.context_percent(), 25);
+        typed(&mut a, "/uso");
+        a.update(key(KeyCode::Enter));
+        assert!(
+            matches!(a.entries.last(), Some(Entry::Info(t)) if t.contains("40k / 160k (25 %)"))
+        );
     }
 
     #[test]

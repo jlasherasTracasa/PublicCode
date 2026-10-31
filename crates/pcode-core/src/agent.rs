@@ -194,6 +194,14 @@ impl Agent {
     pub fn read_only(&self) -> bool {
         self.read_only
     }
+    /// Tokens de entrada de la última petición al modelo: lo que ocupa ahora el contexto.
+    pub fn context_tokens(&self) -> u64 {
+        self.last_input_tokens
+    }
+    /// A partir de cuántos tokens de contexto se compacta la conversación (0 = nunca).
+    pub fn context_limit(&self) -> u64 {
+        self.cfg.budget.max_context_tokens
+    }
     /// Cambia el modelo para las siguientes peticiones.
     pub fn set_model(&mut self, model: impl Into<String>) {
         self.cfg.model = model.into();
