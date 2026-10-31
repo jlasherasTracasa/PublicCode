@@ -88,13 +88,37 @@ pub struct Sandbox {
     pub(crate) spec: SandboxSpec,
     pub(crate) root: PathBuf,
     pub(crate) state: PathBuf,
+    /// Copia de trabajo con `git worktree` (N0) en lugar de overlay (N1).
+    pub(crate) n0: bool,
 }
 
 static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Sandbox {
-    /// Crea la capa (no ejecuta nada todavía).
+    /// Crea la sandbox con el nivel por defecto del proceso: N1 (overlay) o, si la CLI lo pidió
+    /// con [`crate::set_default_n0`], N0 (copia de trabajo con `git worktree`).
     pub fn create(spec: SandboxSpec) -> Result<Sandbox, SandboxError> {
+        if crate::worktree::default_n0() {
+            Self::create_n0(spec)
+        } else {
+            Self::create_n1(spec)
+        }
+    }
+
+    /// Sandbox N0: copia de trabajo con `git worktree` (sin aislamiento de red ni disco).
+    pub fn create_n0(spec: SandboxSpec) -> Result<Sandbox, SandboxError> {
+        let mut sb = Self::create_n1(spec)?;
+        sb.n0 = true;
+        std::fs::write(sb.state.join("nivel"), "N0")?;
+        if let Err(e) = crate::worktree::create(&sb.root, &sb.state) {
+            let _ = std::fs::remove_dir_all(&sb.state);
+            return Err(e);
+        }
+        Ok(sb)
+    }
+
+    /// Sandbox N1: overlay sobre el repo en namespaces de usuario.
+    pub fn create_n1(spec: SandboxSpec) -> Result<Sandbox, SandboxError> {
         let root = std::fs::canonicalize(&spec.root)?;
         let state = match &spec.state {
             Some(s) => {
@@ -119,7 +143,12 @@ impl Sandbox {
             std::fs::create_dir_all(state.join(s))?;
         }
         std::fs::write(state.join("root"), root.to_string_lossy().as_bytes())?;
-        Ok(Sandbox { spec, root, state })
+        Ok(Sandbox {
+            spec,
+            root,
+            state,
+            n0: false,
+        })
     }
     /// Reabre una sandbox ya creada a partir de su directorio de estado.
     pub fn open_existing(state: &Path) -> Result<Sandbox, SandboxError> {
@@ -134,7 +163,17 @@ impl Sandbox {
             writable: vec![],
             timeout: Duration::from_secs(3600),
         };
-        Ok(Sandbox { spec, root, state })
+        let n0 = std::fs::read_to_string(state.join("nivel")).is_ok_and(|s| s.trim() == "N0");
+        Ok(Sandbox {
+            spec,
+            root,
+            state,
+            n0,
+        })
+    }
+    /// Nivel: `N0` o `N1`.
+    pub fn level(&self) -> &'static str {
+        if self.n0 { "N0" } else { "N1" }
     }
     /// Directorio de estado.
     pub fn state_dir(&self) -> &Path {
@@ -159,6 +198,9 @@ impl Sandbox {
         argv: &[String],
         env: &[(String, String)],
     ) -> Result<(RunStatus, String), SandboxError> {
+        if self.n0 {
+            return self.run_worktree(argv, env, true).await;
+        }
         let out = self.state.join("out");
         std::fs::create_dir_all(&out)?;
         let file = out.join("salida.txt");
@@ -185,6 +227,9 @@ impl Sandbox {
         env: &[(String, String)],
         extra: &[PathBuf],
     ) -> Result<RunStatus, SandboxError> {
+        if self.n0 {
+            return Ok(self.run_worktree(argv, env, false).await?.0);
+        }
         if !userns_available() {
             return Err(SandboxError::NoUserns);
         }
@@ -255,6 +300,9 @@ impl Sandbox {
     }
     /// Cambios de la capa (sin lo que git ignora).
     pub fn changes(&self) -> Result<Vec<Change>, SandboxError> {
+        if self.n0 {
+            return self.worktree_changes();
+        }
         let c = read_changes(&self.state.join("upper"), &self.root)?;
         Ok(filter_ignored(&self.root, c)?)
     }

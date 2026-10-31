@@ -43,7 +43,11 @@ impl Sandbox {
     /// Lleva los cambios al repo y borra la capa.
     pub fn apply(self) -> Result<Vec<Change>, SandboxError> {
         let changes = self.changes()?;
-        let up = self.state.join("upper");
+        let up = if self.n0 {
+            crate::worktree::wt_dir(&self.state)
+        } else {
+            self.state.join("upper")
+        };
         for c in &changes {
             let (src, dst) = (up.join(&c.path), self.root.join(&c.path));
             match c.kind {
@@ -60,6 +64,9 @@ impl Sandbox {
     }
     /// Borra la capa sin tocar el repo.
     pub fn discard(self) -> Result<(), SandboxError> {
+        if self.n0 {
+            self.remove_worktree();
+        }
         #[cfg(not(unix))]
         fn fix(_p: &Path) {}
         #[cfg(unix)]
@@ -82,7 +89,11 @@ impl Sandbox {
     }
     /// Diff unificado de un archivo de texto (< 1 MiB).
     pub fn diff(&self, path: &str) -> Result<Option<String>, SandboxError> {
-        let new = self.state.join("upper").join(path);
+        let new = if self.n0 {
+            crate::worktree::wt_dir(&self.state).join(path)
+        } else {
+            self.state.join("upper").join(path)
+        };
         let old = self.root.join(path);
         let Ok(md) = std::fs::metadata(&new) else {
             return Ok(None);

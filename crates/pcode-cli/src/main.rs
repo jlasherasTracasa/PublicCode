@@ -81,6 +81,12 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
+    if matches!(
+        cli.command,
+        Some(Cmd::Flow(_)) | Some(Cmd::Sandbox(_)) | Some(Cmd::Run(_))
+    ) {
+        choose_sandbox_level();
+    }
     match cli.command {
         Some(Cmd::Tui(a)) => std::process::exit(chat::tui(a).await?),
         Some(Cmd::Chat(a)) => std::process::exit(chat::chat(a).await?),
@@ -154,6 +160,22 @@ async fn main() -> anyhow::Result<()> {
             println!();
             Ok(())
         }
+    }
+}
+
+/// Elige el nivel de las mini sandboxes: N1 (overlay en namespaces de usuario) si se puede, o
+/// N0 (copia de trabajo con `git worktree`) si se pide (`PCODE_SANDBOX=N0` o
+/// `[sandbox] nivel_por_defecto = "N0"`) o si el sistema no tiene namespaces (Windows).
+fn choose_sandbox_level() {
+    let wanted = std::env::var("PCODE_SANDBOX").ok().or_else(|| {
+        pcode_config::Config::load_layered(std::path::Path::new("pcode.toml"))
+            .ok()
+            .map(|(c, _)| c.sandbox.default_level)
+    });
+    let n0 = wanted.as_deref() == Some("N0") || !pcode_sandbox::userns_available();
+    pcode_sandbox::set_default_n0(n0);
+    if n0 {
+        tracing::info!("sandbox N0 (git worktree): sin aislamiento de red ni de disco");
     }
 }
 

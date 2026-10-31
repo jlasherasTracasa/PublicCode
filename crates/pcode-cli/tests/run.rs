@@ -297,3 +297,131 @@ fn flow_run_integra_tareas_con_dependencias() {
                 .and(predicate::str::contains("| dos | integrada | 1 |")),
         );
 }
+
+#[test]
+fn n0_flow_run_integra_tareas_con_dependencias() {
+    let d = tempfile::tempdir().unwrap();
+    let g = |a: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(d.path())
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(a)
+            .output()
+            .unwrap()
+    };
+    g(&["init", "-q", "-b", "main"]);
+    std::fs::write(
+        d.path().join("pcode.toml"),
+        "[backends.glm]\ntipo = \"modelo\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(d.path().join("tareas")).unwrap();
+    std::fs::write(
+        d.path().join("tareas/uno.md"),
+        "<!-- acepta: test -f uno.txt -->\n<!-- modo: aislado -->\n# Uno\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("tareas/dos.md"),
+        "<!-- acepta: test -f dos.txt -->\n<!-- modo: aislado -->\n<!-- depende: uno -->\n# Dos\n",
+    )
+    .unwrap();
+    g(&["add", "-A"]);
+    g(&["commit", "-q", "-m", "init"]);
+    // Cada `pcode run` dentro de la sandbox arranca el guion desde el principio: escribe ambos archivos.
+    let s = script(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"escribir","arguments":{"path":"uno.txt","content":"1"}},
+                            {"id":"2","name":"escribir","arguments":{"path":"dos.txt","content":"2"}}])
+            ),
+            resp("listo", json!([]))
+        ]),
+    );
+    pcode(d.path(), &s)
+        .env("PCODE_SANDBOX", "N0")
+        .args(["flow", "run", "--backend", "glm", "--paralelo", "1"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("integradas: 2"));
+    assert!(d.path().join("uno.txt").exists() && d.path().join("dos.txt").exists());
+    let log = String::from_utf8_lossy(&g(&["log", "--format=%s"]).stdout).to_string();
+    assert!(log.contains("uno: Uno"), "{log}");
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .current_dir(d.path())
+        .args(["flow", "estado"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("| uno | integrada | 1 |")
+                .and(predicate::str::contains("| dos | integrada | 1 |")),
+        );
+}
+
+#[test]
+fn n0_backend_y_aplicar_con_git_worktree() {
+    let d = tempfile::tempdir().unwrap();
+    let g = |a: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(d.path())
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(a)
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    g(&["init", "-q"]);
+    std::fs::write(
+        d.path().join("pcode.toml"),
+        "[backends.glm]\ntipo = \"modelo\"\n",
+    )
+    .unwrap();
+    g(&["add", "pcode.toml"]);
+    g(&["commit", "-qm", "init"]);
+    let s = script(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"escribir","arguments":{"path":"n0.txt","content":"desde N0"}}])
+            ),
+            resp("listo en N0", json!([]))
+        ]),
+    );
+    pcode(d.path(), &s)
+        .env("PCODE_SANDBOX", "N0")
+        .args([
+            "run",
+            "x",
+            "--backend",
+            "glm",
+            "--acepta",
+            "git --version",
+            "--aplicar-si-acepta",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("listo en N0"));
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("n0.txt")).unwrap(),
+        "desde N0"
+    );
+    let wt = std::process::Command::new("git")
+        .arg("-C")
+        .arg(d.path())
+        .args(["worktree", "list"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&wt.stdout).lines().count(),
+        1,
+        "sin worktrees colgados"
+    );
+}

@@ -116,9 +116,9 @@ pub fn doctor(project_cfg: &Path) -> i32 {
         if n1 {
             "disponible (namespaces de usuario)"
         } else if cfg!(windows) {
-            "no en Windows: `pcode run --backend` y `pcode flow` necesitan WSL2"
+            "no en Windows: se usa N0 (git worktree, sin aislar red ni disco); N1 dentro de WSL2"
         } else {
-            "no disponible: activa los namespaces de usuario sin privilegios"
+            "no disponible: se usa N0 (git worktree); para N1 activa los namespaces de usuario"
         },
     );
     let agents: Vec<&str> = ["claude", "gemini", "copilot", "opencode"]
