@@ -42,6 +42,32 @@ struct PolicyToml {
     policy: Capabilities,
 }
 
+/// Crea `.pcode/` (auditoría, sesiones) y, si el proyecto es un repo git, lo añade a
+/// `.git/info/exclude` para que no aparezca como cambio (es local: no se versiona). Solo para el
+/// uso interactivo, nunca dentro de una sandbox.
+pub fn ensure_state_dir(root: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(root.join(".pcode"))?;
+    let git = root.join(".git");
+    if git.is_dir() {
+        let info = git.join("info");
+        let exclude = info.join("exclude");
+        let current = std::fs::read_to_string(&exclude).unwrap_or_default();
+        if !current
+            .lines()
+            .any(|l| l.trim() == ".pcode/" || l.trim() == ".pcode")
+        {
+            std::fs::create_dir_all(&info)?;
+            let sep = if current.is_empty() || current.ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
+            std::fs::write(&exclude, format!("{current}{sep}# PublicCode\n.pcode/\n"))?;
+        }
+    }
+    Ok(())
+}
+
 /// Capacidades de la sección `[politica]` de `pcode.toml` (vacías si falta o no se entiende).
 pub fn load_capabilities(path: &std::path::Path) -> Capabilities {
     match std::fs::read_to_string(path) {
@@ -69,6 +95,7 @@ pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
     let provider = sel.provider.clone();
     let root = std::env::current_dir()?;
     let model = pick_model(a.model.as_deref(), &cfg, &sel);
+    // Sin tocar `.git`: `pcode run` también corre dentro de las mini sandboxes de los flujos.
     let audit = AuditLog::open(&root.join(".pcode/audit.jsonl"))?;
     let store = Store::open(&root.join(".pcode/pcode.db"))?;
     let sid = store.create_session(&model, &a.task)?;
@@ -112,4 +139,19 @@ pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
         report.steps, report.usage.input_tokens, report.usage.output_tokens
     );
     Ok(code)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn pcode_queda_excluido_de_git_una_sola_vez() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join(".git/info")).unwrap();
+        std::fs::write(d.path().join(".git/info/exclude"), "*.log").unwrap();
+        super::ensure_state_dir(d.path()).unwrap();
+        super::ensure_state_dir(d.path()).unwrap();
+        let ex = std::fs::read_to_string(d.path().join(".git/info/exclude")).unwrap();
+        assert_eq!(ex, "*.log\n# PublicCode\n.pcode/\n");
+        assert!(d.path().join(".pcode").is_dir());
+    }
 }

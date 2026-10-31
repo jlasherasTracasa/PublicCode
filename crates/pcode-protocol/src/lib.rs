@@ -163,6 +163,14 @@ pub enum Event {
     },
     /// Cambiaron archivos del proyecto (para refrescar el explorador y git).
     FilesChanged {},
+    /// Trozo de texto del asistente según llega (streaming); el mensaje completo llega después
+    /// como `transcript` con una entrada `assistant`.
+    AssistantDelta {
+        /// Sesión.
+        session: i64,
+        /// Texto nuevo.
+        text: String,
+    },
 }
 
 /// Entrada del explorador de archivos.
@@ -271,6 +279,8 @@ pub mod methods {
     pub const SESSION_TRANSCRIPT: &str = "session.transcript";
     /// Cancelar una sesión.
     pub const SESSION_CANCEL: &str = "session.cancel";
+    /// Manda otro mensaje a una sesión de conversación: `{session, text}`.
+    pub const SESSION_SEND: &str = "session.send";
     /// Aprobaciones pendientes.
     pub const APPROVALS_LIST: &str = "approvals.list";
     /// Decidir una aprobación.

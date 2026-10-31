@@ -51,4 +51,12 @@ id: bigint,
 /**
  * Código de salida (None si la mató una señal o se detuvo).
  */
-code: number | null, } | { "tipo": "filesChanged", };
+code: number | null, } | { "tipo": "filesChanged", } | { "tipo": "assistantDelta", 
+/**
+ * Sesión.
+ */
+session: bigint, 
+/**
+ * Texto nuevo.
+ */
+text: string, };

@@ -121,3 +121,45 @@ fn chat_deniega_en_no_interactivo_lo_que_pide_confirmacion() {
     .success()
     .stdout(predicate::str::contains("denegado por la política"));
 }
+
+#[test]
+fn chat_jsonl_protocolo_con_aprobacion() {
+    let d = tempfile::tempdir().unwrap();
+    let out = pcode(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"bash","arguments":{"command":"git push origin main"}}])
+            ),
+            resp("hecho", json!([])),
+            resp("segundo", json!([])),
+        ]),
+    )
+    .args(["chat", "--formato", "jsonl"])
+    .write_stdin("{\"mensaje\":\"sube\"}\n{\"aprobacion\":1,\"permitir\":false}\notro\n")
+    .assert()
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    let lines: Vec<serde_json::Value> = String::from_utf8_lossy(&out)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{l}: {e}")))
+        .collect();
+    let tipos: Vec<&str> = lines.iter().map(|v| v["tipo"].as_str().unwrap()).collect();
+    assert!(tipos.contains(&"aprobacion"), "{tipos:?}");
+    let ap = lines.iter().find(|v| v["tipo"] == "aprobacion").unwrap();
+    assert!(ap["motivo"].as_str().unwrap().contains("git push"));
+    let res = lines.iter().find(|v| v["tipo"] == "resultado").unwrap();
+    assert_eq!(
+        res["error"], true,
+        "la aprobación denegada llega como error"
+    );
+    assert_eq!(tipos.iter().filter(|t| **t == "fin").count(), 2);
+    assert!(
+        lines
+            .iter()
+            .any(|v| v["tipo"] == "texto" && v["texto"] == "segundo")
+    );
+}

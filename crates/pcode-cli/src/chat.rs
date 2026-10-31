@@ -38,6 +38,10 @@ pub struct ChatArgs {
     /// Archivo de configuración.
     #[arg(long = "config", default_value = "pcode.toml")]
     pub config: PathBuf,
+    /// `texto` (por defecto) o `jsonl`: protocolo de líneas JSON por stdin y stdout para que otro
+    /// programa (el demonio, un IDE) maneje la conversación.
+    #[arg(long = "formato", default_value = "texto")]
+    pub format: String,
 }
 
 impl ChatArgs {
@@ -51,6 +55,7 @@ impl ChatArgs {
             approve_all: false,
             max_steps: 100,
             config: PathBuf::from("pcode.toml"),
+            format: "texto".into(),
         }
     }
 }
@@ -258,7 +263,7 @@ fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
     let model = pick_model(a.model.as_deref(), &cfg, &sel);
     let root = std::env::current_dir()?;
     let sys = system_prompt(&cfg, &root);
-    std::fs::create_dir_all(root.join(".pcode")).context("no se pudo crear .pcode")?;
+    crate::run::ensure_state_dir(&root).context("no se pudo crear .pcode")?;
     let audit = AuditLog::open(&root.join(".pcode/audit.jsonl"))?;
     let store = Store::open(&root.join(".pcode/pcode.db"))?;
     let mut persist = Persist {
@@ -357,8 +362,166 @@ pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
     Ok(0)
 }
 
+/// Escribe una línea JSON en stdout (protocolo `--formato jsonl`).
+fn emit_json(v: serde_json::Value) {
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{v}");
+    let _ = out.flush();
+}
+
+/// Traduce un evento del agente a una línea del protocolo `jsonl`.
+fn agent_json(e: &AgentEvent) -> serde_json::Value {
+    use serde_json::json;
+    match e {
+        AgentEvent::TextDelta(t) => json!({"tipo": "delta", "texto": t}),
+        AgentEvent::Text(t) => json!({"tipo": "texto", "texto": t}),
+        AgentEvent::Info(t) => json!({"tipo": "info", "texto": t}),
+        AgentEvent::ToolCall { name, arguments } => {
+            json!({"tipo": "tool", "nombre": name, "argumentos": arguments})
+        }
+        AgentEvent::ToolResult {
+            name,
+            is_error,
+            content,
+        } => {
+            let cut: String = content.chars().take(8000).collect();
+            json!({"tipo": "resultado", "nombre": name, "error": is_error, "contenido": cut})
+        }
+    }
+}
+
+/// Aprobaciones por el protocolo `jsonl`: emite `{"tipo":"aprobacion",…}` y espera en stdin
+/// `{"aprobacion": id, "permitir": bool}`.
+struct JsonApprover {
+    next: std::sync::atomic::AtomicU64,
+    answers: Arc<std::sync::Mutex<Answers>>,
+    always: AtomicBool,
+}
+
+/// Respuestas de aprobación: las que esperan respuesta y las que llegaron antes de preguntarse
+/// (un cliente rápido o un guion pueden adelantarse).
+#[derive(Default)]
+struct Answers {
+    waiting: std::collections::HashMap<u64, tokio::sync::oneshot::Sender<bool>>,
+    early: std::collections::HashMap<u64, bool>,
+}
+
+#[async_trait::async_trait]
+impl Approver for JsonApprover {
+    async fn ask(&self, action: &str, reason: &str) -> bool {
+        if self.always.load(Ordering::Relaxed) {
+            return true;
+        }
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut a = self.answers.lock().unwrap();
+            match a.early.remove(&id) {
+                Some(allow) => {
+                    let _ = tx.send(allow);
+                }
+                None => {
+                    a.waiting.insert(id, tx);
+                }
+            }
+        }
+        emit_json(
+            serde_json::json!({"tipo": "aprobacion", "id": id, "accion": action, "motivo": reason}),
+        );
+        // Sin respuesta en 30 minutos, se deniega.
+        matches!(
+            tokio::time::timeout(Duration::from_secs(1800), rx).await,
+            Ok(Ok(true))
+        )
+    }
+}
+
+/// `pcode chat --formato jsonl`: cada línea de stdin es un mensaje (`{"mensaje": "…"}` o texto) o
+/// una respuesta de aprobación; cada vuelta termina con `{"tipo":"fin",…}`.
+async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
+    let Prepared {
+        agent,
+        mut history,
+        mut persist,
+        ..
+    } = prepare(&a)?;
+    let answers = Arc::new(std::sync::Mutex::new(Answers::default()));
+    let approver = Arc::new(JsonApprover {
+        next: std::sync::atomic::AtomicU64::new(1),
+        answers: answers.clone(),
+        always: AtomicBool::new(a.approve_all),
+    });
+    let mut agent = agent
+        .with_approver(approver)
+        .with_observer(Arc::new(|e| emit_json(agent_json(e))));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    // Lector de stdin: reparte mensajes y respuestas de aprobación. Termina con EOF.
+    std::thread::spawn(move || {
+        while let Some(line) = read_line() {
+            let line = line.trim().to_string();
+            if line.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<serde_json::Value>(&line) {
+                Ok(v) if v.get("aprobacion").is_some() => {
+                    let id = v["aprobacion"].as_u64().unwrap_or(0);
+                    let allow = v["permitir"].as_bool().unwrap_or(false);
+                    let mut a = answers.lock().unwrap();
+                    match a.waiting.remove(&id) {
+                        Some(s) => {
+                            let _ = s.send(allow);
+                        }
+                        None => {
+                            a.early.insert(id, allow);
+                        }
+                    }
+                }
+                Ok(v) if v.get("mensaje").is_some() => {
+                    let _ = tx.send(v["mensaje"].as_str().unwrap_or_default().to_string());
+                }
+                _ => {
+                    let _ = tx.send(line);
+                }
+            }
+        }
+    });
+    if !a.prompt.is_empty() {
+        let first = a.prompt.join(" ");
+        let r = agent.run_turn(history.clone(), &first).await;
+        history = finish_json_turn(&first, r, &mut persist);
+    }
+    while let Some(msg) = rx.recv().await {
+        let r = agent.run_turn(history.clone(), &msg).await;
+        history = finish_json_turn(&msg, r, &mut persist);
+    }
+    if let Some(sid) = persist.session {
+        let _ = persist.store.finish_session(sid, "chat");
+    }
+    Ok(0)
+}
+
+fn finish_json_turn(user: &str, r: pcode_core::RunReport, persist: &mut Persist) -> Vec<Message> {
+    let problem = match &r.outcome {
+        Outcome::Done { .. } => None,
+        Outcome::Failed(m) => Some(m.clone()),
+        Outcome::BudgetExhausted => Some("presupuesto del mensaje agotado".to_string()),
+        Outcome::Stuck(m) => Some(format!("atascado: {m}")),
+    };
+    emit_json(serde_json::json!({
+        "tipo": "fin",
+        "problema": problem,
+        "entrada": r.usage.input_tokens,
+        "salida": r.usage.output_tokens,
+    }));
+    persist.save(user, &r.transcript);
+    r.transcript
+}
+
 /// Ejecuta el chat y devuelve el código de salida.
 pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
+    if a.format == "jsonl" {
+        return chat_jsonl(a).await;
+    }
     let style = Style::detect();
     let interactive = std::io::stdin().is_terminal();
     let Prepared {

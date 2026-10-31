@@ -34,6 +34,7 @@ pub struct AppState {
     pub approvals: Arc<ApprovalBroker>,
     terminals: Mutex<HashMap<u64, oneshot::Sender<()>>>,
     next_terminal: std::sync::atomic::AtomicU64,
+    inputs: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<tokio::process::ChildStdin>>>>,
 }
 
 impl AppState {
@@ -52,6 +53,7 @@ impl AppState {
             events,
             terminals: Mutex::new(HashMap::new()),
             next_terminal: std::sync::atomic::AtomicU64::new(1),
+            inputs: Mutex::new(HashMap::new()),
         })
     }
     fn emit(&self, e: Event) {
@@ -111,8 +113,238 @@ impl AppState {
         let (ctx, crx) = oneshot::channel();
         self.cancels.lock().unwrap().insert(id, ctx);
         let me = self.clone();
-        tokio::spawn(async move { me.run_session(id, p, crx).await });
+        if p.backend.is_none() && p.accept.is_none() {
+            tokio::spawn(async move { me.run_chat_session(id, p, crx).await });
+        } else {
+            tokio::spawn(async move { me.run_session(id, p, crx).await });
+        }
         info
+    }
+
+    fn state_of(&self, id: i64) -> Option<SessionState> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.id == id)
+            .map(|s| s.state)
+    }
+
+    async fn write_input(&self, id: i64, v: serde_json::Value) -> bool {
+        use tokio::io::AsyncWriteExt;
+        let Some(stdin) = self.inputs.lock().unwrap().get(&id).cloned() else {
+            return false;
+        };
+        let mut w = stdin.lock().await;
+        w.write_all(format!("{v}\n").as_bytes()).await.is_ok() && w.flush().await.is_ok()
+    }
+
+    /// Manda otro mensaje a una sesión de conversación.
+    async fn send(self: &Arc<Self>, id: i64, text: String) -> Result<(), String> {
+        if !self.inputs.lock().unwrap().contains_key(&id) {
+            return Err("esta sesión ya no admite mensajes".into());
+        }
+        if matches!(
+            self.state_of(id),
+            Some(SessionState::Running | SessionState::WaitingApproval)
+        ) {
+            return Err("el agente sigue trabajando: espera a que termine".into());
+        }
+        self.push(id, TranscriptEntry::User { text: text.clone() });
+        self.set_state(id, SessionState::Running);
+        if self
+            .write_input(id, serde_json::json!({"mensaje": text}))
+            .await
+        {
+            Ok(())
+        } else {
+            self.set_state(id, SessionState::Failed);
+            Err("no se pudo mandar el mensaje al agente".into())
+        }
+    }
+
+    /// Sesión de conversación: `pcode chat --formato jsonl`, que admite más mensajes con
+    /// `session.send` y pide las aprobaciones a la cola del demonio.
+    async fn run_chat_session(
+        self: Arc<Self>,
+        id: i64,
+        p: SessionCreateParams,
+        mut cancel: oneshot::Receiver<()>,
+    ) {
+        let mut cmd = tokio::process::Command::new(&self.pcode_bin);
+        cmd.args(["chat", "--formato", "jsonl"])
+            .current_dir(&self.repo)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        if let Some(m) = &p.model {
+            cmd.args(["--modelo", m]);
+        }
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                self.push(
+                    id,
+                    TranscriptEntry::System {
+                        text: format!("no se pudo lanzar pcode: {e}"),
+                    },
+                );
+                self.set_state(id, SessionState::Failed);
+                return;
+            }
+        };
+        if let Some(stdin) = child.stdin.take() {
+            self.inputs
+                .lock()
+                .unwrap()
+                .insert(id, Arc::new(tokio::sync::Mutex::new(stdin)));
+        }
+        self.write_input(id, serde_json::json!({"mensaje": p.task}))
+            .await;
+        let out = child.stdout.take().map(BufReader::new);
+        let err = child.stderr.take().map(BufReader::new);
+        let me = self.clone();
+        let t1 = tokio::spawn(async move {
+            let Some(mut r) = out else { return };
+            let mut buf = String::new();
+            while r.read_line(&mut buf).await.unwrap_or(0) > 0 {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(buf.trim()) {
+                    me.on_chat_event(id, v);
+                }
+                buf.clear();
+            }
+        });
+        let me2 = self.clone();
+        let t2 = tokio::spawn(async move {
+            let Some(mut r) = err else { return };
+            let mut buf = String::new();
+            while r.read_line(&mut buf).await.unwrap_or(0) > 0 {
+                let line = buf.trim_end();
+                if !line.is_empty() {
+                    me2.push(
+                        id,
+                        TranscriptEntry::System {
+                            text: line.to_string(),
+                        },
+                    );
+                }
+                buf.clear();
+            }
+        });
+        let cancelled = tokio::select! {
+            _ = child.wait() => false,
+            _ = &mut cancel => { let _ = child.kill().await; true }
+        };
+        let _ = tokio::join!(t1, t2);
+        self.inputs.lock().unwrap().remove(&id);
+        self.cancels.lock().unwrap().remove(&id);
+        let st = if cancelled {
+            SessionState::Cancelled
+        } else if matches!(
+            self.state_of(id),
+            Some(SessionState::Running | SessionState::WaitingApproval)
+        ) {
+            SessionState::Failed
+        } else {
+            self.state_of(id).unwrap_or(SessionState::Done)
+        };
+        self.set_state(id, st);
+        self.emit(Event::FilesChanged {});
+    }
+
+    fn on_chat_event(self: &Arc<Self>, id: i64, v: serde_json::Value) {
+        let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+        match v["tipo"].as_str().unwrap_or_default() {
+            "delta" => self.emit(Event::AssistantDelta {
+                session: id,
+                text: text("texto"),
+            }),
+            "texto" => self.push(
+                id,
+                TranscriptEntry::Assistant {
+                    text: text("texto"),
+                },
+            ),
+            "info" => self.push(
+                id,
+                TranscriptEntry::System {
+                    text: text("texto"),
+                },
+            ),
+            "tool" => {
+                let a = &v["argumentos"];
+                let brief = ["command", "path", "pattern", "query"]
+                    .iter()
+                    .find_map(|k| a.get(*k).and_then(|x| x.as_str()))
+                    .map(String::from)
+                    .unwrap_or_else(|| a.to_string());
+                self.push(
+                    id,
+                    TranscriptEntry::Output {
+                        text: format!("⏺ {} {}", text("nombre"), brief),
+                    },
+                );
+            }
+            "resultado" => {
+                let c = text("contenido");
+                let mut lines: Vec<&str> = c.lines().take(20).collect();
+                if lines.is_empty() {
+                    lines.push("(sin salida)");
+                }
+                let more = c.lines().count().saturating_sub(20);
+                let mark = if v["error"].as_bool().unwrap_or(false) {
+                    "✗"
+                } else {
+                    "✓"
+                };
+                let mut t = format!("{mark} {}", lines.join("\n"));
+                if more > 0 {
+                    t.push_str(&format!("\n… +{more} líneas"));
+                }
+                self.push(id, TranscriptEntry::Output { text: t });
+            }
+            "aprobacion" => {
+                self.set_state(id, SessionState::WaitingApproval);
+                let me = self.clone();
+                let (action, reason, aid) = (text("accion"), text("motivo"), v["id"].clone());
+                tokio::spawn(async move {
+                    let allowed = me
+                        .approvals
+                        .request(id, &action, &reason, &format!("sesión {id}"))
+                        .await;
+                    me.write_input(
+                        id,
+                        serde_json::json!({"aprobacion": aid, "permitir": allowed}),
+                    )
+                    .await;
+                    if me.state_of(id) == Some(SessionState::WaitingApproval) {
+                        me.set_state(id, SessionState::Running);
+                    }
+                });
+            }
+            "fin" => {
+                let problem = v["problema"].as_str().map(String::from);
+                if let Some(pm) = &problem {
+                    self.push(
+                        id,
+                        TranscriptEntry::System {
+                            text: format!("✗ {pm}"),
+                        },
+                    );
+                }
+                self.set_state(
+                    id,
+                    if problem.is_some() {
+                        SessionState::Failed
+                    } else {
+                        SessionState::Done
+                    },
+                );
+                self.emit(Event::FilesChanged {});
+            }
+            _ => {}
+        }
     }
 
     async fn run_session(
@@ -456,6 +688,10 @@ async fn rpc(
             st.emit(Event::FilesChanged {});
             ws_reply(id, r)
         }
+        methods::SESSION_SEND => {
+            let sid = p.get("session").and_then(|v| v.as_i64()).unwrap_or(-1);
+            ws_reply(id, st.send(sid, str_param(&p, "text")).await.map(|_| true))
+        }
         methods::TERMINAL_RUN => ws_reply(
             id,
             st.run_terminal(str_param(&p, "command"))
@@ -639,7 +875,7 @@ mod tests {
         let (_, v) = call(
             &a,
             "session.create",
-            serde_json::json!({"task":"haz algo"}),
+            serde_json::json!({"task":"haz algo","accept":"true"}),
             None,
         )
         .await;
@@ -839,5 +1075,104 @@ mod tests {
         }
         assert!(out.contains("desde-terminal"), "{out}");
         assert_eq!(code, Some(3));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sesion_de_conversacion_con_aprobacion_y_segundo_mensaje() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        // Un `pcode chat --formato jsonl` falso: responde, pide una aprobación, repite lo que
+        // recibe y atiende un segundo mensaje.
+        let fake = d.path().join("pcode-falso");
+        std::fs::write(
+            &fake,
+            r#"#!/bin/sh
+read primero
+echo '{"tipo":"delta","texto":"ho"}'
+echo '{"tipo":"texto","texto":"hola"}'
+echo '{"tipo":"tool","nombre":"bash","argumentos":{"command":"git push"}}'
+echo '{"tipo":"aprobacion","id":1,"accion":"bash git push","motivo":"orden con efectos"}'
+read respuesta
+echo "{\"tipo\":\"info\",\"texto\":$(printf '%s' "$respuesta" | sed 's/"/\\"/g; s/^/"/; s/$/"/')}"
+echo '{"tipo":"resultado","nombre":"bash","error":false,"contenido":"ok"}'
+echo '{"tipo":"fin","problema":null}'
+read segundo
+echo '{"tipo":"texto","texto":"segunda"}'
+echo '{"tipo":"fin","problema":null}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let st = AppState::new(d.path().to_path_buf(), fake, None);
+        let a = router(st.clone());
+        let mut rx = st.events.subscribe();
+        let (_, v) = call(
+            &a,
+            "session.create",
+            serde_json::json!({"task": "sube"}),
+            None,
+        )
+        .await;
+        let sid = v["result"]["id"].as_i64().unwrap();
+        async fn wait_for(
+            rx: &mut broadcast::Receiver<Event>,
+            mut f: impl FnMut(&Event) -> bool,
+        ) -> bool {
+            for _ in 0..100 {
+                if let Ok(Ok(e)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
+                    && f(&e)
+                {
+                    return true;
+                }
+            }
+            false
+        }
+        let mut aid = 0;
+        assert!(
+            wait_for(&mut rx, |e| match e {
+                Event::ApprovalRequested { approval } => {
+                    aid = approval.id;
+                    true
+                }
+                _ => false,
+            })
+            .await
+        );
+        assert_eq!(st.state_of(sid), Some(SessionState::WaitingApproval));
+        call(
+            &a,
+            "approvals.decide",
+            serde_json::json!({"id": aid, "allowed": true}),
+            None,
+        )
+        .await;
+        let done = |e: &Event| matches!(e, Event::SessionUpdated { session } if session.state == SessionState::Done);
+        assert!(wait_for(&mut rx, done).await);
+        let (_, v) = call(
+            &a,
+            "session.send",
+            serde_json::json!({"session": sid, "text": "más"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"], true, "{v}");
+        assert!(wait_for(&mut rx, done).await);
+        let (_, t) = call(
+            &a,
+            "session.transcript",
+            serde_json::json!({"session": sid}),
+            None,
+        )
+        .await;
+        let t = t["result"].to_string();
+        assert!(
+            t.contains("hola") && t.contains("⏺ bash git push") && t.contains("segunda"),
+            "{t}"
+        );
+        assert!(
+            t.contains(r#"\"permitir\":true"#),
+            "la decisión llegó al agente: {t}"
+        );
     }
 }
