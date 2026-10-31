@@ -39,6 +39,8 @@ pub enum Entry {
         /// Salida.
         output: String,
     },
+    /// Tarjeta de bienvenida (logo, modelo y consejos).
+    Welcome,
     /// Aviso informativo.
     Info(String),
     /// Error.
@@ -217,7 +219,7 @@ impl App {
         App {
             lang,
             theme,
-            entries: vec![Entry::Info(t(lang, "welcome").into())],
+            entries: vec![Entry::Welcome],
             input: String::new(),
             history: vec![],
             history_pos: None,

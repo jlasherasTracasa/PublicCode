@@ -105,6 +105,50 @@ pub fn transcript_lines(app: &App, width: u16) -> Vec<Line<'static>> {
                     }
                 }
             }
+            Entry::Welcome => {
+                // Tarjeta con borde redondeado: logo, nombre, modelo y consejos.
+                let w = width.clamp(20, 72) as usize;
+                let inner = w.saturating_sub(4);
+                let border = th.strong();
+                let row = |spans: Vec<Span<'static>>| -> Line<'static> {
+                    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+                    let mut v = vec![Span::styled("│ ", border)];
+                    v.extend(spans);
+                    v.push(Span::raw(" ".repeat(inner.saturating_sub(used))));
+                    v.push(Span::styled(" │", border));
+                    Line::from(v)
+                };
+                out.push(Line::from(Span::styled(
+                    format!("╭{}╮", "─".repeat(w - 2)),
+                    border,
+                )));
+                out.push(row(vec![
+                    Span::styled(
+                        " >_ ",
+                        th.bar().add_modifier(ratatui::style::Modifier::BOLD),
+                    ),
+                    Span::styled("  PublicCode", th.strong()),
+                    Span::styled(
+                        format!("  ·  {}", app.model)
+                            .chars()
+                            .take(inner.saturating_sub(16))
+                            .collect::<String>(),
+                        th.dimmed(),
+                    ),
+                ]));
+                out.push(row(vec![]));
+                for l in t(app.lang, "welcome")
+                    .lines()
+                    .chain(t(app.lang, "tips").lines())
+                {
+                    let cut: String = l.chars().take(inner).collect();
+                    out.push(row(vec![Span::styled(cut, th.text())]));
+                }
+                out.push(Line::from(Span::styled(
+                    format!("╰{}╯", "─".repeat(w - 2)),
+                    border,
+                )));
+            }
             Entry::Info(text) => {
                 for l in text.lines() {
                     out.extend(wrap(
@@ -482,6 +526,27 @@ mod tests {
     }
 
     #[test]
+    fn render_bienvenida_en_tarjeta() {
+        let a = App::new(Lang::Es, Theme::by_name("azul", false).unwrap(), "claude-x");
+        let s = screen(&a, 80, 24);
+        assert!(s[1].starts_with("╭──") && s[1].ends_with('╮'), "{}", s[1]);
+        assert!(
+            s[2].contains(">_") && s[2].contains("PublicCode") && s[2].contains("claude-x"),
+            "{}",
+            s[2]
+        );
+        assert!(s.iter().any(|l| l.contains("@archivo adjunta")));
+        let w = s[1].chars().count();
+        assert!(
+            s[1..8]
+                .iter()
+                .filter(|l| l.starts_with('│'))
+                .all(|l| l.chars().count() == w),
+            "bordes alineados"
+        );
+    }
+
+    #[test]
     fn render_modo_plan_y_sugerencias() {
         let mut a = App::new(Lang::Es, Theme::by_name("azul", false).unwrap(), "m");
         a.plan = true;
@@ -518,11 +583,19 @@ mod tests {
         });
         let mut c = a.clone();
         c.theme = Theme::by_name("claro", false).unwrap();
+        let mut ini = App::new(
+            Lang::Es,
+            Theme::by_name("azul", false).unwrap(),
+            "claude-sonnet-5-5",
+        );
+        ini.input = "explica @src/main.rs".into();
+        ini.files = vec!["src/main.rs".into(), "src/lib.rs".into()];
         if let Ok(dir) = std::env::var("PCODE_TUI_PREVIEW") {
             for (name, app, bg, fg) in [
                 ("azul", &a, "#0b1626", "#e3ecfb"),
                 ("aprobacion", &b, "#0b1626", "#e3ecfb"),
                 ("claro", &c, "#f7faff", "#0b1b33"),
+                ("inicio", &ini, "#0b1626", "#e3ecfb"),
             ] {
                 std::fs::write(
                     format!("{dir}/tui-{name}.html"),

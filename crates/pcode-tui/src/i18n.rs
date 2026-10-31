@@ -57,6 +57,10 @@ const ES: &[(&str, &str)] = &[
         "· La salida irá como contexto en tu próximo mensaje.",
     ),
     ("plan", "PLAN"),
+    (
+        "tips",
+        "@archivo adjunta un archivo · !orden ejecuta en el proyecto\nMayús+Tab modo plan · Ctrl+O salidas · /ayuda todas las órdenes",
+    ),
     ("no_output", "(sin salida)"),
     ("wait", "El agente sigue trabajando: espera o pulsa Esc."),
     ("new", "Conversación nueva."),
@@ -67,10 +71,7 @@ const ES: &[(&str, &str)] = &[
         "✗ presupuesto del mensaje agotado: escribe «sigue» para continuar",
     ),
     ("stuck", "✗ atascado: prueba a darle otra pista"),
-    (
-        "welcome",
-        "PublicCode. Escribe lo que quieres hacer en este proyecto.",
-    ),
+    ("welcome", "Escribe lo que quieres hacer en este proyecto."),
     (
         "help",
         "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/compactar  resume la conversación para liberar contexto\n/plan · /construir  modo plan (solo lectura) o normal (Mayús+Tab)\n@archivo  adjunta un archivo (Tab completa) · !orden  ejecuta y adjunta la salida\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
@@ -108,6 +109,10 @@ const EN: &[(&str, &str)] = &[
         "· The output will be sent as context with your next message.",
     ),
     ("plan", "PLAN"),
+    (
+        "tips",
+        "@file attaches a file · !command runs it in the project\nShift+Tab plan mode · Ctrl+O outputs · /help all commands",
+    ),
     ("no_output", "(no output)"),
     ("wait", "The agent is still working: wait or press Esc."),
     ("new", "New conversation."),
@@ -118,10 +123,7 @@ const EN: &[(&str, &str)] = &[
         "✗ message budget exhausted: type “continue” to go on",
     ),
     ("stuck", "✗ stuck: try giving it another hint"),
-    (
-        "welcome",
-        "PublicCode. Type what you want to do in this project.",
-    ),
+    ("welcome", "Type what you want to do in this project."),
     (
         "help",
         "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/compact  summarise the conversation to free context\n/plan · /build  plan (read-only) or normal mode (Shift+Tab)\n@file  attach a file (Tab completes) · !command  run it and attach the output\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",

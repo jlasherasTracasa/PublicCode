@@ -53,7 +53,7 @@
   .abrir-rapido { flex: 1; max-width: 460px; margin: 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
                   border-radius: 999px; background: rgba(255,255,255,.16); color: rgba(255,255,255,.9); font-size: 13px; }
   .abrir-rapido kbd { margin-left: auto; }
-  kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.18); }
+  kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.18); white-space: nowrap; }
   .conexion::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #9ef0b5; }
   .conexion.caida::before { background: #ffb4ab; }
   .boton-barra { padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: 13px; white-space: nowrap; }
@@ -206,6 +206,59 @@
   details.opciones summary { font-size: 12px; color: var(--primario); cursor: pointer; }
   details.opciones input { width: 100%; margin-top: 4px; border: 1.5px solid var(--linea); border-radius: 10px; padding: 5px 8px; background: var(--superficie); }
 
+  /* Pulido visual */
+  .ico.badge { width: 18px; height: 16px; border-radius: 5px; display: inline-grid; place-items: center; font: 700 8.5px/1 var(--mono);
+               color: #fff; letter-spacing: -.3px; flex: none; }
+  .ico.carpeta { color: var(--primario); }
+  .ico.carpeta svg { width: 16px; height: 16px; display: block; }
+  .pestana .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  button, .nodo, .cambio, .hit, .problema, .sesion { transition: background-color .12s ease, color .12s ease, box-shadow .15s ease, transform .08s ease; }
+  .relleno:active, .tonal:active { transform: scale(.98); }
+  .panel, .burbuja, .aprob { animation: aparece .16s ease-out; }
+  @keyframes aparece { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .panel, .burbuja, .aprob { animation: none; } }
+  .scroll::-webkit-scrollbar, .conversacion::-webkit-scrollbar, .codigo textarea::-webkit-scrollbar { width: 10px; height: 10px; }
+  .scroll::-webkit-scrollbar-thumb, .conversacion::-webkit-scrollbar-thumb, .codigo textarea::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+
+  /* Inicio */
+  .inicio { position: absolute; inset: 0; overflow: auto; background: var(--fondo); padding: 28px; }
+  .inicio .heroe { max-width: 960px; margin: 0 auto 20px; border-radius: 28px; padding: 28px 32px; color: #fff;
+                   background: radial-gradient(120% 140% at 100% 0%, #4c8dff 0%, transparent 55%), linear-gradient(135deg, var(--primario-2), var(--primario));
+                   box-shadow: var(--sombra-2); display: flex; gap: 22px; align-items: center; }
+  @media (prefers-color-scheme: dark) { .inicio .heroe { background: radial-gradient(120% 140% at 100% 0%, #2b5aa8 0%, transparent 55%), linear-gradient(135deg, #0f1d33, #16335c); } }
+  .inicio .heroe .logo { width: 72px; height: 72px; border-radius: 22px; font-size: 28px; background: rgba(255,255,255,.18); color: #fff; margin: 0; }
+  .inicio .heroe h2 { margin: 0 0 4px; font-size: 24px; color: #fff; }
+  .inicio .heroe .meta { opacity: .85; font-size: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .rejilla { max-width: 960px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: var(--superficie); border-radius: 22px; padding: 18px; box-shadow: var(--sombra); }
+  .card h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--texto-2); }
+  .accion { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 14px; }
+  .accion:hover { background: var(--contenedor); transform: translateX(2px); }
+  .accion .ic { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--contenedor); color: var(--primario); flex: none; }
+  .accion .ic svg { width: 20px; height: 20px; }
+  .accion b { display: block; font-weight: 600; } .accion small { color: var(--texto-2); }
+  .accion kbd { margin-left: auto; background: var(--superficie-3); color: var(--texto-2); }
+  .reciente { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 12px; font-size: 13px; }
+  .reciente:hover { background: var(--contenedor); }
+  .reciente .dir { color: var(--texto-2); font-size: 12px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+  .atajos2 { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; font-size: 13px; align-items: center; }
+  .atajos2 kbd { background: var(--contenedor); color: var(--sobre-contenedor); justify-self: start; }
+
+  /* Agente: avatares y sugerencias */
+  .fila-msg { display: flex; gap: 8px; align-items: flex-end; }
+  .fila-msg.de-usuario { justify-content: flex-end; }
+  .avatar { width: 26px; height: 26px; border-radius: 9px; flex: none; display: grid; place-items: center; font: 700 10px var(--mono);
+            background: linear-gradient(135deg, var(--primario-2), var(--primario)); color: #fff; box-shadow: var(--sombra); }
+  .fila-msg .burbuja { max-width: calc(100% - 34px); }
+  .sugerencias { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .sugerencia { padding: 8px 12px; border-radius: 14px; background: var(--superficie); box-shadow: var(--sombra); font-size: 13px; text-align: left; }
+  .sugerencia:hover { background: var(--contenedor); transform: translateY(-1px); }
+  .vacio-agente { text-align: center; color: var(--texto-2); padding: 18px 8px 8px; font-size: 13px; }
+  .vacio-agente .avatar { width: 52px; height: 52px; border-radius: 18px; font-size: 18px; margin: 0 auto 10px; }
+
+  /* Paleta de órdenes */
+  .dialogo li .atajo { margin-left: auto; color: var(--texto-2); font: 11px var(--mono); }
+
   /* Diagnósticos, hover y problemas (LSP) */
   .capa-diag { position: absolute; left: 0; top: 0; pointer-events: none; }
   .subr { position: absolute; height: 3px; border-radius: 2px; }
@@ -326,25 +379,40 @@
   <main id="centro" class="centro">
     <div id="pestanas" class="pestanas" role="tablist"></div>
     <div id="area" class="area">
-      <div id="bienvenida" class="bienvenida">
-        <div class="tarjeta">
+      <div id="bienvenida" class="inicio">
+        <section class="heroe">
           <div class="logo" aria-hidden="true">&gt;_</div>
-          <h2>PublicCode Studio</h2>
-          <div>Abre un archivo del explorador o pídeselo al agente.</div>
-          <div class="atajos">
-            <kbd>Ctrl P</kbd><span>Abrir archivo</span>
-            <kbd>Ctrl S</kbd><span>Guardar</span>
-            <kbd>Ctrl Shift F</kbd><span>Buscar en el proyecto</span>
-            <kbd>Ctrl `</kbd><span>Terminal</span>
-            <kbd>Ctrl I</kbd><span>Agente</span>
-            <kbd>Ctrl W</kbd><span>Cerrar pestaña</span>
-            <kbd>Ctrl F</kbd><span>Buscar y reemplazar en el archivo</span>
-            <kbd>Ctrl G</kbd><span>Ir a una línea</span>
-            <kbd>Ctrl L</kbd><span>Preguntar al agente por la selección</span>
-            <kbd>F12</kbd><span>Ir a la definición (también Ctrl+clic)</span>
-            <kbd>Mayús F12</kbd><span>Referencias</span>
-            <kbd>Ctrl K</kbd><span>Información del símbolo (hover)</span>
+          <div>
+            <h2 id="ini-proyecto">PublicCode Studio</h2>
+            <div class="meta"><span id="ini-rama"></span><span id="ini-cambios"></span><span id="ini-lsp"></span></div>
           </div>
+        </section>
+        <div class="rejilla">
+          <section class="card" aria-labelledby="h-empezar">
+            <h3 id="h-empezar">Empezar</h3>
+            <button class="accion" data-accion="abrir"><span class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></span><span><b>Abrir archivo</b><small>Búsqueda difusa en todo el proyecto</small></span><kbd>Ctrl P</kbd></button>
+            <button class="accion" data-accion="agente"><span class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l2.2 5.3L20 9l-4.4 3.8L17 18.5 12 15.5 7 18.5l1.4-5.7L4 9l5.8-.7z"/></svg></span><span><b>Pedir algo al agente</b><small>Lee, edita, prueba y te pregunta lo delicado</small></span><kbd>Ctrl I</kbd></button>
+            <button class="accion" data-accion="ordenes"><span class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span><span><b>Paleta de órdenes</b><small>Todo lo que puede hacer Studio</small></span><kbd>Ctrl ⇧ P</kbd></button>
+            <button class="accion" data-accion="terminal"><span class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M12 17h7"/></svg></span><span><b>Terminal</b><small>Con botones para compilar y probar</small></span><kbd>Ctrl `</kbd></button>
+          </section>
+          <section class="card" aria-labelledby="h-recientes">
+            <h3 id="h-recientes">Recientes</h3>
+            <div id="recientes"></div>
+          </section>
+          <section class="card" aria-labelledby="h-atajos">
+            <h3 id="h-atajos">Atajos</h3>
+            <div class="atajos2">
+              <kbd>Ctrl S</kbd><span>Guardar</span>
+              <kbd>Ctrl F</kbd><span>Buscar y reemplazar en el archivo</span>
+              <kbd>Ctrl ⇧ F</kbd><span>Buscar en el proyecto</span>
+              <kbd>F12</kbd><span>Ir a la definición (Ctrl+clic)</span>
+              <kbd>⇧ F12</kbd><span>Referencias</span>
+              <kbd>Ctrl K</kbd><span>Información del símbolo</span>
+              <kbd>Ctrl L</kbd><span>Preguntar al agente por la selección</span>
+              <kbd>Ctrl G</kbd><span>Ir a una línea</span>
+              <kbd>Ctrl ⇧ M</kbd><span>Problemas</span>
+            </div>
+          </section>
         </div>
       </div>
       <div id="editor" class="editor oculto">
@@ -407,7 +475,7 @@
 
 <div id="hover" class="hover oculto" role="tooltip"></div>
 <div id="velo" class="velo oculto" role="dialog" aria-modal="true" aria-label="Abrir archivo">
-  <div class="dialogo"><input id="q-archivo" placeholder="Nombre de archivo…" aria-label="Nombre de archivo"><ul id="l-archivos" role="listbox"></ul></div>
+  <div class="dialogo"><input id="q-archivo" placeholder="Nombre de archivo… (empieza por > para órdenes)" aria-label="Nombre de archivo u orden"><ul id="l-archivos" role="listbox"></ul></div>
 </div>
 
 <script>
@@ -482,6 +550,7 @@ function pintaPestanas() {
   for (const t of S.tabs) {
     const b = el("div", "pestana" + (t.id === S.activa ? " activa" : "") + (t.dirty ? " sucia" : ""));
     b.setAttribute("role", "tab"); b.tabIndex = 0; b.title = t.path;
+    if (t.kind === "file") { const dot = insignia(base(t.path)); dot.className = "punto"; dot.textContent = ""; b.append(dot); }
     b.append(el("span", "", (t.kind === "diff" ? "± " : "") + base(t.path)));
     const x = el("button", "cerrar"); x.title = "Cerrar (Ctrl+W)"; x.append(el("span", "", "×"));
     x.onclick = (e) => { e.stopPropagation(); cierra(t.id); };
@@ -494,6 +563,7 @@ function pintaPestanas() {
 function muestra() {
   const t = tabActiva();
   $("bienvenida").classList.toggle("oculto", !!t);
+  if (!t) pintaRecientes();
   $("editor").classList.toggle("oculto", !t || t.kind !== "file" || t.binary);
   $("binario").classList.toggle("oculto", !t || !t.binary);
   $("vista-diff").classList.toggle("oculto", !t || t.kind !== "diff");
@@ -513,7 +583,21 @@ function activa(id) {
   const prev = tabActiva(); if (prev && prev.kind === "file" && !prev.binary) { prev.scroll = ta.scrollTop; prev.sel = ta.selectionStart; }
   S.activa = id; pintaPestanas(); muestra();
 }
+function recuerda(path) {
+  try {
+    const k = "pcode.recientes." + ($("proyecto").textContent || "");
+    const v = [path, ...JSON.parse(localStorage.getItem(k) || "[]").filter((p) => p !== path)].slice(0, 8);
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch { /* sin almacenamiento: no pasa nada */ }
+}
+function pintaRecientes() {
+  const box = $("recientes"); box.replaceChildren(); let v = [];
+  try { v = JSON.parse(localStorage.getItem("pcode.recientes." + ($("proyecto").textContent || "")) || "[]"); } catch { v = []; }
+  for (const p of v) { const b = el("button", "reciente"); b.append(insignia(base(p)), el("span", "", base(p)), el("span", "dir", dir(p))); b.onclick = () => abre(p); box.appendChild(b); }
+  if (!v.length) box.appendChild(el("div", "vacio", "Los archivos que abras aparecerán aquí."));
+}
 async function abre(path, linea) {
+  recuerda(path);
   const ya = S.tabs.find((t) => t.kind === "file" && t.path === path);
   if (ya) { if (linea) ya.irA = linea; activa(ya.id); return; }
   try {
@@ -671,6 +755,9 @@ async function lspSync(t, inmediato) {
   };
   if (inmediato) await enviar(); else tSync = setTimeout(enviar, 450);
 }
+async function estadoLspInicio() {
+  try { const st = await rpc("lsp.status"); $("ini-lsp").textContent = st.length ? "· LSP: " + st.map(([g, e]) => `${g} ${e === "activo" ? "✓" : "✗"}`).join(", ") : ""; } catch { /* sin LSP */ }
+}
 function pintaEstadoLsp() {
   const t = tabActiva(); const err = t && LSP_EXT.test(t.path) && S.lspError[grupoLsp(t.path)];
   $("e-lsp").textContent = !t || !LSP_EXT.test(t.path) ? "" : err ? "LSP ✗" : "LSP ✓";
@@ -783,8 +870,18 @@ function pintaDiff(t) {
 }
 
 /* ───────── Explorador ───────── */
-const ICONOS = { rs: "🦀", md: "📝", toml: "⚙", json: "{}", js: "JS", ts: "TS", py: "🐍", html: "◇", css: "#", sh: "$", lock: "🔒", png: "🖼", svg: "🖼", jpg: "🖼" };
-function icono(n) { const e = n.includes(".") ? n.split(".").pop().toLowerCase() : ""; return ICONOS[e] || "·"; }
+const INSIGNIAS = { rs: ["RS", "#ce422b"], py: ["PY", "#3572a5"], js: ["JS", "#c9a400"], mjs: ["JS", "#c9a400"], cjs: ["JS", "#c9a400"], jsx: ["JSX", "#2f9fc4"],
+  ts: ["TS", "#3178c6"], tsx: ["TSX", "#3178c6"], go: ["GO", "#00a7d0"], java: ["JV", "#b07219"], kt: ["KT", "#a97bff"], kts: ["KT", "#a97bff"],
+  c: ["C", "#555c99"], h: ["H", "#555c99"], cpp: ["C++", "#f34b7d"], hpp: ["H++", "#f34b7d"], cs: ["C#", "#178600"], md: ["MD", "#4a5a75"],
+  toml: ["TO", "#9c4221"], yml: ["YM", "#cb171e"], yaml: ["YM", "#cb171e"], json: ["{}", "#7a6400"], html: ["<>", "#e34c26"], css: ["#", "#563d7c"],
+  scss: ["#", "#c6538c"], sh: ["$", "#2e7d32"], ps1: ["PS", "#012456"], sql: ["SQ", "#e38c00"], lock: ["LK", "#6b7280"], txt: ["TX", "#6b7280"],
+  png: ["IMG", "#0e7490"], jpg: ["IMG", "#0e7490"], svg: ["SVG", "#0e7490"], gradle: ["GR", "#02303a"], xml: ["XM", "#0060ac"] };
+function insignia(n) {
+  const lower = n.toLowerCase(), e = lower.includes(".") ? lower.split(".").pop() : "";
+  const [txt, color] = INSIGNIAS[e] || (lower === "dockerfile" ? ["DK", "#2496ed"] : lower === "makefile" ? ["MK", "#427819"] : [e.slice(0, 2).toUpperCase() || "··", "#8a9bb5"]);
+  const b = el("span", "ico badge", txt); b.style.background = color; b.setAttribute("aria-hidden", "true"); return b;
+}
+function iconoCarpeta() { const s = el("span", "ico carpeta"); s.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" opacity=".85"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4l2 2h7A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>'; return s; }
 async function cargaDir(path, ul, nivel) {
   let items; try { items = await rpc("fs.list", { path }); } catch (e) { ul.replaceChildren(el("li", "vacio", e.message)); return; }
   ul.replaceChildren();
@@ -794,7 +891,7 @@ async function cargaDir(path, ul, nivel) {
     const g = S.gitFiles.find((f) => f.path === it.path || (it.dir && f.path.startsWith(it.path + "/")));
     if (g) fila.classList.add("git-" + (g.index === "?" ? "U" : (g.worktree.trim() || g.index)));
     const flecha = el("span", "flecha", it.dir ? (S.abiertas.has(it.path) ? "▾" : "▸") : "");
-    fila.append(flecha, el("span", "ico", it.dir ? "📁" : icono(it.name)), el("span", "nombre", it.name));
+    fila.append(flecha, it.dir ? iconoCarpeta() : insignia(it.name), el("span", "nombre", it.name));
     li.appendChild(fila);
     if (it.dir) {
       const sub = el("ul"); li.appendChild(sub);
@@ -877,6 +974,7 @@ async function refrescaGit() {
   try {
     const st = await rpc("git.status");
     S.gitFiles = st.files; $("rama").textContent = "⑂ " + st.branch; $("rama").classList.remove("oculto");
+    $("ini-rama").textContent = "⑂ " + st.branch; $("ini-cambios").textContent = st.files.length ? `· ${st.files.length} cambios sin commitear` : "· sin cambios";
     const n = st.files.length; $("n-git").textContent = n; $("n-git").classList.toggle("oculto", n === 0);
     box.replaceChildren();
     const prep = st.files.filter((f) => f.index !== " " && f.index !== "?"), sin = st.files.filter((f) => f.worktree !== " " || f.index === "?");
@@ -969,15 +1067,28 @@ function pintaConversacion() {
     d.append(el("div", "motivo", "⚠ " + a.reason), el("code", "", a.action), f); box.appendChild(d);
   }
   if (S.sesion === null) {
-    if (!S.aprob.length) box.appendChild(el("div", "burbuja system", "Escribe abajo qué quieres hacer. El agente lee, busca, edita y ejecuta órdenes en este proyecto; lo destructivo te lo pregunta aquí."));
+    if (S.aprob.length) return;
+    const v = el("div", "vacio-agente"); v.append(el("div", "avatar", ">_"), el("div", "", "Pide lo que quieras sobre este proyecto. El agente lee, busca, edita y ejecuta órdenes; lo delicado te lo pregunta aquí."));
+    const sg = el("div", "sugerencias");
+    for (const t of ["Explícame la estructura de este proyecto", "Busca posibles bugs en los cambios sin commitear", "Escribe tests para el archivo abierto", "Ejecuta los tests y arregla lo que falle"]) {
+      const b = el("button", "sugerencia", t);
+      b.onclick = () => { const a = tabActiva(); $("mensaje").value = t.includes("archivo abierto") && a ? t.replace("el archivo abierto", "@" + a.path) : t; $("mensaje").focus(); };
+      sg.appendChild(b);
+    }
+    v.appendChild(sg); box.appendChild(v);
     return;
   }
+  const fila = (b, tipo) => {
+    if (tipo === "assistant") { const f = el("div", "fila-msg"); f.append(el("div", "avatar", ">_"), b); return f; }
+    if (tipo === "user") { const f = el("div", "fila-msg de-usuario"); f.append(b); return f; }
+    return b;
+  };
   for (const e of S.trans[S.sesion] || []) {
     const b = el("div", "burbuja " + e.tipo);
     if (e.tipo === "output") b.textContent = e.text; else b.appendChild(md(e.text));
-    box.appendChild(b);
+    box.appendChild(fila(b, e.tipo));
   }
-  if (S.vivo[S.sesion]) box.appendChild(el("div", "burbuja assistant", S.vivo[S.sesion]));
+  if (S.vivo[S.sesion]) box.appendChild(fila(el("div", "burbuja assistant", S.vivo[S.sesion]), "assistant"));
   box.scrollTop = box.scrollHeight;
 }
 async function decide(id, allowed) { try { await rpc("approvals.decide", { id, allowed }); } catch (e) { aviso(e.message); } S.aprob = S.aprob.filter((a) => a.id !== id); pintaConversacion(); }
@@ -1025,7 +1136,9 @@ async function abreRapido() {
   filtraRapido();
 }
 function filtraRapido() {
-  const q = $("q-archivo").value.trim(), ul = $("l-archivos"); ul.replaceChildren(); selRapida = 0;
+  const raw = $("q-archivo").value;
+  if (raw.startsWith(">")) { filtraOrdenes(raw.slice(1).trim()); return; }
+  const q = raw.trim(), ul = $("l-archivos"); ul.replaceChildren(); selRapida = 0;
   const todos = S.todos || [];
   const lista = q ? todos.map((f) => [puntua(q, f), f]).filter((x) => x[0] >= 0).sort((a, b) => b[0] - a[0]).slice(0, 60).map((x) => x[1]) : todos.slice(0, 60);
   lista.forEach((f, i) => { const li = el("li"); li.setAttribute("role", "option"); li.setAttribute("aria-selected", i === 0); li.append(el("span", "", base(f)), el("span", "dir", dir(f))); li.dataset.path = f; li.onclick = () => { cierraRapido(); abre(f); }; ul.appendChild(li); });
@@ -1035,11 +1148,43 @@ $("q-archivo").addEventListener("input", filtraRapido);
 $("q-archivo").addEventListener("keydown", (e) => {
   const items = [...$("l-archivos").children];
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); selRapida = Math.max(0, Math.min(items.length - 1, selRapida + (e.key === "ArrowDown" ? 1 : -1))); items.forEach((li, i) => li.setAttribute("aria-selected", i === selRapida)); items[selRapida]?.scrollIntoView({ block: "nearest" }); }
-  else if (e.key === "Enter" && items[selRapida]) { cierraRapido(); abre(items[selRapida].dataset.path); }
+  else if (e.key === "Enter" && items[selRapida]) { const it = items[selRapida]; cierraRapido(); if (it.dataset.orden !== undefined) ORDENES[Number(it.dataset.orden)][2](); else abre(it.dataset.path); }
   else if (e.key === "Escape") cierraRapido();
 });
 $("velo").onclick = (e) => { if (e.target === $("velo")) cierraRapido(); };
 $("b-abrir").onclick = abreRapido;
+
+/* ───────── Paleta de órdenes ───────── */
+const ORDENES = [
+  ["Abrir archivo", "Ctrl P", () => abreRapido()],
+  ["Guardar", "Ctrl S", () => guarda()],
+  ["Cerrar pestaña", "Ctrl W", () => S.activa && cierra(S.activa)],
+  ["Buscar y reemplazar en el archivo", "Ctrl F", () => buscador(true)],
+  ["Ir a una línea", "Ctrl G", () => irA()],
+  ["Ir a la definición", "F12", () => irADefinicion()],
+  ["Buscar referencias", "Mayús F12", () => referencias()],
+  ["Buscar en el proyecto", "Ctrl Mayús F", () => panel("buscar")],
+  ["Explorador", "Ctrl Mayús E", () => panel("archivos")],
+  ["Git: ver cambios", "Ctrl Mayús G", () => panel("git")],
+  ["Git: preparar todo", "", async () => { await refrescaGit(); const p = S.gitFiles.map((f) => f.path); if (p.length) rpc("git.stage", { paths: p }).then(() => aviso("Preparado")).catch((e) => aviso(e.message)); }],
+  ["Problemas", "Ctrl Mayús M", () => { pintaProblemas(); panel("problemas"); }],
+  ["Terminal", "Ctrl `", () => terminal()],
+  ["Agente: mostrar u ocultar", "Ctrl I", () => agente()],
+  ["Agente: conversación nueva", "", () => { agente(true); eligeSesion(""); }],
+  ["Agente: preguntar por la selección", "Ctrl L", () => preguntaSeleccion()],
+  ["Archivo nuevo", "", () => $("b-nuevo").click()],
+  ["Refrescar explorador y git", "", () => { refrescaArbol(); refrescaGit(); }],
+];
+let selOrden = 0;
+function paleta() {
+  $("velo").classList.remove("oculto"); const i = $("q-archivo"); i.value = ">"; i.focus(); filtraRapido();
+}
+function filtraOrdenes(q) {
+  const ul = $("l-archivos"); ul.replaceChildren(); selOrden = 0;
+  const lista = ORDENES.map((o) => [q ? puntua(q, o[0]) : 0, o]).filter((x) => x[0] >= 0).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
+  lista.forEach((o, i) => { const li = el("li"); li.setAttribute("role", "option"); li.setAttribute("aria-selected", i === 0); li.append(el("span", "", o[0]), el("span", "atajo", o[1])); li.onclick = () => { cierraRapido(); o[2](); }; li.dataset.orden = ORDENES.indexOf(o); ul.appendChild(li); });
+}
+document.querySelectorAll("[data-accion]").forEach((b) => (b.onclick = () => ({ abrir: abreRapido, agente: () => agente(true), ordenes: paleta, terminal: () => terminal(true) })[b.dataset.accion]()));
 
 /* ───────── Vistas, atajos y eventos ───────── */
 function panel(nombre) {
@@ -1061,6 +1206,7 @@ document.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "s") { e.preventDefault(); guarda(); }
   else if (k === "p" && !e.shiftKey) { e.preventDefault(); abreRapido(); }
+  else if (k === "p" && e.shiftKey) { e.preventDefault(); paleta(); }
   else if (k === "f" && e.shiftKey) { e.preventDefault(); panel("buscar"); }
   else if (k === "e" && e.shiftKey) { e.preventDefault(); panel("archivos"); }
   else if (k === "g" && e.shiftKey) { e.preventDefault(); panel("git"); }
@@ -1123,11 +1269,11 @@ async function cargaTareas() {
   } catch { /* sin tareas */ }
 }
 async function inicio() {
-  try { const i = await rpc("server.info"); const r = String(i.repo || ""); $("proyecto").textContent = r.split(/[\\/]/).filter(Boolean).pop() || r; document.title = ($("proyecto").textContent || "") + " · PublicCode"; } catch { /* sin info */ }
+  try { const i = await rpc("server.info"); const r = String(i.repo || ""); $("proyecto").textContent = r.split(/[\\/]/).filter(Boolean).pop() || r; $("ini-proyecto").textContent = $("proyecto").textContent; document.title = ($("proyecto").textContent || "") + " · PublicCode"; } catch { /* sin info */ }
   refrescaArbol(); refrescaGit(); cargaTareas();
   try { S.sesiones = await rpc("session.list"); } catch { S.sesiones = []; }
   try { S.aprob = await rpc("approvals.list"); } catch { S.aprob = []; }
-  pintaSesiones(); pintaConversacion(); pintaPestanas(); muestra(); conecta();
+  pintaSesiones(); pintaConversacion(); pintaPestanas(); muestra(); conecta(); estadoLspInicio();
   if (innerWidth <= 900) vista("agente");
 }
 inicio();
