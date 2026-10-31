@@ -197,7 +197,7 @@ impl Approver for TerminalApprover {
     }
 }
 
-const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
+const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /plan           modo plan: solo lee y propone (/construir vuelve)\n  @archivo        adjunta un archivo al mensaje\n  !orden          ejecuta una orden y adjunta su salida al próximo mensaje\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
 
 /// Persiste en SQLite los mensajes nuevos de cada vuelta.
 struct Persist {
@@ -370,6 +370,7 @@ pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
                 .and_then(|t| pcode_tui::Theme::by_name(t, std::env::var_os("NO_COLOR").is_some()))
                 .unwrap_or_else(pcode_tui::Theme::from_env),
             notices: p.notices,
+            root: std::env::current_dir()?,
         },
         on_turn,
     )
@@ -593,6 +594,8 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
         Some(a.prompt.join(" "))
     };
     let mut exit_code = 0;
+    let root = std::env::current_dir()?;
+    let mut shell_context: Vec<String> = vec![];
     loop {
         let input = match first.take() {
             Some(p) => p,
@@ -619,6 +622,30 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
         if input.is_empty() {
             continue;
         }
+        if let Some(cmd) = input.strip_prefix('!') {
+            let cmd = cmd.trim();
+            let out = pcode_tools::shell_command(cmd)
+                .current_dir(&root)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .await;
+            let text = match out {
+                Ok(o) => format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                ),
+                Err(e) => e.to_string(),
+            };
+            print!("{text}");
+            println!(
+                "{}",
+                style.dim("· La salida irá como contexto en tu próximo mensaje.")
+            );
+            let cut: String = text.chars().take(20_000).collect();
+            shell_context.push(format!("$ {cmd}\n```\n{cut}\n```"));
+            continue;
+        }
         if let Some(cmd) = input.strip_prefix('/') {
             let (name, arg) = cmd.split_once(' ').unwrap_or((cmd, ""));
             match name {
@@ -638,6 +665,19 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
                         agent.set_model(current_model.clone());
                         println!("{}", style.dim(&format!("Modelo: {current_model}")));
                     }
+                }
+                "plan" => {
+                    agent.set_read_only(true);
+                    println!(
+                        "{}",
+                        style.bold(
+                            "◆ Modo plan: el agente solo lee y propone. /construir para volver."
+                        )
+                    );
+                }
+                "construir" | "build" | "normal" => {
+                    agent.set_read_only(false);
+                    println!("{}", style.dim("▶ Modo normal."));
                 }
                 "compactar" | "compact" => {
                     let before = history.len();
@@ -660,7 +700,9 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
             }
             continue;
         }
-        let turn = agent.run_turn(history.clone(), &input);
+        let full = pcode_tui::run::expand_message(&root, &input, &shell_context);
+        shell_context.clear();
+        let turn = agent.run_turn(history.clone(), &full);
         let report = tokio::select! {
             r = turn => r,
             _ = tokio::signal::ctrl_c() => {

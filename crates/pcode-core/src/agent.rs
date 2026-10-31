@@ -126,6 +126,21 @@ pub struct Agent {
     approver: Option<Arc<dyn Approver>>,
     observer: Option<Observer>,
     last_input_tokens: u64,
+    read_only: bool,
+}
+
+/// Instrucción que se añade en modo plan.
+pub const PLAN_NOTE: &str = "Estás en MODO PLAN: solo puedes leer y buscar. No intentes cambiar archivos ni \
+ejecutar órdenes. Investiga lo necesario y responde con un plan concreto (archivos, cambios, pruebas) \
+para que el usuario lo revise; se aplicará cuando vuelva al modo normal.";
+
+fn writes(effects: &[Effect]) -> bool {
+    effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Write | Effect::Exec | Effect::Irreversible | Effect::Network
+        )
+    })
 }
 
 impl Agent {
@@ -148,12 +163,21 @@ impl Agent {
             approver: None,
             observer: None,
             last_input_tokens: 0,
+            read_only: false,
         }
     }
     /// Recibe los eventos (texto, llamadas y resultados de tools) según ocurren.
     pub fn with_observer(mut self, o: Observer) -> Self {
         self.observer = Some(o);
         self
+    }
+    /// Modo plan: solo tools de lectura y una instrucción para que proponga en lugar de hacer.
+    pub fn set_read_only(&mut self, on: bool) {
+        self.read_only = on;
+    }
+    /// Si está en modo plan (solo lectura).
+    pub fn read_only(&self) -> bool {
+        self.read_only
     }
     /// Cambia el modelo para las siguientes peticiones.
     pub fn set_model(&mut self, model: impl Into<String>) {
@@ -194,6 +218,13 @@ impl Agent {
             );
         };
         let effects = tool.effects();
+        if self.read_only && writes(effects) {
+            self.audit(call, "deny");
+            return (
+                ToolOutput::error("modo plan: solo lectura (vuelve al modo normal para aplicarlo)"),
+                false,
+            );
+        }
         let arg = |k: &str| {
             call.arguments
                 .get(k)
@@ -372,12 +403,17 @@ impl Agent {
             {
                 finish!(Outcome::BudgetExhausted);
             }
+            let ro = self.read_only;
             let specs = self
                 .tools
-                .specs_filtered(|n, e| self.policy.tool_visible(n, e));
+                .specs_filtered(|n, e| self.policy.tool_visible(n, e) && !(ro && writes(e)));
+            let mut msgs = messages.clone();
+            if ro {
+                msgs.push(Message::system(PLAN_NOTE));
+            }
             let req = ChatRequest {
                 model: self.cfg.model.clone(),
-                messages: messages.clone(),
+                messages: msgs,
                 tools: specs,
                 ..Default::default()
             };
@@ -593,6 +629,37 @@ mod tests {
                 .starts_with("[Resumen de la conversación anterior]\nRESUMEN")
         );
         let _ = big;
+    }
+    #[tokio::test]
+    async fn modo_plan_oculta_y_deniega_lo_que_escribe() {
+        let d = tempfile::tempdir().unwrap();
+        let (mut a, p) = agent(
+            &d,
+            vec![
+                tool("escribir", json!({"path":"x.txt","content":"hi"})),
+                text("plan: crear x.txt"),
+            ],
+            Capabilities::default(),
+            None,
+        );
+        a.set_read_only(true);
+        let r = a.run("crea x.txt").await;
+        assert!(matches!(r.outcome, Outcome::Done { .. }));
+        assert!(
+            !d.path().join("x.txt").exists(),
+            "en modo plan no se escribe"
+        );
+        let req = &p.requests()[0];
+        let names: Vec<&str> = req.tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            names.contains(&"leer") && !names.contains(&"escribir") && !names.contains(&"bash"),
+            "{names:?}"
+        );
+        assert!(req.messages.iter().any(|m| m.content == PLAN_NOTE));
+        assert!(
+            r.transcript.iter().all(|m| m.content != PLAN_NOTE),
+            "la nota no se guarda"
+        );
     }
     #[tokio::test]
     async fn run_turn_conserva_el_historial_entre_vueltas() {

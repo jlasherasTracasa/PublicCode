@@ -44,6 +44,19 @@ const ES: &[(&str, &str)] = &[
         "nothing_to_compact",
         "No hay bastante conversación para compactar.",
     ),
+    (
+        "plan_on",
+        "◆ Modo plan: el agente solo lee y propone. Mayús+Tab o /construir para volver.",
+    ),
+    (
+        "plan_off",
+        "▶ Modo normal: el agente puede cambiar archivos y ejecutar órdenes.",
+    ),
+    (
+        "shell_attached",
+        "· La salida irá como contexto en tu próximo mensaje.",
+    ),
+    ("plan", "PLAN"),
     ("no_output", "(sin salida)"),
     ("wait", "El agente sigue trabajando: espera o pulsa Esc."),
     ("new", "Conversación nueva."),
@@ -60,7 +73,7 @@ const ES: &[(&str, &str)] = &[
     ),
     (
         "help",
-        "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/compactar  resume la conversación para liberar contexto\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
+        "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/compactar  resume la conversación para liberar contexto\n/plan · /construir  modo plan (solo lectura) o normal (Mayús+Tab)\n@archivo  adjunta un archivo (Tab completa) · !orden  ejecuta y adjunta la salida\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
     ),
 ];
 
@@ -82,6 +95,19 @@ const EN: &[(&str, &str)] = &[
     ("interrupted", "✗ interrupted"),
     ("lines", "lines"),
     ("nothing_to_compact", "Not enough conversation to compact."),
+    (
+        "plan_on",
+        "◆ Plan mode: the agent only reads and proposes. Shift+Tab or /build to go back.",
+    ),
+    (
+        "plan_off",
+        "▶ Normal mode: the agent can change files and run commands.",
+    ),
+    (
+        "shell_attached",
+        "· The output will be sent as context with your next message.",
+    ),
+    ("plan", "PLAN"),
     ("no_output", "(no output)"),
     ("wait", "The agent is still working: wait or press Esc."),
     ("new", "New conversation."),
@@ -98,7 +124,7 @@ const EN: &[(&str, &str)] = &[
     ),
     (
         "help",
-        "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/compact  summarise the conversation to free context\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",
+        "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/compact  summarise the conversation to free context\n/plan · /build  plan (read-only) or normal mode (Shift+Tab)\n@file  attach a file (Tab completes) · !command  run it and attach the output\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",
     ),
 ];
 

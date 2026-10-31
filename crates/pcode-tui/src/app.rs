@@ -70,6 +70,17 @@ pub enum Event {
     Cancelled,
     /// Pasa el tiempo (anima el indicador).
     Tick,
+    /// Lista de archivos del proyecto (para `@archivo`).
+    Files(Vec<String>),
+    /// Terminó una `!orden`.
+    ShellDone {
+        /// Orden.
+        command: String,
+        /// Salida.
+        output: String,
+        /// Si salió con 0.
+        ok: bool,
+    },
 }
 
 /// Lo que la TUI pide hacer fuera.
@@ -92,6 +103,10 @@ pub enum Command {
     New,
     /// Resumir la conversación para liberar contexto.
     Compact,
+    /// Activar o desactivar el modo plan (solo lectura).
+    SetPlan(bool),
+    /// Ejecutar una orden de shell (`!orden`).
+    Shell(String),
     /// Salir.
     Quit,
 }
@@ -125,6 +140,60 @@ pub struct App {
     pub usage: Usage,
     /// Fotograma del indicador de actividad.
     pub spinner: usize,
+    /// Modo plan (el agente solo lee y propone).
+    pub plan: bool,
+    /// Archivos del proyecto, para `@archivo`.
+    pub files: Vec<String>,
+    /// Sugerencias de `@archivo` para lo que se está escribiendo.
+    pub suggestions: Vec<String>,
+    /// Sugerencia seleccionada.
+    pub suggestion: usize,
+}
+
+/// Puntuación difusa de `pattern` en `candidate` (subsecuencia, sin distinguir mayúsculas), con
+/// bonus por inicio de segmento (`/`, `.`, `_`, `-`) y por coincidencias seguidas; `None` si no casa.
+pub fn fuzzy_score(pattern: &str, candidate: &str) -> Option<i32> {
+    let c: Vec<char> = candidate.to_lowercase().chars().collect();
+    let mut score = 0i32;
+    let (mut i, mut run) = (0usize, 0i32);
+    for pc in pattern.to_lowercase().chars() {
+        let j = (i..c.len()).find(|&j| c[j] == pc)?;
+        run = if j == i && i > 0 { run + 1 } else { 0 };
+        let start = j == 0 || matches!(c[j - 1], '/' | '.' | '_' | '-');
+        score += 10 + run * 6 + if start { 8 } else { 0 } - (j - i) as i32;
+        i = j + 1;
+    }
+    let name_start = candidate.rfind('/').map(|x| x + 1).unwrap_or(0);
+    if candidate[name_start..]
+        .to_lowercase()
+        .starts_with(&pattern.to_lowercase())
+    {
+        score += 25;
+    }
+    Some(score - c.len() as i32 / 8)
+}
+
+/// Mejores `n` archivos para `pattern`.
+pub fn best_matches(files: &[String], pattern: &str, n: usize) -> Vec<String> {
+    let mut v: Vec<(i32, &String)> = files
+        .iter()
+        .filter_map(|f| fuzzy_score(pattern, f).map(|s| (s, f)))
+        .collect();
+    v.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.len().cmp(&b.1.len())));
+    v.into_iter().take(n).map(|x| x.1.clone()).collect()
+}
+
+/// Rutas mencionadas con `@ruta` en un mensaje.
+pub fn mentions(input: &str) -> Vec<String> {
+    input
+        .split_whitespace()
+        .filter_map(|w| w.strip_prefix('@'))
+        .map(|w| {
+            w.trim_end_matches([',', '.', ';', ':', ')', '?', '!'])
+                .to_string()
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
 }
 
 /// Resumen de los argumentos de una tool en una línea.
@@ -159,7 +228,44 @@ impl App {
             model: model.into(),
             usage: Usage::default(),
             spinner: 0,
+            plan: false,
+            files: vec![],
+            suggestions: vec![],
+            suggestion: 0,
         }
+    }
+
+    /// `@token` que se está escribiendo al final de la entrada.
+    fn mention_token(&self) -> Option<&str> {
+        let start = self
+            .input
+            .rfind(char::is_whitespace)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        self.input[start..].strip_prefix('@')
+    }
+
+    fn refresh_suggestions(&mut self) {
+        self.suggestion = 0;
+        self.suggestions = match self.mention_token() {
+            Some(q) if !self.files.is_empty() => best_matches(&self.files, q, 8),
+            _ => vec![],
+        };
+    }
+
+    fn complete_mention(&mut self) {
+        if let Some(path) = self.suggestions.get(self.suggestion).cloned() {
+            let start = self
+                .input
+                .rfind(char::is_whitespace)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            self.input.truncate(start);
+            self.input.push('@');
+            self.input.push_str(&path);
+            self.input.push(' ');
+        }
+        self.suggestions.clear();
     }
 
     /// Aplica un evento y devuelve lo que hay que hacer fuera.
@@ -193,6 +299,25 @@ impl App {
             }
             Event::Tick => {
                 self.spinner = self.spinner.wrapping_add(1);
+                vec![]
+            }
+            Event::Files(f) => {
+                self.files = f;
+                vec![]
+            }
+            Event::ShellDone {
+                command,
+                output,
+                ok,
+            } => {
+                self.entries.push(Entry::Tool {
+                    name: "!".into(),
+                    brief: command,
+                    state: if ok { ToolState::Ok } else { ToolState::Err },
+                    output,
+                });
+                self.entries
+                    .push(Entry::Info(t(self.lang, "shell_attached").into()));
                 vec![]
             }
         }
@@ -284,7 +409,43 @@ impl App {
                 None => vec![],
             };
         }
+        if !self.suggestions.is_empty() {
+            match k.code {
+                KeyCode::Up => {
+                    self.suggestion = self.suggestion.saturating_sub(1);
+                    return vec![];
+                }
+                KeyCode::Down => {
+                    self.suggestion = (self.suggestion + 1).min(self.suggestions.len() - 1);
+                    return vec![];
+                }
+                KeyCode::Tab | KeyCode::Enter => {
+                    self.complete_mention();
+                    return vec![];
+                }
+                KeyCode::Esc => {
+                    self.suggestions.clear();
+                    return vec![];
+                }
+                _ => {}
+            }
+        }
+        let cmds = self.key_main(k, ctrl);
+        if matches!(k.code, KeyCode::Char(_) | KeyCode::Backspace) {
+            self.refresh_suggestions();
+        }
+        cmds
+    }
+
+    fn key_main(&mut self, k: KeyEvent, ctrl: bool) -> Vec<Command> {
         match k.code {
+            KeyCode::BackTab => {
+                self.plan = !self.plan;
+                self.entries.push(Entry::Info(
+                    t(self.lang, if self.plan { "plan_on" } else { "plan_off" }).into(),
+                ));
+                vec![Command::SetPlan(self.plan)]
+            }
             KeyCode::Char('c') if ctrl => {
                 if self.busy {
                     vec![Command::Cancel]
@@ -409,6 +570,18 @@ impl App {
                     )));
                     vec![Command::SetModel(arg.to_string())]
                 }
+                "plan" => {
+                    self.plan = true;
+                    self.entries
+                        .push(Entry::Info(t(self.lang, "plan_on").into()));
+                    vec![Command::SetPlan(true)]
+                }
+                "construir" | "build" | "normal" => {
+                    self.plan = false;
+                    self.entries
+                        .push(Entry::Info(t(self.lang, "plan_off").into()));
+                    vec![Command::SetPlan(false)]
+                }
                 "compactar" | "compact" if !self.busy => {
                     self.busy = true;
                     vec![Command::Compact]
@@ -433,6 +606,13 @@ impl App {
         if self.busy {
             self.entries.push(Entry::Info(t(self.lang, "wait").into()));
             return vec![];
+        }
+        if let Some(cmd) = text.strip_prefix('!') {
+            let cmd = cmd.trim().to_string();
+            if cmd.is_empty() {
+                return vec![];
+            }
+            return vec![Command::Shell(cmd)];
         }
         self.entries.push(Entry::User(text.clone()));
         self.busy = true;
@@ -595,6 +775,72 @@ mod tests {
         a.update(key(KeyCode::Down));
         assert_eq!(a.input, "");
         let _ = KeyEventKind::Press;
+    }
+
+    #[test]
+    fn fuzzy_prefiere_nombre_e_inicio_de_segmento() {
+        assert!(fuzzy_score("mrs", "src/main.rs").is_some());
+        assert!(fuzzy_score("xyz", "src/main.rs").is_none());
+        let files: Vec<String> = ["docs/manual.md", "src/main.rs", "crates/a/src/domain.rs"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(best_matches(&files, "main", 3)[0], "src/main.rs");
+        assert_eq!(
+            mentions("mira @src/main.rs, y @README.md."),
+            vec!["src/main.rs", "README.md"]
+        );
+    }
+
+    #[test]
+    fn chat_mencion_sugiere_y_tab_completa() {
+        let mut a = app();
+        a.update(Event::Files(vec![
+            "src/main.rs".into(),
+            "src/lib.rs".into(),
+            "README.md".into(),
+        ]));
+        typed(&mut a, "explica @lib");
+        assert_eq!(a.suggestions, vec!["src/lib.rs"]);
+        a.update(key(KeyCode::Tab));
+        assert_eq!(a.input, "explica @src/lib.rs ");
+        assert!(a.suggestions.is_empty());
+        typed(&mut a, "y @");
+        assert_eq!(a.suggestions.len(), 3);
+        a.update(key(KeyCode::Down));
+        a.update(key(KeyCode::Enter));
+        assert!(a.input.ends_with("@src/lib.rs "), "{}", a.input);
+    }
+
+    #[test]
+    fn chat_modo_plan_y_orden_de_shell() {
+        let mut a = app();
+        assert_eq!(
+            a.update(Event::Key(KeyEvent::new(
+                KeyCode::BackTab,
+                KeyModifiers::SHIFT
+            ))),
+            vec![Command::SetPlan(true)]
+        );
+        assert!(a.plan);
+        typed(&mut a, "/construir");
+        assert_eq!(a.update(key(KeyCode::Enter)), vec![Command::SetPlan(false)]);
+        typed(&mut a, "!cargo test");
+        assert_eq!(
+            a.update(key(KeyCode::Enter)),
+            vec![Command::Shell("cargo test".into())]
+        );
+        assert!(!a.busy);
+        a.update(Event::ShellDone {
+            command: "cargo test".into(),
+            output: "ok".into(),
+            ok: true,
+        });
+        assert!(
+            a.entries.iter().any(
+                |e| matches!(e, Entry::Tool { name, state: ToolState::Ok, .. } if name == "!")
+            )
+        );
     }
 
     #[test]

@@ -162,11 +162,29 @@ pub fn render(app: &App, f: &mut Frame) {
         t(app.lang, "ready").to_string()
     };
     let left = format!(" >_ PublicCode  ·  {}", app.model);
+    let mode = if app.plan {
+        format!(" ◆ {} ", t(app.lang, "plan"))
+    } else {
+        String::new()
+    };
     let right = format!("{state} ");
-    let gap = (header.width as usize).saturating_sub(left.chars().count() + right.chars().count());
+    let gap = (header.width as usize)
+        .saturating_sub(left.chars().count() + mode.chars().count() + 1 + right.chars().count());
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(left, th.bar().add_modifier(ratatui::style::Modifier::BOLD)),
+            Span::styled(" ", th.bar()),
+            Span::styled(
+                mode,
+                if th.use_color {
+                    ratatui::style::Style::new()
+                        .bg(th.warn)
+                        .fg(ratatui::style::Color::Black)
+                        .add_modifier(ratatui::style::Modifier::BOLD)
+                } else {
+                    th.bar().add_modifier(ratatui::style::Modifier::BOLD)
+                },
+            ),
             Span::styled(" ".repeat(gap), th.bar()),
             Span::styled(right, th.bar()),
         ]))
@@ -209,6 +227,40 @@ pub fn render(app: &App, f: &mut Frame) {
             (input_area.x + 1 + cx).min(input_area.right().saturating_sub(2)),
             input_area.y + 1 + cy,
         ));
+    }
+
+    // Sugerencias de `@archivo`, encima de la entrada.
+    if !app.suggestions.is_empty() && app.approval.is_none() {
+        let n = app.suggestions.len() as u16;
+        let h = (n + 2).min(input_area.y.saturating_sub(body.y));
+        let w = body.width.saturating_sub(2).clamp(10, 70);
+        if h >= 3 {
+            let r = Rect::new(input_area.x + 1, input_area.y - h, w, h);
+            let items: Vec<Line> = app
+                .suggestions
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    let st = if i == app.suggestion {
+                        th.bubble()
+                    } else {
+                        th.text()
+                    };
+                    let sym = if i == app.suggestion { "› " } else { "  " };
+                    Line::from(Span::styled(format!("{sym}{f}"), st))
+                })
+                .collect();
+            f.render_widget(Clear, r);
+            f.render_widget(
+                Paragraph::new(items).block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .title(Span::styled(" @ ", th.strong()))
+                        .border_style(th.strong()),
+                ),
+                r,
+            );
+        }
     }
 
     // Barra de estado: tokens y atajos.
@@ -427,6 +479,20 @@ mod tests {
         }
         out.push_str("</pre>");
         out
+    }
+
+    #[test]
+    fn render_modo_plan_y_sugerencias() {
+        let mut a = App::new(Lang::Es, Theme::by_name("azul", false).unwrap(), "m");
+        a.plan = true;
+        a.files = vec!["src/main.rs".into(), "src/lib.rs".into()];
+        a.input = "mira @ma".into();
+        a.suggestions = vec!["src/main.rs".into()];
+        let s = screen(&a, 80, 24);
+        assert!(s[0].contains("◆ PLAN"), "{}", s[0]);
+        let all = s.join("\n");
+        assert!(all.contains("› src/main.rs"), "{all}");
+        assert!(all.contains("╭ @ "));
     }
 
     #[test]

@@ -211,3 +211,17 @@ read l
         .stdout(predicate::str::contains("✓ reloj: 1 tools"))
         .stdout(predicate::str::contains("reloj_hora"));
 }
+
+#[test]
+fn chat_orden_de_shell_y_modo_plan() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("nota.txt"), "contenido de la nota").unwrap();
+    pcode(d.path(), json!([resp("plan: nada que cambiar", json!([]))]))
+        .arg("chat")
+        .write_stdin("!echo hola-shell\n/plan\nrevisa @nota.txt\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hola-shell"))
+        .stdout(predicate::str::contains("Modo plan"))
+        .stdout(predicate::str::contains("plan: nada que cambiar"));
+}

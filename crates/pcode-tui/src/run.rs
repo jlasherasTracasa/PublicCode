@@ -26,6 +26,103 @@ pub struct TuiOptions {
     pub theme: Theme,
     /// Avisos que se muestran al empezar (servidores MCP que fallaron…).
     pub notices: Vec<String>,
+    /// Raíz del proyecto (para `@archivo` y `!orden`).
+    pub root: std::path::PathBuf,
+}
+
+/// Archivos del proyecto: con git, los versionados y los nuevos no ignorados; si no, un recorrido
+/// que salta `.git`, `target` y `node_modules` (como mucho 20 000).
+pub fn project_files(root: &std::path::Path) -> Vec<String> {
+    let git = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .output();
+    if let Ok(o) = git
+        && o.status.success()
+    {
+        let mut v: Vec<String> = String::from_utf8_lossy(&o.stdout)
+            .split('\0')
+            .filter(|x| !x.is_empty())
+            .map(String::from)
+            .collect();
+        v.sort();
+        v.dedup();
+        return v;
+    }
+    let mut out = vec![];
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            match e.file_type() {
+                Ok(t) if t.is_dir() => {
+                    if !matches!(name.as_str(), ".git" | "target" | "node_modules" | ".pcode") {
+                        stack.push(e.path());
+                    }
+                }
+                Ok(t) if t.is_file() => {
+                    if let Ok(r) = e.path().strip_prefix(root) {
+                        out.push(r.to_string_lossy().replace('\\', "/"));
+                    }
+                    if out.len() >= 20_000 {
+                        return out;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Añade al mensaje el contenido de los `@archivo` mencionados (hasta 100 KB cada uno) y las
+/// salidas de `!orden` pendientes.
+pub fn expand_message(root: &std::path::Path, text: &str, shell: &[String]) -> String {
+    let mut out = text.to_string();
+    for (cmd_out, i) in shell.iter().zip(1..) {
+        if i == 1 {
+            out.push_str("\n\n# Salidas de órdenes que ejecuté\n");
+        }
+        out.push_str(cmd_out);
+        out.push('\n');
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for m in crate::app::mentions(text) {
+        if !seen.insert(m.clone()) {
+            continue;
+        }
+        let Ok(p) = pcode_tools::resolve_in_root(root, &m) else {
+            continue;
+        };
+        let Ok(bytes) = std::fs::read(&p) else {
+            continue;
+        };
+        if bytes.contains(&0) {
+            continue;
+        }
+        let mut body = String::from_utf8_lossy(&bytes).into_owned();
+        if body.len() > 100_000 {
+            let mut cut = 100_000;
+            while !body.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            body.truncate(cut);
+            body.push_str("\n[… recortado]");
+        }
+        out.push_str(&format!("\n\n# Archivo {m}\n```\n{body}\n```"));
+    }
+    out
 }
 
 /// Se llama al terminar cada vuelta con el mensaje del usuario y la transcripción completa
@@ -36,6 +133,7 @@ enum Msg {
     Ui(Event),
     Turn(String, RunReport),
     Compacted(Vec<Message>),
+    Shell(String, String, bool),
 }
 
 /// Aprobador que pregunta en la TUI.
@@ -93,6 +191,14 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
         app.entries.push(crate::Entry::Info(format!("· {n}")));
     }
     let mut history = opts.history;
+    let root = opts.root.clone();
+    let mut shell_context: Vec<String> = vec![];
+    {
+        let (tx, root) = (tx.clone(), root.clone());
+        tokio::task::spawn_blocking(move || {
+            let _ = tx.send(Msg::Ui(Event::Files(project_files(&root))));
+        });
+    }
     if history.len() > 1 {
         for m in &history {
             match m.role {
@@ -163,6 +269,15 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                     on_turn(Some((&user, &history)));
                     ev
                 }
+                Msg::Shell(cmd, output, ok) => {
+                    let cut: String = output.chars().take(20_000).collect();
+                    shell_context.push(format!("$ {cmd}\n```\n{cut}\n```"));
+                    Event::ShellDone {
+                        command: cmd,
+                        output,
+                        ok,
+                    }
+                }
                 Msg::Compacted(h) => {
                     turn = None;
                     if h.len() == history.len() {
@@ -183,11 +298,43 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                 match cmd {
                     Command::Quit => break 'outer,
                     Command::Send(text) => {
+                        let full = expand_message(&root, &text, &shell_context);
+                        shell_context.clear();
                         let (agent, tx, h) = (agent.clone(), tx.clone(), history.clone());
                         turn = Some(tokio::spawn(async move {
-                            let r = agent.lock().await.run_turn(h, &text).await;
+                            let r = agent.lock().await.run_turn(h, &full).await;
                             let _ = tx.send(Msg::Turn(text, r));
                         }));
+                    }
+                    Command::SetPlan(on) => {
+                        if let Ok(mut a) = agent.try_lock() {
+                            a.set_read_only(on);
+                        }
+                    }
+                    Command::Shell(cmd) => {
+                        let (tx, root) = (tx.clone(), root.clone());
+                        tokio::spawn(async move {
+                            let mut c = pcode_tools::shell_command(&cmd);
+                            c.current_dir(&root)
+                                .stdin(std::process::Stdio::null())
+                                .kill_on_drop(true);
+                            let (output, ok) =
+                                match tokio::time::timeout(Duration::from_secs(300), c.output())
+                                    .await
+                                {
+                                    Ok(Ok(o)) => (
+                                        format!(
+                                            "{}{}",
+                                            String::from_utf8_lossy(&o.stdout),
+                                            String::from_utf8_lossy(&o.stderr)
+                                        ),
+                                        o.status.success(),
+                                    ),
+                                    Ok(Err(e)) => (e.to_string(), false),
+                                    Err(_) => ("tiempo máximo (300 s) agotado".into(), false),
+                                };
+                            let _ = tx.send(Msg::Shell(cmd, output, ok));
+                        });
                     }
                     Command::Cancel => {
                         if let Some(h) = turn.take() {
@@ -236,4 +383,35 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
     ratatui::restore();
     let _ = input.join();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expandir_adjunta_menciones_y_salidas() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("src")).unwrap();
+        std::fs::write(d.path().join("src/a.rs"), "fn a() {}").unwrap();
+        let out = expand_message(
+            d.path(),
+            "revisa @src/a.rs y @no-existe.rs",
+            &["$ cargo test\n```\nok\n```".into()],
+        );
+        assert!(out.starts_with("revisa @src/a.rs"));
+        assert!(out.contains("# Archivo src/a.rs\n```\nfn a() {}"));
+        assert!(out.contains("$ cargo test"));
+        assert!(!out.contains("# Archivo no-existe"));
+        assert!(!expand_message(d.path(), "@../../etc/passwd", &[]).contains("root:"));
+    }
+
+    #[test]
+    fn archivos_sin_git_saltan_target() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("target")).unwrap();
+        std::fs::write(d.path().join("target/x"), "").unwrap();
+        std::fs::write(d.path().join("a.txt"), "").unwrap();
+        assert_eq!(project_files(d.path()), vec!["a.txt"]);
+    }
 }
