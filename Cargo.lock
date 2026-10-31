@@ -1514,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-backends"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "pcode-models",
@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1562,7 +1562,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-config"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "tempfile",
@@ -1572,7 +1572,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "pcode-models",
@@ -1586,7 +1586,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-flow"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "futures",
  "pcode-backends",
@@ -1602,7 +1602,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-models"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-policy"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "globset",
  "hex",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-protocol"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1641,7 +1641,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-sandbox"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "libc",
  "serde",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-server"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1675,7 +1675,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-skills"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.21",
@@ -1683,7 +1683,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-store"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "rusqlite",
  "serde_json",
@@ -1693,7 +1693,7 @@ dependencies = [
 
 [[package]]
 name = "pcode-tools"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "globset",
@@ -1707,13 +1707,15 @@ dependencies = [
 
 [[package]]
 name = "pcode-tui"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "pcode-core",
  "pcode-models",
+ "pcode-tools",
  "ratatui",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

@@ -11,11 +11,15 @@ escritorio** (Linux y Windows), **navegador**, **móvil** (aprobaciones), **IDE*
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
-> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (296 tests,
+> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (332 tests,
 > `clippy -D warnings` limpio). Funciona hoy:
 >
 > | Parte | Qué hay | Tareas |
 > |---|---|---|
+> | **Studio** | `pcode studio`: editor en el navegador con explorador, pestañas, resaltado de sintaxis, buscar/reemplazar, Ctrl+P, búsqueda en el proyecto, git (diff, preparar, commit), terminal integrada, tareas del proyecto y el agente al lado | F5.32 |
+> | **Conversaciones** | las sesiones del demonio (web, Studio, APK) admiten varios turnos, streaming y aprobaciones (`pcode chat --formato jsonl`) | F5.33 |
+> | **MCP** | tools externas por MCP (`[mcp.*]`, `pcode mcp`) con la misma política y auditoría | F2.22 |
+> | **Modos** | modo plan (solo lee y propone), `@archivo` con autocompletado y `!orden` en la TUI y el chat | F5.34 |
 > | **TUI** | `pcode`: interfaz a pantalla completa con el texto en streaming, tools con estado (`✓ ✗` y salida plegable con Ctrl+O), Markdown, aprobaciones en ventana, historial, desplazamiento y temas | F5.30 |
 > | **Chat** | `pcode chat`: el mismo agente en modo línea (también por stdin), con `--continuar`, `/modelo` y Ctrl-C; detecta la clave del entorno | F5.29 |
 > | Streaming | el texto llega token a token desde Anthropic, Gemini y OpenAI-compatible | F1.25 |
@@ -46,24 +50,25 @@ se sigue en el escritorio.
 ## Índice
 
 1. [Por qué existe](#por-qué-existe)
-2. [Qué hace mejor que opencode](#qué-hace-mejor-que-opencode)
-3. [Agentes y modelos que integra](#agentes-y-modelos-que-integra)
-4. [Cómo funciona](#cómo-funciona)
-5. [Interfaces: terminal, escritorio, web, móvil e IDE](#interfaces-terminal-escritorio-web-móvil-e-ide)
-6. [Conceptos](#conceptos)
-7. [Mini sandboxes](#mini-sandboxes)
-8. [Skills compartidas entre todos los agentes](#skills-compartidas-entre-todos-los-agentes)
-9. [Tools propias](#tools-propias)
-10. [Políticas de seguridad aplicadas por el motor](#políticas-de-seguridad-aplicadas-por-el-motor)
-11. [Base científica: ACL y EMNLP 2026](#base-científica-acl-y-emnlp-2026)
-12. [Cómo se mide que es mejor](#cómo-se-mide-que-es-mejor)
-13. [Hoja de ruta](#hoja-de-ruta)
-14. [Instalación](#instalación)
-15. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
-16. [Configuración](#configuración)
-17. [Estructura del repositorio](#estructura-del-repositorio)
-18. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
-19. [Decisiones abiertas](#decisiones-abiertas)
+2. [Frente a opencode y VS Code](#frente-a-opencode-y-vs-code)
+3. [Qué hace mejor que opencode](#qué-hace-mejor-que-opencode)
+4. [Agentes y modelos que integra](#agentes-y-modelos-que-integra)
+5. [Cómo funciona](#cómo-funciona)
+6. [Interfaces: terminal, escritorio, web, móvil e IDE](#interfaces-terminal-escritorio-web-móvil-e-ide)
+7. [Conceptos](#conceptos)
+8. [Mini sandboxes](#mini-sandboxes)
+9. [Skills compartidas entre todos los agentes](#skills-compartidas-entre-todos-los-agentes)
+10. [Tools propias](#tools-propias)
+11. [Políticas de seguridad aplicadas por el motor](#políticas-de-seguridad-aplicadas-por-el-motor)
+12. [Base científica: ACL y EMNLP 2026](#base-científica-acl-y-emnlp-2026)
+13. [Cómo se mide que es mejor](#cómo-se-mide-que-es-mejor)
+14. [Hoja de ruta](#hoja-de-ruta)
+15. [Instalación](#instalación)
+16. [Uso rápido (lo que ya funciona)](#uso-rápido-lo-que-ya-funciona)
+17. [Configuración](#configuración)
+18. [Estructura del repositorio](#estructura-del-repositorio)
+19. [Desarrollar PublicCode con agentes](#desarrollar-publiccode-con-agentes)
+20. [Decisiones abiertas](#decisiones-abiertas)
 
 ---
 
@@ -79,6 +84,26 @@ verificación, reintentos que aprenden del fallo anterior, una cola de integraci
 los lockfiles, reglas que el motor impone en lugar de pedirlas en un prompt, aislamiento barato para
 cada subagente y una forma de medir si algo mejora. PublicCode convierte todo ese pegamento en
 producto, sea cual sea el agente que haga el trabajo.
+
+## Frente a opencode y VS Code
+
+| Lo que usas a diario | opencode | VS Code | PublicCode |
+|---|---|---|---|
+| Agente en la terminal con streaming, tools y aprobaciones | ✓ | — | ✓ `pcode` (TUI) y `pcode chat` |
+| Modo plan / construir | ✓ | — | ✓ Mayús+Tab, `/plan`, `/construir` |
+| `@archivo` y `!orden` | ✓ | — | ✓ con autocompletado difuso |
+| Varios proveedores (Anthropic, Gemini, OpenAI, LiteLLM, Ollama) | ✓ | con extensiones | ✓ nativos, con reintentos y caché de prompt |
+| Tools externas por MCP | ✓ | ✓ | ✓ `[mcp.*]`, `pcode mcp` |
+| Editor con pestañas, resaltado, buscar/reemplazar, Ctrl+P | — | ✓ | ✓ `pcode studio` |
+| Explorador, búsqueda en el proyecto, git con diff y commit | — | ✓ | ✓ `pcode studio` |
+| Terminal integrada y tareas del proyecto (cargo, npm, go…) | — | ✓ | ✓ `pcode studio` |
+| El agente al lado del editor, con la selección como contexto | — | con extensiones | ✓ Ctrl+L en Studio |
+| Seguir y aprobar desde el móvil | — | — | ✓ APK y web |
+| Agentes externos (Claude Code, Copilot, Gemini, opencode) como subagentes en sandbox | — | — | ✓ `pcode run --backend`, `pcode flow` |
+| Política impuesta por el motor y auditoría encadenada | permisos | — | ✓ capa segura por defecto + `[politica]` |
+| LSP (ir a definición, errores en línea), depurador, extensiones | LSP | ✓ | todavía no (ver «Hoja de ruta») |
+
+![PublicCode Studio](docs/img/studio-claro.png)
 
 ## Qué hace mejor que opencode
 
@@ -421,6 +446,27 @@ de la etiqueta; el workflow publica los archivos y después prueba los dos insta
 
 ## Uso rápido (lo que ya funciona)
 
+### PublicCode Studio (alternativa a VS Code)
+
+```bash
+cd mi-proyecto
+pcode studio            # abre el editor en el navegador (solo en este equipo, con token)
+```
+
+| Atajo | Qué hace |
+|---|---|
+| Ctrl+P | abrir archivo (búsqueda difusa) |
+| Ctrl+S · Ctrl+W | guardar · cerrar pestaña |
+| Ctrl+F · Ctrl+G | buscar y reemplazar en el archivo · ir a una línea |
+| Ctrl+Shift+F · Ctrl+Shift+E · Ctrl+Shift+G | buscar en el proyecto · explorador · git |
+| Ctrl+\` · Ctrl+I | terminal · panel del agente |
+| Ctrl+L | preguntar al agente por la selección (con archivo y líneas) |
+| clic derecho / F2 / Supr en el explorador | renombrar, copiar ruta, preguntar al agente, borrar |
+
+El agente de Studio es el mismo que el de la TUI: conversa en varios turnos, edita los archivos (las
+pestañas sin cambios se recargan solas) y te pide aprobación en el propio panel. En el móvil, la misma
+página se usa con una barra inferior (agente, archivos, editor, git y terminal).
+
 ### Como agente de programación (alternativa a Claude Code y opencode)
 
 Basta una clave de API en el entorno; sin `pcode.toml`. Se detecta `ANTHROPIC_API_KEY`,
@@ -449,6 +495,9 @@ echo "resume el repo" | pcode chat           # sin terminal: un mensaje por lín
 | Ctrl+O | despliega o pliega la salida completa de las tools |
 | Esc | interrumpe al agente; Ctrl+C también y, con el agente parado, sale |
 | `s` / `t` / `n` en la ventana de aprobación | permitir, permitir sin volver a preguntar, negar |
+| Mayús+Tab, `/plan`, `/construir` | modo plan (solo lee y propone, sin tocar nada) o modo normal |
+| `@archivo` | adjunta el archivo al mensaje; al escribir `@` salen sugerencias (Tab o Intro completan) |
+| `!orden` | ejecuta la orden en el proyecto y su salida va como contexto de tu siguiente mensaje |
 | `/modelo [nombre]`, `/nuevo`, `/compactar`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, resumir la conversación, ver los tokens, ayuda y salir (también en `pcode chat`) |
 
 Temas: `azul` (por defecto), `claro`, `oscuro` y `alto-contraste`, con `PCODE_TEMA` o `[preferencias] tema`;
@@ -533,6 +582,11 @@ clave = "{env:ANTHROPIC_API_KEY}"
 
 [proveedores.gemini]
 tipo = "gemini"
+
+[mcp.github]                       # tools externas por MCP (stdio); `pcode mcp` las lista
+orden = ["npx", "-y", "@modelcontextprotocol/server-github"]
+entorno = { GITHUB_PERSONAL_ACCESS_TOKEN = "{env:GITHUB_TOKEN}" }
+preguntar = true                   # pedir aprobación antes de cada llamada
 
 [proveedores.litellm]
 tipo = "openai-compatible"

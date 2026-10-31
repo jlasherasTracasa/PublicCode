@@ -1853,6 +1853,25 @@ temporal, sin aislamiento de red ni de disco (el backend corre con los permisos 
 '''
 tests = ["worktree_crea_aplica_y_descarta", "worktree_sin_git_falla_con_mensaje", "cli: `pcode run --backend mock --sandbox N0` integra el cambio"]
 
+[[tarea]]
+id = "F2.22"
+nombre = "mcp-cliente"
+titulo = "Cliente MCP: tools de servidores MCP para el agente"
+fase = "F2"
+ejecutor = "coordinador"
+depende = ["F1.08", "F1.26"]
+toca = ["crates/pcode-tools/src/mcp.rs", "crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-cli/src/doctor.rs"]
+acepta = "cargo test -p pcode-tools mcp && cargo test -p pcode-config mcp && cargo test -p pcode-cli --test chat mcp"
+contexto = ["crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+1. Cliente stdio (JSON por líneas): `initialize`, `tools/list` con paginación y `tools/call`, con tiempos
+   máximos, respuesta de error a las peticiones del servidor y nombres válidos para los proveedores.
+2. `[mcp.<nombre>]` (orden, entorno con `{env:VAR}`, preguntar, desactivado) en la configuración global y
+   del proyecto; conexión en paralelo al arrancar; avisos de los que fallan; `pcode mcp`.
+'''
+tests = ["mcp_lista_con_paginacion_y_llama", "mcp_tiempo_maximo_y_servidor_caido", "nombres_validos_para_los_proveedores", "mcp_se_lee_y_expande_el_entorno", "mcp_tools_de_un_servidor_real_en_chat_y_en_pcode_mcp"]
+
+
 # F3 — Flujos: tareas, DAG, aceptación, reintentos, integración, CI (sustituye a orquestador.py)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -3320,6 +3339,80 @@ objetivo = '''
    redondeados; vista previa HTML desde `TestBackend` (`PCODE_TUI_PREVIEW`).
 '''
 tests = ["render_80x24_transcripcion_entrada_y_estado", "render_vista_previa_html", "theme_no_color_quita_colores_pero_no_negrita", "web_sirve_index_con_cabeceras"]
+
+[[tarea]]
+id = "F5.32"
+nombre = "studio"
+titulo = "PublicCode Studio: editor web con explorador, git, terminal y agente (`pcode studio`)"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.31", "F5.29"]
+toca = ["crates/pcode-server/src/workspace.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/index.html", "crates/pcode-protocol/src/lib.rs", "crates/pcode-cli/src/main.rs", "docs/img/"]
+acepta = "cargo test -p pcode-server workspace && cargo test -p pcode-server terminal && cargo build -p pcode-cli && ./target/debug/pcode studio --help | grep -q -- --no-abrir"
+contexto = ["docs/interfaces.md (sistema de diseño)", "AGENTS.md (§1 regla de arquitectura)"]
+objetivo = '''
+1. API del demonio confinada a la raíz (también frente a enlaces simbólicos): fs.list/read/write/files/
+   rename/delete, search.text, git.status/diff/stage/unstage/commit, terminal.run/kill con eventos,
+   workspace.tasks y el evento filesChanged.
+2. Web: explorador con estado git, pestañas, editor con resaltado y sangría, Ctrl+S/P/F/G/L, búsqueda en el
+   proyecto, git con diff y commit, terminal con tareas, agente al lado; móvil con barra inferior.
+3. `pcode studio`: demonio en 127.0.0.1 con puerto libre y token, y abre el navegador.
+'''
+tests = ["rutas_fuera_de_la_raiz_se_rechazan", "lista_lee_y_escribe", "files_respeta_gitignore_y_search_encuentra", "git_estado_diff_stage_y_commit", "renombrar_borrar_y_tareas", "workspace_por_rpc_y_terminal_con_eventos", "(manual con Chromium) 24 comprobaciones del editor"]
+
+[[tarea]]
+id = "F5.33"
+nombre = "sesiones-conversacion"
+titulo = "Sesiones de conversación en el demonio: varios turnos, streaming y aprobaciones"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.03", "F5.29"]
+toca = ["crates/pcode-cli/src/chat.rs", "crates/pcode-server/src/server.rs", "crates/pcode-protocol/src/lib.rs"]
+acepta = "cargo test -p pcode-cli --test chat jsonl && cargo test -p pcode-server sesion_de_conversacion"
+contexto = ["crates/pcode-server/src/approvals.rs"]
+objetivo = '''
+1. `pcode chat --formato jsonl`: eventos delta/texto/tool/resultado/info/aprobacion/fin por stdout;
+   mensajes y respuestas de aprobación por stdin (también las que llegan antes de preguntarse).
+2. El demonio usa ese modo para las sesiones sin agente externo: `session.send`, evento `assistantDelta`
+   y aprobaciones en la cola del demonio.
+'''
+tests = ["chat_jsonl_protocolo_con_aprobacion", "sesion_de_conversacion_con_aprobacion_y_segundo_mensaje"]
+
+[[tarea]]
+id = "F5.34"
+nombre = "tui-modos"
+titulo = "Modo plan, `@archivo` con autocompletado y `!orden` en la TUI y el chat"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.30"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/i18n.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-core modo_plan && cargo test -p pcode-tui && cargo test -p pcode-cli --test chat shell"
+contexto = ["tareas/F5.09-tui-ordenes.md"]
+objetivo = '''
+1. `Agent::set_read_only`: oculta y deniega lo que escribe, ejecuta o usa la red y pide un plan.
+2. TUI: Mayús+Tab, `/plan`, `/construir` y distintivo ◆ PLAN; `@archivo` con `fuzzy_score` y sugerencias;
+   `!orden` con su salida como contexto del siguiente mensaje. Lo mismo en `pcode chat`.
+'''
+tests = ["modo_plan_oculta_y_deniega_lo_que_escribe", "chat_mencion_sugiere_y_tab_completa", "chat_modo_plan_y_orden_de_shell", "fuzzy_prefiere_nombre_e_inicio_de_segmento", "expandir_adjunta_menciones_y_salidas", "render_modo_plan_y_sugerencias", "chat_orden_de_shell_y_modo_plan"]
+
+[[tarea]]
+id = "F5.35"
+nombre = "lsp"
+titulo = "LSP en Studio y la TUI: ir a la definición, referencias y errores en línea"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.32"]
+toca = ["crates/pcode-lsp/", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-lsp"
+contexto = ["crates/pcode-tools/src/mcp.rs (cliente stdio de referencia)"]
+objetivo = '''
+Cliente LSP en el demonio (rust-analyzer, typescript-language-server, pyright, gopls según el proyecto):
+`lsp.definition`, `lsp.references`, `lsp.hover` y diagnósticos como eventos; en Studio, Ctrl+clic e
+F12 para ir a la definición, subrayado de errores y panel «Problemas»; el agente puede pedir los
+diagnósticos como tool.
+'''
+tests = ["(con servidores LSP falsos por stdio) definición, referencias y diagnósticos"]
+
 
 
 

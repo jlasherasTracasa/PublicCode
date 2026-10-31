@@ -183,6 +183,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F2.19-proxy-salida](../tareas/F2.19-proxy-salida.md) | `pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría | haiku | F1.15 | pendiente |
 | [F2.20-puente-sandbox](../tareas/F2.20-puente-sandbox.md) | Puente TCP→Unix dentro de la sandbox y red `Filtered` | haiku | F2.19, F2.04 | pendiente |
 | [F2.21-windows-sin-n1](../tareas/F2.21-windows-sin-n1.md) | Windows sin WSL: copia de trabajo aislada (N0) para backends y flujos | haiku | F2.03, F2.18, F3.10 | pendiente |
+| [F2.22-mcp-cliente](../tareas/F2.22-mcp-cliente.md) | Cliente MCP: tools de servidores MCP para el agente | coordinador | F1.08, F1.26 | hecha |
 
 ### F3
 
@@ -253,6 +254,10 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F5.29-chat](../tareas/F5.29-chat.md) | `pcode chat`: conversación interactiva con el agente (sustituto de Claude Code y opencode) | coordinador | F1.16, F1.22, F1.23, F5.28 | hecha |
 | [F5.30-tui-local](../tareas/F5.30-tui-local.md) | TUI a pantalla completa con el agente en proceso (`pcode`, `pcode tui`) | coordinador | F5.29, F1.25 | hecha |
 | [F5.31-diseno](../tareas/F5.31-diseno.md) | Sistema de diseño Material azul en la TUI, la web del demonio y el APK | coordinador | F5.30, F5.28 | hecha |
+| [F5.32-studio](../tareas/F5.32-studio.md) | PublicCode Studio: editor web con explorador, git, terminal y agente (`pcode studio`) | coordinador | F5.31, F5.29 | hecha |
+| [F5.33-sesiones-conversacion](../tareas/F5.33-sesiones-conversacion.md) | Sesiones de conversación en el demonio: varios turnos, streaming y aprobaciones | coordinador | F5.03, F5.29 | hecha |
+| [F5.34-tui-modos](../tareas/F5.34-tui-modos.md) | Modo plan, `@archivo` con autocompletado y `!orden` en la TUI y el chat | coordinador | F5.30 | hecha |
+| [F5.35-lsp](../tareas/F5.35-lsp.md) | LSP en Studio y la TUI: ir a la definición, referencias y errores en línea | coordinador | F5.32 | pendiente |
 
 ### F6
 
