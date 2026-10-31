@@ -3570,10 +3570,10 @@ id = "F7.02"
 nombre = "evals-inyeccion"
 titulo = "Evals de inyección indirecta, envenenamiento de repo y seguridad operativa"
 fase = "F7"
-ejecutor = "haiku"
-depende = ["F7.01", "F3.13"]
-toca = ["crates/pcode-flow/tests/seguridad.rs", "bench/seguridad.jsonl", "docs/evaluacion.md"]
-acepta = "cargo test -p pcode-flow --test seguridad"
+ejecutor = "coordinador"
+depende = ["F1.26", "F0.06"]
+toca = ["bench/seguridad.jsonl", "crates/pcode-core/tests/seguridad.rs", "crates/pcode-policy/src/caps.rs", "docs/evaluacion.md"]
+acepta = "cargo test -p pcode-core --test seguridad"
 contexto = ["docs/papers.md (Beyond the Payload, Will the User Ever Know?, RecoverAgent, SABER)", "docs/evaluacion.md (Seguridad)"]
 objetivo = '''
 1. Escenarios: un README con instrucciones para el agente, un `build.rs` o script de npm malicioso,

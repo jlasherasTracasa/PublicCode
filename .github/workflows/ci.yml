@@ -34,7 +34,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests portables (sin shell de Unix)
-        run: cargo test -p pcode-config -p pcode-models -p pcode-policy -p pcode-protocol -p pcode-skills -p pcode-store -p pcode-server -p pcode-tui -p pcode-lsp && cargo test -p pcode-sandbox worktree && cargo test -p pcode-cli --test chat && cargo test -p pcode-cli --test run n0
+        run: cargo test -p pcode-config -p pcode-models -p pcode-policy -p pcode-protocol -p pcode-skills -p pcode-store -p pcode-server -p pcode-tui -p pcode-lsp && cargo test -p pcode-sandbox worktree && cargo test -p pcode-cli --test chat && cargo test -p pcode-cli --test run n0 && cargo test -p pcode-core --test seguridad
       - run: cargo build --release -p pcode-cli
       - name: Prueba de humo de pcode.exe
         shell: pwsh
@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m unittest tools/minisandbox/test_minisandbox.py -v
+      - run: python3 -m unittest tools/minisandbox/test_minisandbox.py -v && python3 -m unittest tools/bench/test_reglas.py -v
 
   plan:
     name: Plan de tareas

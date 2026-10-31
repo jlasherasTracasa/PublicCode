@@ -123,7 +123,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F0.03-verificar-clis](../tareas/F0.03-verificar-clis.md) | Verificar las CLIs de Claude Code, Copilot, Gemini y opencode (modo no interactivo) | coordinador | — | pendiente |
 | [F0.04-bench-smoke](../tareas/F0.04-bench-smoke.md) | Banco PublicBench: 20 tareas del propio plan con su commit base | coordinador | — | pendiente |
 | [F0.05-adrs](../tareas/F0.05-adrs.md) | ADRs iniciales: lenguaje, backends, sandbox, skills | coordinador | — | hecha |
-| [F0.06-eval-reglas](../tareas/F0.06-eval-reglas.md) | Eval de cumplimiento de reglas: archivos fuera de `toca` y órdenes git prohibidas | haiku | — | pendiente |
+| [F0.06-eval-reglas](../tareas/F0.06-eval-reglas.md) | Eval de cumplimiento de reglas: archivos fuera de `toca` y órdenes git prohibidas | haiku | — | hecha |
 | [F0.07-ci-windows-release](../tareas/F0.07-ci-windows-release.md) | CI en Linux y Windows, y release de la CLI con instaladores | coordinador | F0.02, F1.20 | hecha |
 | [F0.08-instalacion](../tareas/F0.08-instalacion.md) | Instalación en una línea, `pcode doctor`, `pcode config` y `pcode actualizar` | coordinador | F0.07 | hecha |
 
@@ -274,7 +274,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | Tarea | Qué | Ejecutor | Depende | Estado |
 |---|---|---|---|---|
 | [F7.01-redteam-skills](../tareas/F7.01-redteam-skills.md) | Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas | haiku | F6.02, F2.20 | pendiente |
-| [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | haiku | F7.01, F3.13 | pendiente |
+| [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | coordinador | F1.26, F0.06 | hecha |
 | [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.21, F5.22, F6.04, F0.07 | pendiente |
 
 ### F8

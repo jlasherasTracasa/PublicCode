@@ -151,6 +151,8 @@ impl Capabilities {
                 "terraform apply*",
                 "terraform destroy*",
             ]),
+            // El agente no toca git por dentro (hooks = ejecución de código) ni su propia auditoría.
+            deny_write: v(&[".git/**", "**/.git/**", ".pcode/**"]),
             ask_irreversible: true,
             ..Default::default()
         }
