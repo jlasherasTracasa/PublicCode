@@ -381,6 +381,7 @@ Terminal-Bench) con el mismo modelo abierto en opencode y en PublicCode. Detalle
 | **F5** Interfaces | protocolo y demonio; terminal (CLI para máquinas, TUI con chat, órdenes, multiagente y temas); UI común (sesión, revisión, centro de control, ajustes, skills); escritorio Tauri (bandeja, notificaciones, llavero, paquetes para Linux y Windows); web, PWA, ACP, VS Code y GitHub. **En paralelo a F3–F4** | uso diario desde terminal, escritorio, web e IDE |
 | **F6** Aprendizaje | skills destiladas con cuarentena y evals continuos | regresión nocturna automática |
 | **F7** Endurecimiento | red teaming de skills y tools, publicación | release firmada |
+| **F8** 1.x | editor (plegado, multicursor, vista dividida), LSP completo, git (blame, ramas, conflictos), depurador y tests, deshacer, órdenes y agentes propios, coste, memoria, imágenes, modelos locales, instaladores nativos, ARM64, extensiones y GitHub — 36 tareas en [implementacion.md](docs/implementacion.md) | sustituir del todo a VS Code y opencode |
 
 Plan completo: [docs/PLAN.md](docs/PLAN.md). Arquitectura: [docs/arquitectura.md](docs/arquitectura.md).
 Plan de implementación tarea a tarea para Haiku 5.5: [docs/implementacion.md](docs/implementacion.md)

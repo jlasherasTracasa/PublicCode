@@ -182,7 +182,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F2.18-cli-backend-sandbox](../tareas/F2.18-cli-backend-sandbox.md) | CLI: `pcode run --backend X --sandbox N1` y `pcode sandbox …` | haiku | F2.07, F2.08, F2.09, F2.10, F2.12 | hecha |
 | [F2.19-proxy-salida](../tareas/F2.19-proxy-salida.md) | `pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría | haiku | F1.15 | pendiente |
 | [F2.20-puente-sandbox](../tareas/F2.20-puente-sandbox.md) | Puente TCP→Unix dentro de la sandbox y red `Filtered` | haiku | F2.19, F2.04 | pendiente |
-| [F2.21-windows-sin-n1](../tareas/F2.21-windows-sin-n1.md) | Windows sin WSL: copia de trabajo aislada (N0) para backends y flujos | haiku | F2.03, F2.18, F3.10 | pendiente |
+| [F2.21-windows-sin-n1](../tareas/F2.21-windows-sin-n1.md) | Windows sin WSL: copia de trabajo aislada (N0) para backends y flujos | coordinador | F2.03, F2.18, F3.10 | hecha |
 | [F2.22-mcp-cliente](../tareas/F2.22-mcp-cliente.md) | Cliente MCP: tools de servidores MCP para el agente | coordinador | F1.08, F1.26 | hecha |
 
 ### F3
@@ -257,7 +257,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F5.32-studio](../tareas/F5.32-studio.md) | PublicCode Studio: editor web con explorador, git, terminal y agente (`pcode studio`) | coordinador | F5.31, F5.29 | hecha |
 | [F5.33-sesiones-conversacion](../tareas/F5.33-sesiones-conversacion.md) | Sesiones de conversación en el demonio: varios turnos, streaming y aprobaciones | coordinador | F5.03, F5.29 | hecha |
 | [F5.34-tui-modos](../tareas/F5.34-tui-modos.md) | Modo plan, `@archivo` con autocompletado y `!orden` en la TUI y el chat | coordinador | F5.30 | hecha |
-| [F5.35-lsp](../tareas/F5.35-lsp.md) | LSP en Studio y la TUI: ir a la definición, referencias y errores en línea | coordinador | F5.32 | pendiente |
+| [F5.35-lsp](../tareas/F5.35-lsp.md) | LSP en Studio y la TUI: ir a la definición, referencias y errores en línea | coordinador | F5.32 | hecha |
 
 ### F6
 
@@ -276,4 +276,45 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F7.01-redteam-skills](../tareas/F7.01-redteam-skills.md) | Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas | haiku | F6.02, F2.20 | pendiente |
 | [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | haiku | F7.01, F3.13 | pendiente |
 | [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.21, F5.22, F6.04, F0.07 | pendiente |
+
+### F8
+
+| Tarea | Qué | Ejecutor | Depende | Estado |
+|---|---|---|---|---|
+| [F8.01-studio-modulos](../tareas/F8.01-studio-modulos.md) | Studio: separar el JS en módulos servidos por el demonio y tests con vitest + jsdom | coordinador | F5.35 | pendiente |
+| [F8.02-editor-plegado-minimapa](../tareas/F8.02-editor-plegado-minimapa.md) | Editor: plegado de código por sangría y minimapa | haiku | F8.01 | pendiente |
+| [F8.03-editor-multicursor](../tareas/F8.03-editor-multicursor.md) | Editor: multicursor (Alt+clic, Ctrl+D) y selección en columna | haiku | F8.01 | pendiente |
+| [F8.04-editor-dividido](../tareas/F8.04-editor-dividido.md) | Editor: vista dividida y comparar dos archivos | haiku | F8.01 | pendiente |
+| [F8.05-vista-previa](../tareas/F8.05-vista-previa.md) | Vista previa de Markdown e imágenes en Studio | haiku | F8.01 | pendiente |
+| [F8.06-lsp-formato](../tareas/F8.06-lsp-formato.md) | Formatear documento y formatear al guardar (LSP) | haiku | F5.35 | pendiente |
+| [F8.07-lsp-completado](../tareas/F8.07-lsp-completado.md) | Autocompletado del LSP en Studio | haiku | F8.01, F5.35 | pendiente |
+| [F8.08-lsp-renombrar](../tareas/F8.08-lsp-renombrar.md) | Renombrar símbolo y acciones de código (LSP) | haiku | F8.06 | pendiente |
+| [F8.09-lsp-tool-agente](../tareas/F8.09-lsp-tool-agente.md) | El agente consulta el LSP: tools `diagnosticos`, `definicion` y `referencias` | haiku | F5.35 | pendiente |
+| [F8.10-git-blame-historial](../tareas/F8.10-git-blame-historial.md) | Git: blame en línea e historial de un archivo | haiku | F5.32 | pendiente |
+| [F8.11-git-ramas](../tareas/F8.11-git-ramas.md) | Git: ramas, pull y push con aprobación | haiku | F8.10 | pendiente |
+| [F8.12-git-conflictos](../tareas/F8.12-git-conflictos.md) | Git: resolver conflictos de merge en tres paneles | haiku | F8.11, F8.04 | pendiente |
+| [F8.13-depurador-dap](../tareas/F8.13-depurador-dap.md) | Depurador (DAP): puntos de ruptura, pila y variables | coordinador | F8.01 | pendiente |
+| [F8.14-explorador-tests](../tareas/F8.14-explorador-tests.md) | Explorador de tests: descubrir, ejecutar y marcar ✓ ✗ por test | haiku | F5.32 | pendiente |
+| [F8.15-checkpoints](../tareas/F8.15-checkpoints.md) | Puntos de control y deshacer del agente (`/deshacer`, `/rehacer`) | haiku | F5.34 | pendiente |
+| [F8.16-ordenes-propias](../tareas/F8.16-ordenes-propias.md) | Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre` | haiku | F5.34 | pendiente |
+| [F8.17-agentes-propios](../tareas/F8.17-agentes-propios.md) | Agentes propios y subagentes: `.pcode/agentes/*.md` invocables con `@agente` | coordinador | F8.16, F2.22 | pendiente |
+| [F8.18-coste](../tareas/F8.18-coste.md) | Coste por sesión y presupuesto en euros | haiku | F1.26 | pendiente |
+| [F8.19-memoria-proyecto](../tareas/F8.19-memoria-proyecto.md) | Memoria del proyecto: `/recuerda` y `.pcode/memoria.md` en el prompt | haiku | F5.34 | pendiente |
+| [F8.20-web-fetch](../tareas/F8.20-web-fetch.md) | Tool `web`: leer una URL como texto con dominios permitidos | haiku | F1.13 | pendiente |
+| [F8.21-imagenes](../tareas/F8.21-imagenes.md) | Imágenes en el chat: pegar una captura para modelos con visión | haiku | F1.25 | pendiente |
+| [F8.22-modelos-locales](../tareas/F8.22-modelos-locales.md) | Modelos locales: detectar Ollama y LM Studio y elegir con `/modelos` | haiku | F1.26 | pendiente |
+| [F8.23-exportar-sesion](../tareas/F8.23-exportar-sesion.md) | Exportar y compartir una sesión (Markdown y HTML autocontenido) | haiku | F5.29 | pendiente |
+| [F8.24-tui-selectores](../tareas/F8.24-tui-selectores.md) | TUI: selectores de sesiones y de modelos | haiku | F5.34 | pendiente |
+| [F8.25-tui-diff](../tareas/F8.25-tui-diff.md) | TUI: revisar el diff del turno y aceptar o revertir por archivo | haiku | F8.15 | pendiente |
+| [F8.26-tui-raton](../tareas/F8.26-tui-raton.md) | TUI: ratón opcional, enlaces y copiar al portapapeles | haiku | F5.30 | pendiente |
+| [F8.27-instaladores-nativos](../tareas/F8.27-instaladores-nativos.md) | Instaladores nativos: winget, .msi, .deb y .rpm | coordinador | F7.03 | pendiente |
+| [F8.28-arm64](../tareas/F8.28-arm64.md) | Binarios para Linux aarch64 y Windows ARM64 | coordinador | F7.03 | pendiente |
+| [F8.29-notificaciones-apk](../tareas/F8.29-notificaciones-apk.md) | APK: notificaciones cuando el agente pide aprobación o termina | coordinador | F5.33 | pendiente |
+| [F8.30-tls-qr](../tareas/F8.30-tls-qr.md) | Acceso remoto seguro: TLS autofirmado y emparejamiento por QR | coordinador | F8.29 | pendiente |
+| [F8.31-multiraiz](../tareas/F8.31-multiraiz.md) | Studio con varios proyectos: abrir otra carpeta y espacios de trabajo | coordinador | F5.32 | pendiente |
+| [F8.32-extensiones](../tareas/F8.32-extensiones.md) | Extensiones: plugins con manifiesto (MCP local o WASM) y capacidades declaradas | coordinador | F2.22, F8.17 | pendiente |
+| [F8.33-github-pr](../tareas/F8.33-github-pr.md) | GitHub: crear un PR con descripción generada y revisar PRs con el agente | coordinador | F5.26, F8.11 | pendiente |
+| [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | F0.07 | pendiente |
+| [F8.35-accesibilidad](../tareas/F8.35-accesibilidad.md) | Accesibilidad de Studio: lector de pantalla, contraste AA y solo teclado | haiku | F8.01 | pendiente |
+| [F8.36-idiomas](../tareas/F8.36-idiomas.md) | Idiomas: inglés completo en Studio y la CLI, y catálogo para más | haiku | F8.01 | pendiente |
 <!-- tabla:fin -->

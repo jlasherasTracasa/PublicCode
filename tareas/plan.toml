@@ -1836,10 +1836,10 @@ id = "F2.21"
 nombre = "windows-sin-n1"
 titulo = "Windows sin WSL: copia de trabajo aislada (N0) para backends y flujos"
 fase = "F2"
-ejecutor = "haiku"
+ejecutor = "coordinador"
 depende = ["F2.03", "F2.18", "F3.10"]
-toca = ["crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/src/worktree.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/worktree.rs"]
-acepta = "cargo test -p pcode-sandbox worktree && cargo test -p pcode-cli --test worktree"
+toca = ["crates/pcode-sandbox/src/worktree.rs", "crates/pcode-sandbox/src/run.rs", "crates/pcode-sandbox/src/apply.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-sandbox worktree && cargo test -p pcode-cli --test run n0"
 contexto = ["crates/pcode-sandbox/src/run.rs (Sandbox, userns_available)", "crates/pcode-sandbox/src/apply.rs", "docs/mini-sandboxes.md"]
 objetivo = '''
 Hoy, en Windows, `pcode run --backend` y `pcode flow run` fallan porque N1 necesita namespaces de
@@ -3598,3 +3598,589 @@ acepta = "test -s docs/usuario.md && test -s CHANGELOG.md && grep -q sha256 .git
 contexto = ["docs/PLAN.md (decisiones abiertas: licencia, nombre)"]
 objetivo = "Binarios para Linux (x86_64 y aarch64) y Windows (x86_64) , `SHA256SUMS` firmado, instalación en una línea con verificación, guía de usuario (configurar backends, primer `pcode run`, `pcode flow`, sandboxes, skills) y checklist de seguridad superado (F7.01 y F7.02)."
 tests = ["(manual): instalar en una máquina limpia y ejecutar el tutorial de docs/usuario.md"]
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# F8 — 1.x: editor, LSP, git, depuración, agente, TUI, plataforma y ecosistema
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[[tarea]]
+id = "F8.01"
+nombre = "studio-modulos"
+titulo = "Studio: separar el JS en módulos servidos por el demonio y tests con vitest + jsdom"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F5.35"]
+toca = ["crates/pcode-server/web/index.html", "crates/pcode-server/web/studio/", "crates/pcode-server/src/server.rs", "apps/studio/package.json"]
+acepta = "npm ci && npm run -w apps/studio test"
+contexto = ["crates/pcode-server/web/index.html", "AGENTS.md (§6.4, sin CDN ni dependencias fuera de la lista)"]
+objetivo = '''
+1. Partir el `<script>` de `index.html` en módulos ES (`web/studio/rpc.js`, `editor.js`, `resaltado.js`, `arbol.js`,
+   `git.js`, `terminal.js`, `agente.js`, `lsp.js`, `paleta.js`) que el demonio sirve con `include_str!` y CSP `'self'`.
+2. `apps/studio` (workspace npm) con vitest + jsdom: un `rpc` falso y pruebas por módulo (resaltado, búsqueda difusa,
+   diff, árbol, buscar/reemplazar). Versiones exactas y `package-lock.json` versionado.
+3. Job `studio` en la CI que ejecuta esas pruebas.
+'''
+tests = ["resalta_rust_y_escapa_html", "puntua_prefiere_nombre", "diff_colorea_lineas", "buscar_reemplazar_cuenta_coincidencias"]
+
+[[tarea]]
+id = "F8.02"
+nombre = "editor-plegado-minimapa"
+titulo = "Editor: plegado de código por sangría y minimapa"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/editor.js", "crates/pcode-server/web/studio/plegado.js", "apps/studio/test/plegado.test.js"]
+acepta = "npm run -w apps/studio test -- plegado"
+contexto = ["crates/pcode-server/web/studio/editor.js"]
+objetivo = '''
+1. `rangosPlegables(texto)` por sangría y por llaves/`:` de Python; triángulos en el margen; Ctrl+Mayús+[ y ] pliegan/despliegan.
+2. Minimapa a la derecha (canvas) con la zona visible y clic para saltar; se oculta por debajo de 1100 px.
+'''
+tests = ["rangos_por_sangria", "rangos_por_llaves", "plegar_oculta_lineas_y_numeracion_sigue"]
+
+[[tarea]]
+id = "F8.03"
+nombre = "editor-multicursor"
+titulo = "Editor: multicursor (Alt+clic, Ctrl+D) y selección en columna"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/multicursor.js", "crates/pcode-server/web/studio/editor.js", "apps/studio/test/multicursor.test.js"]
+acepta = "npm run -w apps/studio test -- multicursor"
+contexto = ["crates/pcode-server/web/studio/editor.js"]
+objetivo = '''
+Cursores adicionales dibujados en una capa; Ctrl+D añade la siguiente aparición de la selección; Alt+Mayús+arrastrar
+selecciona en columna; escribir y borrar se aplican a todos los cursores de abajo arriba.
+'''
+tests = ["ctrl_d_añade_siguiente_aparicion", "escribir_en_tres_cursores", "columna_de_cuatro_lineas"]
+
+[[tarea]]
+id = "F8.04"
+nombre = "editor-dividido"
+titulo = "Editor: vista dividida y comparar dos archivos"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/editor.js", "crates/pcode-server/web/studio/division.js", "crates/pcode-server/web/index.html", "apps/studio/test/division.test.js"]
+acepta = "npm run -w apps/studio test -- division"
+contexto = ["crates/pcode-server/web/studio/editor.js"]
+objetivo = '''
+Ctrl+\ divide el editor en dos grupos de pestañas; «Comparar con…» en el menú del explorador abre un diff de dos archivos
+(o del archivo con su versión en HEAD) con desplazamiento sincronizado.
+'''
+tests = ["dividir_crea_dos_grupos", "cerrar_ultima_pestaña_une_grupos", "comparar_usa_git_show"]
+
+[[tarea]]
+id = "F8.05"
+nombre = "vista-previa"
+titulo = "Vista previa de Markdown e imágenes en Studio"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/vista_previa.js", "crates/pcode-server/src/workspace.rs", "apps/studio/test/vista_previa.test.js"]
+acepta = "npm run -w apps/studio test -- vista_previa && cargo test -p pcode-server workspace"
+contexto = ["crates/pcode-server/src/workspace.rs (read)"]
+objetivo = '''
+1. `fs.readBinary` (base64, ≤ 8 MB, solo png/jpg/gif/webp/svg como texto) para ver imágenes.
+2. Markdown en paralelo al editor (Ctrl+Mayús+V) con el mismo renderizado seguro del agente: sin HTML crudo.
+'''
+tests = ["markdown_no_ejecuta_html", "imagen_grande_se_rechaza", "svg_se_muestra_como_imagen_no_como_html"]
+
+[[tarea]]
+id = "F8.06"
+nombre = "lsp-formato"
+titulo = "Formatear documento y formatear al guardar (LSP)"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.35"]
+toca = ["crates/pcode-lsp/src/lib.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/studio/lsp.js", "crates/pcode-config/src/lib.rs"]
+acepta = "cargo test -p pcode-lsp formato && cargo test -p pcode-config formato"
+contexto = ["crates/pcode-lsp/src/lib.rs"]
+objetivo = '''
+`LspClient::format(rel, texto) -> Vec<TextEdit>` y `apply_edits(texto, edits)` (UTF-16); método `lsp.format`;
+Mayús+Alt+F en Studio y `[preferencias] formatear_al_guardar = true`.
+'''
+tests = ["formato_aplica_ediciones_utf16", "ediciones_solapadas_se_rechazan", "formatear_al_guardar_por_config"]
+
+[[tarea]]
+id = "F8.07"
+nombre = "lsp-completado"
+titulo = "Autocompletado del LSP en Studio"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01", "F5.35"]
+toca = ["crates/pcode-lsp/src/lib.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/studio/completado.js", "apps/studio/test/completado.test.js"]
+acepta = "cargo test -p pcode-lsp completado && npm run -w apps/studio test -- completado"
+contexto = ["crates/pcode-lsp/src/lib.rs"]
+objetivo = '''
+`LspClient::completion` (items con etiqueta, tipo, detalle y texto a insertar, incluidos `textEdit`); método `lsp.completion`;
+popup bajo el cursor que filtra al escribir, Tab/Intro insertan, Esc cierra; Ctrl+Espacio lo abre a mano.
+'''
+tests = ["completado_respeta_text_edit", "filtra_al_escribir", "no_abre_dentro_de_comentarios"]
+
+[[tarea]]
+id = "F8.08"
+nombre = "lsp-renombrar"
+titulo = "Renombrar símbolo y acciones de código (LSP)"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.06"]
+toca = ["crates/pcode-lsp/src/lib.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/src/workspace.rs", "crates/pcode-server/web/studio/lsp.js"]
+acepta = "cargo test -p pcode-lsp renombrar && cargo test -p pcode-server workspace"
+contexto = ["crates/pcode-lsp/src/lib.rs"]
+objetivo = '''
+`lsp.rename` aplica el `WorkspaceEdit` en el demonio (solo dentro de la raíz; muestra un resumen antes con `dryRun`);
+`lsp.codeActions` en la línea del cursor (Ctrl+.) con las correcciones rápidas del servidor.
+'''
+tests = ["rename_aplica_en_varios_archivos", "rename_fuera_de_la_raiz_se_rechaza", "code_actions_listan_quickfix"]
+
+[[tarea]]
+id = "F8.09"
+nombre = "lsp-tool-agente"
+titulo = "El agente consulta el LSP: tools `diagnosticos`, `definicion` y `referencias`"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.35"]
+toca = ["crates/pcode-tools/src/lsp_tools.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tools/tests/lsp_tools.rs"]
+acepta = "cargo test -p pcode-tools --test lsp_tools"
+contexto = ["crates/pcode-lsp/src/lib.rs", "crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+Tools de solo lectura que usan un `LspManager` compartido: el agente comprueba errores de compilación sin ejecutar
+`cargo build`, encuentra definiciones y usos exactos (mejor que `buscar`) y lo cita en sus respuestas.
+'''
+tests = ["diagnosticos_de_un_archivo", "definicion_en_otro_archivo", "sin_servidor_explica_que_instalar"]
+
+[[tarea]]
+id = "F8.10"
+nombre = "git-blame-historial"
+titulo = "Git: blame en línea e historial de un archivo"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.32"]
+toca = ["crates/pcode-server/src/workspace.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/studio/git.js", "crates/pcode-protocol/src/lib.rs"]
+acepta = "cargo test -p pcode-server workspace"
+contexto = ["crates/pcode-server/src/workspace.rs"]
+objetivo = '''
+`git.blame {path}` (autor, fecha y mensaje por línea, con `--porcelain`) y `git.log {path}` (últimos 50 commits);
+en Studio, anotación tenue al final de la línea actual y panel «Historial» con diff de cada commit.
+'''
+tests = ["blame_por_linea", "log_de_un_archivo", "archivo_sin_commits"]
+
+[[tarea]]
+id = "F8.11"
+nombre = "git-ramas"
+titulo = "Git: ramas, pull y push con aprobación"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.10"]
+toca = ["crates/pcode-server/src/workspace.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/studio/git.js", "crates/pcode-protocol/src/lib.rs"]
+acepta = "cargo test -p pcode-server workspace"
+contexto = ["crates/pcode-server/src/workspace.rs", "crates/pcode-policy/src/caps.rs (interactive_defaults)"]
+objetivo = '''
+`git.branches`, `git.checkout {branch, create}`, `git.pull`, `git.push`: push y pull piden confirmación en Studio
+(mismo criterio que la capa interactiva); nunca `--force` desde la interfaz.
+'''
+tests = ["crear_y_cambiar_de_rama", "checkout_con_cambios_avisa", "push_sin_remoto_da_error_claro"]
+
+[[tarea]]
+id = "F8.12"
+nombre = "git-conflictos"
+titulo = "Git: resolver conflictos de merge en tres paneles"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.11", "F8.04"]
+toca = ["crates/pcode-server/web/studio/conflictos.js", "crates/pcode-server/src/workspace.rs", "crates/pcode-server/web/studio/git.js", "apps/studio/test/conflictos.test.js"]
+acepta = "npm run -w apps/studio test -- conflictos && cargo test -p pcode-server workspace"
+contexto = ["crates/pcode-server/src/workspace.rs"]
+objetivo = '''
+Detectar archivos en conflicto (`git status` UU/AA), parsear los bloques `<<<<<<<`/`=======`/`>>>>>>>`, mostrar «nuestro»,
+«suyo» y resultado; botones aceptar uno, otro o ambos, y «Pedir al agente que lo resuelva» con el bloque como contexto.
+'''
+tests = ["parsea_tres_bloques", "aceptar_ambos_conserva_orden", "marcar_resuelto_hace_git_add"]
+
+[[tarea]]
+id = "F8.13"
+nombre = "depurador-dap"
+titulo = "Depurador (DAP): puntos de ruptura, pila y variables"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.01"]
+toca = ["crates/pcode-dap/", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/studio/depurador.js", "docs/adr/ADR-0008-depurador.md"]
+acepta = "cargo test -p pcode-dap"
+contexto = ["crates/pcode-lsp/src/lib.rs (cliente stdio de referencia)"]
+objetivo = '''
+Cliente DAP en el demonio (lldb-dap/codelldb para Rust y C, debugpy para Python, js-debug para Node): lanzar con
+F5, puntos de ruptura en el margen, continuar/paso a paso, pila de llamadas, variables y consola de evaluación.
+ADR con la elección de adaptadores y cómo se instalan.
+'''
+tests = ["(con adaptador DAP falso por stdio) lanzar, parar en ruptura, variables, continuar"]
+
+[[tarea]]
+id = "F8.14"
+nombre = "explorador-tests"
+titulo = "Explorador de tests: descubrir, ejecutar y marcar ✓ ✗ por test"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.32"]
+toca = ["crates/pcode-server/src/tests_proyecto.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/studio/tests.js", "crates/pcode-protocol/src/lib.rs"]
+acepta = "cargo test -p pcode-server tests_proyecto"
+contexto = ["crates/pcode-server/src/workspace.rs (tasks)"]
+objetivo = '''
+Descubrir tests con `cargo test -- --list`, `pytest --collect-only -q`, `go test -list .` y `npm test -- --listTests`;
+ejecutar uno, un archivo o todos con la salida en la terminal; ✓/✗ en el panel y en el margen del editor; «Pedir al agente
+que arregle este test».
+'''
+tests = ["lista_de_cargo", "lista_de_pytest", "resultado_marca_fallidos"]
+
+[[tarea]]
+id = "F8.15"
+nombre = "checkpoints"
+titulo = "Puntos de control y deshacer del agente (`/deshacer`, `/rehacer`)"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.34"]
+toca = ["crates/pcode-core/src/checkpoint.rs", "crates/pcode-core/src/agent.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-core/tests/checkpoint.rs"]
+acepta = "cargo test -p pcode-core --test checkpoint"
+contexto = ["crates/pcode-core/src/agent.rs (run_call)"]
+objetivo = '''
+Antes de que una tool escriba, guardar el contenido previo del archivo en `.pcode/checkpoints/<turno>/` (o su ausencia);
+`/deshacer` restaura el último turno entero (y `/rehacer` lo vuelve a aplicar). También en Studio («Deshacer el último turno»).
+'''
+tests = ["deshacer_restaura_y_borra_creados", "rehacer_vuelve_a_aplicar", "limite_de_50_turnos"]
+
+[[tarea]]
+id = "F8.16"
+nombre = "ordenes-propias"
+titulo = "Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre`"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.34"]
+toca = ["crates/pcode-skills/src/ordenes.rs", "crates/pcode-skills/src/lib.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-skills ordenes"
+contexto = ["crates/pcode-skills/src/registry.rs"]
+objetivo = '''
+Cada archivo es una plantilla de mensaje con frontmatter (`descripcion`, `modelo`, `plan: true`) y `$ARGUMENTOS`;
+aparecen en `/ayuda`, en la paleta de Studio y con autocompletado tras `/`. Globales en la carpeta de configuración.
+'''
+tests = ["plantilla_con_argumentos", "frontmatter_activa_modo_plan", "proyecto_manda_sobre_global"]
+
+[[tarea]]
+id = "F8.17"
+nombre = "agentes-propios"
+titulo = "Agentes propios y subagentes: `.pcode/agentes/*.md` invocables con `@agente`"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.16", "F2.22"]
+toca = ["crates/pcode-core/src/subagente.rs", "crates/pcode-skills/src/agentes.rs", "crates/pcode-tools/src/delegar.rs", "docs/arquitectura.md"]
+acepta = "cargo test -p pcode-core subagente && cargo test -p pcode-skills agentes"
+contexto = ["docs/arquitectura.md (delegación y capacidades atenuadas)"]
+objetivo = '''
+Definición con prompt, modelo, tools permitidas y capacidades; tool `delegar` para que el agente principal lance uno con
+capacidades atenuadas (nunca más que el padre) y reciba su informe; en la TUI, árbol de subagentes en marcha.
+'''
+tests = ["subagente_no_amplia_capacidades", "informe_vuelve_al_padre", "agente_de_solo_lectura"]
+
+[[tarea]]
+id = "F8.18"
+nombre = "coste"
+titulo = "Coste por sesión y presupuesto en euros"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F1.26"]
+toca = ["crates/pcode-models/src/precios.rs", "crates/pcode-config/src/lib.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-models precios && cargo test -p pcode-config precios"
+contexto = ["crates/pcode-models/src/types.rs (Usage)"]
+objetivo = '''
+Tabla de precios por modelo (entrada, salida, caché) en `[precios.<modelo>]` con valores por defecto editables; coste
+acumulado en la barra de la TUI y de Studio, `/coste` y `[preferencias] presupuesto_eur` que avisa al 80 % y para al 100 %.
+'''
+tests = ["coste_con_cache", "modelo_sin_precio_no_suma", "presupuesto_para_al_100"]
+
+[[tarea]]
+id = "F8.19"
+nombre = "memoria-proyecto"
+titulo = "Memoria del proyecto: `/recuerda` y `.pcode/memoria.md` en el prompt"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.34"]
+toca = ["crates/pcode-memory/src/proyecto.rs", "crates/pcode-memory/src/lib.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-memory/tests/proyecto.rs"]
+acepta = "cargo test -p pcode-memory --test proyecto"
+contexto = ["crates/pcode-cli/src/provider.rs (system_prompt)"]
+objetivo = '''
+`/recuerda <texto>` añade una nota con fecha; el agente también puede proponer recordar algo (con aprobación); el archivo
+se incluye en el prompt de sistema (máx. 8 KB, lo más reciente primero) y se edita a mano en Studio.
+'''
+tests = ["recuerda_añade_nota", "prompt_incluye_memoria_recortada", "sin_memoria_no_añade_nada"]
+
+[[tarea]]
+id = "F8.20"
+nombre = "web-fetch"
+titulo = "Tool `web`: leer una URL como texto con dominios permitidos"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-tools/src/web.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-policy/src/caps.rs", "crates/pcode-tools/tests/web.rs"]
+acepta = "cargo test -p pcode-tools --test web"
+contexto = ["crates/pcode-policy/src/caps.rs (check_domain)"]
+objetivo = '''
+GET con tiempo máximo y límite de tamaño, HTML convertido a texto (sin scripts ni estilos), solo dominios de
+`red_permitir` o con aprobación; efecto `Network`. Los tests usan un servidor falso en 127.0.0.1.
+'''
+tests = ["html_a_texto_sin_scripts", "dominio_no_permitido_pide_aprobacion", "limite_de_tamaño"]
+
+[[tarea]]
+id = "F8.21"
+nombre = "imagenes"
+titulo = "Imágenes en el chat: pegar una captura para modelos con visión"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F1.25"]
+toca = ["crates/pcode-models/src/types.rs", "crates/pcode-models/src/anthropic.rs", "crates/pcode-models/src/gemini.rs", "crates/pcode-models/src/openai.rs"]
+acepta = "cargo test -p pcode-models imagen"
+contexto = ["crates/pcode-models/src/types.rs (Message)"]
+objetivo = '''
+`Message` con partes de imagen (base64 + tipo); conversión a cada proveedor; en Studio pegar o arrastrar una imagen al
+mensaje; en la TUI `@captura.png`.
+'''
+tests = ["anthropic_con_imagen", "gemini_inline_data", "openai_image_url_base64"]
+
+[[tarea]]
+id = "F8.22"
+nombre = "modelos-locales"
+titulo = "Modelos locales: detectar Ollama y LM Studio y elegir con `/modelos`"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F1.26"]
+toca = ["crates/pcode-models/src/locales.rs", "crates/pcode-models/src/lib.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-models/tests/locales.rs"]
+acepta = "cargo test -p pcode-models --test locales"
+contexto = ["crates/pcode-cli/src/provider.rs"]
+objetivo = '''
+Sondear `127.0.0.1:11434/api/tags` (Ollama) y `:1234/v1/models` (LM Studio) con 300 ms de tiempo máximo; si no hay clave en
+el entorno, usar el primero; `/modelos` lista todos los disponibles (también los de LiteLLM) para elegir.
+'''
+tests = ["detecta_ollama_falso", "sin_servidor_no_espera", "lista_de_lm_studio"]
+
+[[tarea]]
+id = "F8.23"
+nombre = "exportar-sesion"
+titulo = "Exportar y compartir una sesión (Markdown y HTML autocontenido)"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.29"]
+toca = ["crates/pcode-cli/src/exportar.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/exportar.rs"]
+acepta = "cargo test -p pcode-cli --test exportar"
+contexto = ["crates/pcode-store/src/lib.rs (events)"]
+objetivo = '''
+`pcode exportar [sesión] --formato md|html` con la conversación, las tools y sus salidas plegadas; el HTML usa el tema de
+Studio, sin recursos externos y con las claves y rutas absolutas del usuario enmascaradas.
+'''
+tests = ["markdown_con_tools", "html_sin_recursos_externos", "oculta_claves_del_entorno"]
+
+[[tarea]]
+id = "F8.24"
+nombre = "tui-selectores"
+titulo = "TUI: selectores de sesiones y de modelos"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.34"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-tui selector"
+contexto = ["crates/pcode-tui/src/app.rs"]
+objetivo = '''
+`/sesiones` abre una lista de conversaciones anteriores (título, fecha, mensajes) para retomar; `/modelos` una lista de
+modelos del proveedor; ambas con búsqueda difusa, ↑/↓ e Intro.
+'''
+tests = ["selector_filtra_y_elige", "retomar_carga_historial", "esc_cierra_sin_cambiar"]
+
+[[tarea]]
+id = "F8.25"
+nombre = "tui-diff"
+titulo = "TUI: revisar el diff del turno y aceptar o revertir por archivo"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.15"]
+toca = ["crates/pcode-tui/src/diff.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-tui diff"
+contexto = ["crates/pcode-core/src/checkpoint.rs"]
+objetivo = '''
+Al terminar un turno con cambios, Ctrl+R abre la revisión: lista de archivos con +/−, diff coloreado con símbolos, `a`
+acepta, `r` revierte ese archivo (con el punto de control) y `e` abre en `$EDITOR`.
+'''
+tests = ["diff_render_80x24", "revertir_un_archivo", "sin_cambios_no_abre"]
+
+[[tarea]]
+id = "F8.26"
+nombre = "tui-raton"
+titulo = "TUI: ratón opcional, enlaces y copiar al portapapeles"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-config/src/lib.rs"]
+acepta = "cargo test -p pcode-tui raton"
+contexto = ["crates/pcode-tui/src/run.rs"]
+objetivo = '''
+`[preferencias] raton = true` activa la rueda y el clic en tools (desplegar) y en rutas (abrir en Studio o `$EDITOR`);
+`/copiar` copia la última respuesta con OSC 52 (funciona por SSH).
+'''
+tests = ["rueda_desplaza", "clic_en_tool_despliega", "osc52_bien_formado"]
+
+[[tarea]]
+id = "F8.27"
+nombre = "instaladores-nativos"
+titulo = "Instaladores nativos: winget, .msi, .deb y .rpm"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F7.03"]
+toca = [".github/workflows/release.yml", "packaging/winget/", "packaging/linux/", "docs/usuario.md"]
+acepta = "test -d packaging/winget && test -d packaging/linux"
+contexto = ["install.ps1", "install.sh"]
+objetivo = '''
+Manifiesto de winget (`winget install PublicCode.pcode`), .msi con WiX en la release, .deb y .rpm con `pcode` en
+`/usr/bin`; todos verificados en la CI con instalación limpia.
+'''
+tests = ["(CI) instalar y ejecutar pcode --version en cada formato"]
+
+[[tarea]]
+id = "F8.28"
+nombre = "arm64"
+titulo = "Binarios para Linux aarch64 y Windows ARM64"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F7.03"]
+toca = [".github/workflows/release.yml", ".github/workflows/ci.yml", "crates/pcode-cli/src/update.rs"]
+acepta = "grep -q aarch64-unknown-linux-gnu .github/workflows/release.yml && cargo test -p pcode-cli update"
+contexto = ["crates/pcode-cli/src/update.rs (asset_suffix)"]
+objetivo = '''
+Compilar en runners ARM (o cruzado), añadir los archivos a la release y a `SHA256SUMS`, y que `pcode actualizar` e
+`install.sh`/`install.ps1` elijan el de la arquitectura.
+'''
+tests = ["asset_suffix_para_aarch64_y_arm64"]
+
+[[tarea]]
+id = "F8.29"
+nombre = "notificaciones-apk"
+titulo = "APK: notificaciones cuando el agente pide aprobación o termina"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F5.33"]
+toca = ["apps/android/app/src/main/java/dev/publiccode/app/", "apps/android/app/src/main/AndroidManifest.xml", "crates/pcode-server/src/server.rs"]
+acepta = "gradle -p apps/android -q testDebugUnitTest assembleRelease"
+contexto = ["apps/android/app/src/main/java/dev/publiccode/app/MainActivity.java"]
+objetivo = '''
+Servicio en primer plano opcional que escucha `/eventos` y notifica `approvalRequested` y el fin de las sesiones; acciones
+«Permitir»/«Denegar» en la propia notificación; permiso `POST_NOTIFICATIONS` pedido al activarlo.
+'''
+tests = ["(JUnit) parser de eventos SSE", "(JUnit) acciones de la notificación llaman a approvals.decide"]
+
+[[tarea]]
+id = "F8.30"
+nombre = "tls-qr"
+titulo = "Acceso remoto seguro: TLS autofirmado y emparejamiento por QR"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.29"]
+toca = ["crates/pcode-server/src/tls.rs", "crates/pcode-cli/src/main.rs", "apps/android/app/src/main/java/dev/publiccode/app/Conexion.java", "docs/adr/ADR-0009-acceso-remoto.md"]
+acepta = "cargo test -p pcode-server tls"
+contexto = ["docs/adr/ADR-0006-apk-android.md"]
+objetivo = '''
+`pcode daemon --escuchar 0.0.0.0` genera un certificado autofirmado y muestra un QR (en la terminal) con la URL, el token y la
+huella del certificado; el APK fija esa huella (certificate pinning) y deja de necesitar HTTP en claro.
+'''
+tests = ["certificado_persistente_por_proyecto", "qr_contiene_huella", "apk_rechaza_otra_huella"]
+
+[[tarea]]
+id = "F8.31"
+nombre = "multiraiz"
+titulo = "Studio con varios proyectos: abrir otra carpeta y espacios de trabajo"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F5.32"]
+toca = ["crates/pcode-server/src/server.rs", "crates/pcode-server/src/workspace.rs", "crates/pcode-server/web/studio/", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-server multiraiz"
+contexto = ["crates/pcode-server/src/workspace.rs (safe_path)"]
+objetivo = '''
+`pcode studio a/ b/` o «Abrir carpeta» (solo carpetas que el usuario elige en la terminal o en la configuración); el
+explorador muestra cada raíz, la búsqueda, git y el LSP trabajan por raíz y `safe_path` sigue confinando a cada una.
+'''
+tests = ["dos_raices_no_se_mezclan", "ruta_de_otra_raiz_se_rechaza"]
+
+[[tarea]]
+id = "F8.32"
+nombre = "extensiones"
+titulo = "Extensiones: plugins con manifiesto (MCP local o WASM) y capacidades declaradas"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F2.22", "F8.17"]
+toca = ["crates/pcode-plugins/", "docs/adr/ADR-0010-extensiones.md", "docs/extensiones.md", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-plugins"
+contexto = ["crates/pcode-tools/src/mcp.rs", "docs/adr/ADR-0004-skills-formato-unico.md"]
+objetivo = '''
+`pcode extensiones instalar <git-url|carpeta>`: manifiesto con nombre, versión, órdenes, tools (MCP local o módulo WASM
+sin red ni disco salvo lo declarado), temas para Studio y la TUI; firma opcional; cuarentena hasta que el usuario aprueba
+las capacidades.
+'''
+tests = ["manifiesto_valido", "capacidad_no_declarada_se_deniega", "desinstalar_limpia"]
+
+[[tarea]]
+id = "F8.33"
+nombre = "github-pr"
+titulo = "GitHub: crear un PR con descripción generada y revisar PRs con el agente"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F5.26", "F8.11"]
+toca = ["crates/pcode-flow/src/github.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-server/web/studio/git.js", "docs/usuario.md"]
+acepta = "cargo test -p pcode-flow github"
+contexto = ["crates/pcode-flow/src/ci.rs"]
+objetivo = '''
+`pcode pr crear` (rama, push con aprobación, título y cuerpo a partir del diff y de los commits) y `pcode pr revisar <n>`
+(el agente lee el diff y deja comentarios en borrador para que el usuario los publique); usa `gh` si está, o la API con token.
+'''
+tests = ["(servidor falso) crear_pr", "comentarios_quedan_en_borrador"]
+
+[[tarea]]
+id = "F8.34"
+nombre = "rendimiento"
+titulo = "Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F0.07"]
+toca = ["tools/bench/rendimiento.py", "tools/bench/test_rendimiento.py", ".github/workflows/ci.yml"]
+acepta = "python3 -m unittest tools/bench/test_rendimiento.py -v"
+contexto = ["crates/pcode-cli/src/main.rs"]
+objetivo = '''
+Medir `pcode --version` (arranque en frío < 50 ms), `pcode studio` hasta servir `/` (< 300 ms), memoria en reposo del demonio
+(< 60 MB) y primera respuesta de la TUI con modelo simulado; la CI falla si algo empeora más de un 20 % respecto a la base.
+'''
+tests = ["mide_y_compara_con_base", "umbral_del_20_por_ciento"]
+
+[[tarea]]
+id = "F8.35"
+nombre = "accesibilidad"
+titulo = "Accesibilidad de Studio: lector de pantalla, contraste AA y solo teclado"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/index.html", "crates/pcode-server/web/studio/a11y.js", "apps/studio/test/a11y.test.js"]
+acepta = "npm run -w apps/studio test -- a11y"
+contexto = ["AGENTS.md (§6.4 accesibilidad)"]
+objetivo = '''
+Roles ARIA en árbol, pestañas, listas y diálogos; anuncios en vivo de guardado, errores y respuestas del agente; foco
+visible en todo; contraste AA comprobado para los dos temas; F6 recorre las zonas (explorador, editor, agente, terminal).
+'''
+tests = ["arbol_con_roles_treeitem", "contraste_aa_de_la_paleta", "f6_recorre_zonas"]
+
+[[tarea]]
+id = "F8.36"
+nombre = "idiomas"
+titulo = "Idiomas: inglés completo en Studio y la CLI, y catálogo para más"
+fase = "F8"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/i18n.js", "crates/pcode-server/web/studio/i18n/es.json", "crates/pcode-server/web/studio/i18n/en.json", "apps/studio/test/i18n.test.js"]
+acepta = "npm run -w apps/studio test -- i18n"
+contexto = ["crates/pcode-tui/src/i18n.rs"]
+objetivo = '''
+Todos los textos de Studio en catálogos (`es`, `en`) elegidos por el idioma del navegador o `[preferencias] idioma`; test que
+falla si un texto visible no está en el catálogo o si falta una clave en algún idioma.
+'''
+tests = ["mismas_claves_en_todos_los_idiomas", "no_hay_textos_sueltos_en_el_html"]

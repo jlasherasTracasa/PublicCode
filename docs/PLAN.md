@@ -74,9 +74,32 @@ coordinando y agentes (Haiku 5.5 o GLM) implementando.
 | **F5** Interfaces | 6–8 (en paralelo a F3–F4) | protocolo con tipos TS generados, demonio, aprobaciones, cliente Rust; terminal: CLI para máquinas y TUI (chat, órdenes, `@`, multiagente, atajos y temas); UI común React (sesión, revisión, centro de control, ajustes, skills y banco); escritorio Tauri (bandeja, notificaciones, enlaces, llavero, paquetes para las 3 plataformas, WSL); web servida, PWA, ACP, VS Code y GitHub | uso diario desde terminal, escritorio, web e IDE |
 | **F6** Aprendizaje | 3 | destilador de skills, puerta de regresión, gobierno, regresión nocturna, calidad de trayectorias | skills aprendidas sin regresiones |
 | **F7** Endurecimiento | 2 | red teaming de skills y tools, evals de inyección y envenenamiento, release firmada | release 1.0 |
+| **F8** 1.x: crecer | continua | editor (plegado, multicursor, vista dividida, vista previa), LSP completo (formato, completado, renombrar, tools para el agente), git (blame, ramas, conflictos), depurador DAP y explorador de tests, agente (deshacer, órdenes y agentes propios, coste, memoria, web, imágenes, modelos locales, exportar), TUI (selectores, diff del turno, ratón), plataforma (winget/msi/deb/rpm, ARM64, notificaciones y TLS para el APK, varios proyectos), extensiones, GitHub, rendimiento, accesibilidad e idiomas | sustituir del todo a VS Code y opencode en el día a día |
 
 Total: unas 26–30 semanas (F5 se solapa con F3–F4). Si se usan varios agentes en paralelo (tareas independientes en
 mini sandboxes), la F1 y la F2 pueden comprimirse a la mitad.
+
+## 5.1 Alcance de la 1.0
+
+La 1.0 es «la herramienta de programación por defecto en Linux y Windows»: lo que hace falta para trabajar
+todos los días, probado y documentado. Lo demás va a la 1.x (F8) sin bloquearla.
+
+| Entra en la 1.0 | Estado |
+|---|---|
+| Agente en terminal (TUI y chat) con streaming, aprobaciones, modo plan, `@archivo`, `!orden`, MCP | hecho (F5.29–F5.34, F2.22) |
+| Proveedores Anthropic, Gemini y OpenAI-compatible con reintentos, caché y compactación | hecho (F1.22–F1.26) |
+| PublicCode Studio: editor, LSP, git, terminal, búsqueda y agente | hecho (F5.32, F5.35) |
+| Agentes externos en sandbox y flujos; N1 en Linux y N0 en Windows | hecho (F2.01–F2.18, F2.21, F3) |
+| Instalación de una línea, `doctor`, `actualizar`, release con SHA-256 | hecho (F0.07, F0.08) |
+| Evals de cumplimiento de reglas e inyección de prompts | F0.06, F7.02 |
+| Guía de usuario, CHANGELOG y procedencia firmada de los binarios | F7.03 |
+
+| Queda para la 1.x | Por qué no bloquea |
+|---|---|
+| App de escritorio Tauri, UI React común (F5.12–F5.21) | Studio ya cubre la interfaz gráfica en el navegador |
+| Landlock, seccomp y proxy de red (F2.04, F2.05, F2.19, F2.20) | N1 ya aísla disco y red; esto lo endurece |
+| Memoria, router y contexto avanzados (F4), aprendizaje de skills (F6) | mejoran resultados, no habilitan el uso |
+| Todo F8 | crecimiento continuo |
 
 ## 6. Métricas de éxito
 
