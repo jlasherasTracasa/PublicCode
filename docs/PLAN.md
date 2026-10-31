@@ -91,15 +91,19 @@ todos los días, probado y documentado. Lo demás va a la 1.x (F8) sin bloquearl
 | PublicCode Studio: editor, LSP, git, terminal, búsqueda y agente | hecho (F5.32, F5.35) |
 | Agentes externos en sandbox y flujos; N1 en Linux y N0 en Windows | hecho (F2.01–F2.18, F2.21, F3) |
 | Instalación de una línea, `doctor`, `actualizar`, release con SHA-256 | hecho (F0.07, F0.08) |
-| Evals de cumplimiento de reglas e inyección de prompts | F0.06, F7.02 |
-| Guía de usuario, CHANGELOG y procedencia firmada de los binarios | F7.03 |
+| Evals de cumplimiento de reglas e inyección de prompts | hecho (F0.06, F7.02) |
+| Guía de usuario, guía de instalación, CHANGELOG y procedencia firmada de los binarios | hecho (F7.03) |
+| Deshacer lo que hace el agente: puntos de control por turno, tarjeta de cambios y Actividad | hecho (F8.15, F8.43) |
+| Asistente ✦ basado en papers: commit, revisión, arreglar con diagnóstico, concretar, explicar y tests | hecho (F8.37, F8.38, F8.40, F8.42) |
+| Esquema, migas de pan, símbolos del proyecto, marcas de git, temas y paneles en Studio | hecho (F8.39) |
+| `pcode preguntar`, ediciones mínimas y medidor de contexto | hecho (F8.41, F8.44) |
 
 | Queda para la 1.x | Por qué no bloquea |
 |---|---|
 | App de escritorio Tauri, UI React común (F5.12–F5.21) | Studio ya cubre la interfaz gráfica en el navegador |
 | Landlock, seccomp y proxy de red (F2.04, F2.05, F2.19, F2.20) | N1 ya aísla disco y red; esto lo endurece |
 | Memoria, router y contexto avanzados (F4), aprendizaje de skills (F6) | mejoran resultados, no habilitan el uso |
-| Todo F8 | crecimiento continuo |
+| El resto de F8 | crecimiento continuo |
 
 ## 6. Métricas de éxito
 
