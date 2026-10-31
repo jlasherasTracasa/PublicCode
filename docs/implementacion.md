@@ -317,4 +317,12 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | F0.07 | pendiente |
 | [F8.35-accesibilidad](../tareas/F8.35-accesibilidad.md) | Accesibilidad de Studio: lector de pantalla, contraste AA y solo teclado | haiku | F8.01 | pendiente |
 | [F8.36-idiomas](../tareas/F8.36-idiomas.md) | Idiomas: inglés completo en Studio y la CLI, y catálogo para más | haiku | F8.01 | pendiente |
+| [F8.37-commit-generado](../tareas/F8.37-commit-generado.md) | Mensaje de commit generado a partir del diff jerárquico (HierDiff) | coordinador | F8.15 | pendiente |
+| [F8.38-arreglar-diagnostico](../tareas/F8.38-arreglar-diagnostico.md) | «✦ Arreglar» con diagnóstico estructurado desde Problemas, hover y terminal (SHERLOC, LintEval) | coordinador | F8.37 | pendiente |
+| [F8.39-esquema-simbolos](../tareas/F8.39-esquema-simbolos.md) | Esquema del archivo, migas de pan e «ir a símbolo» del proyecto (RepoNav) | coordinador | — | pendiente |
+| [F8.40-concretar-peticion](../tareas/F8.40-concretar-peticion.md) | «✦ Concretar»: enunciado accionable y preguntas antes de mandar al agente (CodeScout, Ask or Assume) | coordinador | F8.37, F8.39 | pendiente |
+| [F8.41-edicion-minima](../tareas/F8.41-edicion-minima.md) | Ediciones mínimas: instrucción de preservación y tamaño del cambio por turno | coordinador | F8.15 | pendiente |
+| [F8.42-acciones-rapidas](../tareas/F8.42-acciones-rapidas.md) | Acciones rápidas: revisar cambios, tests, explicar y estilo (OmniCode, taxonomía de preguntas) | coordinador | F8.37 | pendiente |
+| [F8.43-actividad](../tareas/F8.43-actividad.md) | Actividad: línea de tiempo de las acciones del agente enlazada con los turnos (RECAP) | coordinador | F8.15 | pendiente |
+| [F8.44-preguntar-repo](../tareas/F8.44-preguntar-repo.md) | `pcode preguntar` con contexto del repositorio (SWE-QA) | coordinador | F8.37, F8.39 | pendiente |
 <!-- tabla:fin -->

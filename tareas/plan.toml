@@ -4184,3 +4184,138 @@ Todos los textos de Studio en catálogos (`es`, `en`) elegidos por el idioma del
 falla si un texto visible no está en el catálogo o si falta una clave en algún idioma.
 '''
 tests = ["mismas_claves_en_todos_los_idiomas", "no_hay_textos_sueltos_en_el_html"]
+
+# ── F8.37–F8.44: funciones inspiradas en papers de experiencia del desarrollador (docs/papers.md §11) ──
+
+[[tarea]]
+id = "F8.37"
+nombre = "commit-generado"
+titulo = "Mensaje de commit generado a partir del diff jerárquico (HierDiff)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.15"]
+toca = ["crates/pcode-server/src/assist.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/index.html", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-server assist"
+contexto = ["docs/papers.md §11 (2026.findings-emnlp.451)", "crates/pcode-server/src/workspace.rs (git_diff)"]
+objetivo = '''
+1. `pcode preguntar`: una llamada al modelo sin tools (prompt por argumento o stdin) que imprime la respuesta.
+2. `assist.run { tipo: "commit" }` en el demonio: prompt con el resumen por archivo (+/−), los símbolos tocados (cabeceras de
+   hunk) y el diff preparado (o el de trabajo si no hay nada preparado), recortado a un presupuesto.
+3. Botón «✦ Generar» en el panel Git de Studio que rellena el mensaje.
+'''
+tests = ["prompt_commit_lleva_resumen_y_simbolos", "prompt_commit_recorta_el_diff", "assist_sin_modelo_da_error_claro"]
+
+[[tarea]]
+id = "F8.38"
+nombre = "arreglar-diagnostico"
+titulo = "«✦ Arreglar» con diagnóstico estructurado desde Problemas, hover y terminal (SHERLOC, LintEval)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.37"]
+toca = ["crates/pcode-server/src/assist.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-server assist"
+contexto = ["docs/papers.md §11 (2026.emnlp-main.711, 2026.findings-emnlp.157)"]
+objetivo = '''
+`assist.prompt { tipo: "arreglar" }` arma el mensaje para el agente con archivo, línea, símbolo que la contiene, mensaje del
+diagnóstico y ±8 líneas de código; «Arreglar todos los del archivo» agrupa los diagnósticos y pide ediciones mínimas.
+Desde el terminal, una orden con código distinto de 0 ofrece «✦ Arreglar» con la orden y el final de su salida.
+'''
+tests = ["prompt_arreglar_lleva_simbolo_y_codigo", "prompt_arreglar_varios_diagnosticos"]
+
+[[tarea]]
+id = "F8.39"
+nombre = "esquema-simbolos"
+titulo = "Esquema del archivo, migas de pan e «ir a símbolo» del proyecto (RepoNav)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = []
+toca = ["crates/pcode-server/src/outline.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-server outline"
+contexto = ["docs/papers.md §11 (2026.emnlp-main.1474)"]
+objetivo = '''
+`outline(texto, lenguaje)` por expresiones regulares (Rust, Python, JS/TS, Go, C/C++, Java/Kotlin, Markdown) con nombre, tipo,
+línea y profundidad; `fs.outline` y `search.symbols` (todo el proyecto, con tope). En Studio: vista Esquema, migas de pan con el
+símbolo del cursor y Ctrl+T (o `@` en Ctrl+P).
+'''
+tests = ["esquema_rust", "esquema_python_anidado", "esquema_markdown", "simbolos_del_proyecto_filtra_y_limita"]
+
+[[tarea]]
+id = "F8.40"
+nombre = "concretar-peticion"
+titulo = "«✦ Concretar»: enunciado accionable y preguntas antes de mandar al agente (CodeScout, Ask or Assume)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.37", "F8.39"]
+toca = ["crates/pcode-server/src/assist.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-server assist"
+contexto = ["docs/papers.md §11 (2026.findings-acl.2032, 2026.findings-emnlp.15)"]
+objetivo = '''
+`assist.run { tipo: "concretar", texto }`: busca en el proyecto los términos de la petición (archivos y símbolos), y pide al
+modelo un enunciado con objetivo, archivos probables, criterio de hecho y preguntas abiertas. Studio lo pone en la caja del
+agente para que el usuario lo revise.
+'''
+tests = ["prompt_concretar_lleva_archivos_y_simbolos_relevantes"]
+
+[[tarea]]
+id = "F8.41"
+nombre = "edicion-minima"
+titulo = "Ediciones mínimas: instrucción de preservación y tamaño del cambio por turno"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.15"]
+toca = ["crates/pcode-cli/src/provider.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-cli provider"
+contexto = ["docs/papers.md §11 (2026.emnlp-main.2092)"]
+objetivo = '''
+El prompt de sistema pide cambiar solo lo necesario y conservar estilo, nombres y estructura. La tarjeta de fin de turno muestra
++/− por archivo.
+'''
+tests = ["prompt_de_sistema_pide_ediciones_minimas"]
+
+[[tarea]]
+id = "F8.42"
+nombre = "acciones-rapidas"
+titulo = "Acciones rápidas: revisar cambios, tests, explicar y estilo (OmniCode, taxonomía de preguntas)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.37"]
+toca = ["crates/pcode-server/src/assist.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-server assist"
+contexto = ["docs/papers.md §11 (2026.findings-acl.2020, 2026.emnlp-main.2528, 2026.findings-emnlp.2380)"]
+objetivo = '''
+`assist.prompt { tipo: "revisar" | "tests" | "explicar" }` con el diff o el archivo y su esquema; «✦ Revisar cambios» en Git con
+una lista de mantenibilidad (alcance, duplicación, nombres, tests, errores).
+'''
+tests = ["prompt_revisar_lleva_diff_y_lista"]
+
+[[tarea]]
+id = "F8.43"
+nombre = "actividad"
+titulo = "Actividad: línea de tiempo de las acciones del agente enlazada con los turnos (RECAP)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.15"]
+toca = ["crates/pcode-server/src/workspace.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/index.html"]
+acepta = "cargo test -p pcode-server actividad"
+contexto = ["docs/papers.md §11 (2026.acl-demo.68, 2026.emnlp-main.1011)", ".pcode/audit.jsonl"]
+objetivo = '''
+`workspace.activity(n)` lee las últimas acciones de `.pcode/audit.jsonl` (hora, agente, tool, decisión, archivo u orden) y
+`checkpoint.list` los turnos con archivos tocados. Studio: vista Actividad y tarjeta de fin de turno con «Deshacer el turno».
+'''
+tests = ["actividad_lee_las_ultimas_acciones", "actividad_sin_auditoria_vacia"]
+
+[[tarea]]
+id = "F8.44"
+nombre = "preguntar-repo"
+titulo = "`pcode preguntar` con contexto del repositorio (SWE-QA)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.37", "F8.39"]
+toca = ["crates/pcode-cli/src/ask.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/chat.rs"]
+acepta = "cargo test -p pcode-cli --test chat preguntar"
+contexto = ["docs/papers.md §11 (2026.findings-acl.402)"]
+objetivo = '''
+`pcode preguntar "…" [@archivo…]`: una respuesta sin tools, con los archivos adjuntos y el prompt de sistema del proyecto;
+`--formato json` para scripts. Lee de stdin si no hay argumento.
+'''
+tests = ["preguntar_responde_sin_tools", "preguntar_lee_stdin"]
