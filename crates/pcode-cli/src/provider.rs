@@ -184,6 +184,37 @@ pub fn system_prompt(cfg: &Config, root: &std::path::Path) -> String {
     s
 }
 
+/// Conecta con los servidores MCP configurados (en paralelo, como mucho 30 s cada uno) y
+/// devuelve sus tools y los avisos de los que no se pudieron usar.
+pub async fn mcp_tools(cfg: &Config) -> (Vec<Arc<dyn pcode_tools::Tool>>, Vec<String>) {
+    let servers: Vec<pcode_tools::mcp::McpServer> = cfg
+        .mcp
+        .iter()
+        .filter(|(_, m)| !m.disabled)
+        .map(|(n, m)| pcode_tools::mcp::McpServer {
+            name: n.clone(),
+            command: m.command.clone(),
+            env: m.env.clone(),
+            ask: m.ask,
+        })
+        .collect();
+    let results = futures::future::join_all(servers.iter().map(|s| async move {
+        match tokio::time::timeout(Duration::from_secs(30), pcode_tools::mcp::tools_of(s)).await {
+            Ok(r) => (s.name.clone(), r),
+            Err(_) => (s.name.clone(), Err("no respondió en 30 s".into())),
+        }
+    }))
+    .await;
+    let (mut tools, mut warnings) = (vec![], vec![]);
+    for (name, r) in results {
+        match r {
+            Ok(t) => tools.extend(t),
+            Err(e) => warnings.push(format!("MCP {name}: {e}")),
+        }
+    }
+    (tools, warnings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

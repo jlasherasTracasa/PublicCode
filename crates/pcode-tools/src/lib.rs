@@ -1,6 +1,7 @@
 //! Tools nativas con efectos declarados.
 pub mod bash;
 pub mod edit;
+pub mod mcp;
 pub mod read;
 pub mod registry;
 pub mod search;

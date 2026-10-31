@@ -24,6 +24,8 @@ pub struct TuiOptions {
     pub lang: Lang,
     /// Tema.
     pub theme: Theme,
+    /// Avisos que se muestran al empezar (servidores MCP que fallaron…).
+    pub notices: Vec<String>,
 }
 
 /// Se llama al terminar cada vuelta con el mensaje del usuario y la transcripción completa
@@ -87,6 +89,9 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
     let agent = Arc::new(Mutex::new(agent));
 
     let mut app = App::new(opts.lang, opts.theme, opts.model);
+    for n in opts.notices {
+        app.entries.push(crate::Entry::Info(format!("· {n}")));
+    }
     let mut history = opts.history;
     if history.len() > 1 {
         for m in &history {

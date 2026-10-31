@@ -255,9 +255,11 @@ struct Prepared {
     persist: Persist,
     resumed: Option<(i64, usize)>,
     theme: Option<String>,
+    /// Avisos al arrancar (servidores MCP que no se pudieron usar…).
+    notices: Vec<String>,
 }
 
-fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
+async fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
     let (cfg, _) = Config::load_layered(&a.config)?;
     let sel = build_provider(&cfg, a.provider.as_deref())?;
     let model = pick_model(a.model.as_deref(), &cfg, &sel);
@@ -286,9 +288,20 @@ fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
         resumed = Some((sid, msgs.len()));
         history = msgs;
     }
+    let mut tools = pcode_tools::native_registry();
+    let (extra, mut notices) = crate::provider::mcp_tools(&cfg).await;
+    let n_mcp = extra.len();
+    for t in extra {
+        if let Err(e) = tools.register(t) {
+            notices.push(format!("MCP: {e}"));
+        }
+    }
+    if n_mcp > 0 {
+        notices.push(format!("{n_mcp} tools de MCP disponibles"));
+    }
     let agent = Agent::new(
         sel.provider.clone(),
-        pcode_tools::native_registry(),
+        tools,
         interactive_policy(&a.config),
         Some(audit),
         AgentConfig {
@@ -317,6 +330,7 @@ fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
         persist,
         resumed,
         theme: cfg.preferences.theme.clone(),
+        notices,
     })
 }
 
@@ -332,7 +346,7 @@ fn interactive_policy(project: &std::path::Path) -> Policy {
 
 /// `pcode tui`: la interfaz a pantalla completa.
 pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
-    let p = prepare(&a)?;
+    let p = prepare(&a).await?;
     let mut persist = p.persist;
     let on_turn: pcode_tui::OnTurn = Box::new(move |turn| match turn {
         Some((user, transcript)) => persist.save(user, transcript),
@@ -355,6 +369,7 @@ pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
                 .as_deref()
                 .and_then(|t| pcode_tui::Theme::by_name(t, std::env::var_os("NO_COLOR").is_some()))
                 .unwrap_or_else(pcode_tui::Theme::from_env),
+            notices: p.notices,
         },
         on_turn,
     )
@@ -443,8 +458,12 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
         agent,
         mut history,
         mut persist,
+        notices,
         ..
-    } = prepare(&a)?;
+    } = prepare(&a).await?;
+    for n in notices {
+        emit_json(serde_json::json!({"tipo": "info", "texto": n}));
+    }
     let answers = Arc::new(std::sync::Mutex::new(Answers::default()));
     let approver = Arc::new(JsonApprover {
         next: std::sync::atomic::AtomicU64::new(1),
@@ -530,8 +549,12 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
         mut history,
         mut persist,
         resumed,
+        notices,
         ..
-    } = prepare(&a)?;
+    } = prepare(&a).await?;
+    for n in &notices {
+        eprintln!("{}", style.dim(&format!("· {n}")));
+    }
     if a.resume {
         match resumed {
             Some((sid, n)) => println!(

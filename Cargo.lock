@@ -1534,6 +1534,7 @@ dependencies = [
  "assert_cmd",
  "async-trait",
  "clap",
+ "futures",
  "hex",
  "pcode-backends",
  "pcode-config",

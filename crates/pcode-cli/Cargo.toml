@@ -23,6 +23,7 @@ pcode-tui = { path = "../pcode-tui" }
 async-trait.workspace = true
 clap.workspace = true
 anyhow.workspace = true
+futures.workspace = true
 tokio.workspace = true
 toml.workspace = true
 serde.workspace = true

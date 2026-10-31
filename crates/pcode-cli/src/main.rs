@@ -46,6 +46,12 @@ enum Cmd {
         #[arg(long = "no-abrir")]
         no_open: bool,
     },
+    /// Servidores MCP configurados y las tools que aporta cada uno.
+    Mcp {
+        /// Configuración del proyecto.
+        #[arg(long = "config", default_value = "pcode.toml")]
+        config: std::path::PathBuf,
+    },
     /// Comprueba la instalación: configuración, modelo, claves, git, sandbox y agentes externos.
     Doctor {
         /// Configuración del proyecto.
@@ -130,6 +136,7 @@ async fn main() -> anyhow::Result<()> {
             pcode_server::serve_listener(st, l).await?;
             Ok(())
         }
+        Some(Cmd::Mcp { config }) => std::process::exit(doctor::mcp_cmd(&config).await?),
         Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
         Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c)?),
         Some(Cmd::Actualizar { check }) => std::process::exit(update::update(check).await?),

@@ -38,6 +38,27 @@ pub struct Config {
     /// Preferencias del usuario.
     #[serde(rename = "preferencias")]
     pub preferences: PrefsCfg,
+    /// Servidores MCP cuyas tools se añaden al agente.
+    #[serde(rename = "mcp")]
+    pub mcp: BTreeMap<String, McpCfg>,
+}
+
+/// Un servidor MCP (`[mcp.<nombre>]`).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct McpCfg {
+    /// Orden y argumentos, p. ej. `["npx", "-y", "@modelcontextprotocol/server-github"]`.
+    #[serde(rename = "orden")]
+    pub command: Vec<String>,
+    /// Variables de entorno (admite `{env:VAR}`).
+    #[serde(rename = "entorno")]
+    pub env: BTreeMap<String, String>,
+    /// Pedir aprobación antes de cada llamada a sus tools.
+    #[serde(rename = "preguntar")]
+    pub ask: bool,
+    /// No conectar.
+    #[serde(rename = "desactivado")]
+    pub disabled: bool,
 }
 
 /// Sección `[preferencias]` (sobre todo en la configuración global del usuario).
@@ -161,6 +182,14 @@ impl Config {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Config, ConfigError> {
         let mut c: Config = toml::from_str(s)?;
+        for m in c.mcp.values_mut() {
+            for a in m.command.iter_mut() {
+                *a = expand_env(a)?;
+            }
+            for v in m.env.values_mut() {
+                *v = expand_env(v)?;
+            }
+        }
         for p in c.providers.values_mut() {
             p.url = expand_env(&p.url)?;
             if let Some(k) = &p.api_key {
@@ -180,6 +209,7 @@ impl Config {
         c.providers.extend(project.providers);
         c.backends.extend(project.backends);
         c.roles.extend(project.roles);
+        c.mcp.extend(project.mcp);
         if !project.project.instructions.is_empty() {
             c.project = project.project;
         }
@@ -227,6 +257,20 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_se_lee_y_expande_el_entorno() {
+        // SAFETY de la prueba: solo este test usa PCODE_TEST_MCP_TOKEN.
+        unsafe { std::env::set_var("PCODE_TEST_MCP_TOKEN", "secreto") };
+        let c = Config::from_str(
+            "[mcp.github]\norden = [\"npx\", \"-y\", \"srv\"]\nentorno = { TOKEN = \"{env:PCODE_TEST_MCP_TOKEN}\" }\npreguntar = true\n",
+        )
+        .unwrap();
+        let m = &c.mcp["github"];
+        assert_eq!(m.command, vec!["npx", "-y", "srv"]);
+        assert_eq!(m.env["TOKEN"], "secreto");
+        assert!(m.ask && !m.disabled);
+    }
 
     #[test]
     fn merge_proyecto_manda_y_global_rellena() {

@@ -145,6 +145,59 @@ pub fn doctor(project_cfg: &Path) -> i32 {
     code
 }
 
+/// `pcode mcp`: conecta con cada servidor MCP configurado y lista sus tools.
+pub async fn mcp_cmd(project_cfg: &Path) -> anyhow::Result<i32> {
+    let (cfg, _) = Config::load_layered(project_cfg)?;
+    if cfg.mcp.is_empty() {
+        println!("No hay servidores MCP. Añade uno en la configuración, por ejemplo:\n");
+        println!(
+            "[mcp.github]\norden = [\"npx\", \"-y\", \"@modelcontextprotocol/server-github\"]\nentorno = {{ GITHUB_PERSONAL_ACCESS_TOKEN = \"{{env:GITHUB_TOKEN}}\" }}"
+        );
+        return Ok(0);
+    }
+    let mut code = 0;
+    for (name, m) in &cfg.mcp {
+        if m.disabled {
+            println!("· {name}: desactivado");
+            continue;
+        }
+        let srv = pcode_tools::mcp::McpServer {
+            name: name.clone(),
+            command: m.command.clone(),
+            env: m.env.clone(),
+            ask: m.ask,
+        };
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            pcode_tools::mcp::tools_of(&srv),
+        )
+        .await
+        {
+            Ok(Ok(tools)) => {
+                println!(
+                    "✓ {name}: {} tools{}",
+                    tools.len(),
+                    if m.ask { " (piden aprobación)" } else { "" }
+                );
+                for t in tools {
+                    let s = t.spec();
+                    let d: String = s.description.chars().take(90).collect();
+                    println!("    {}  {d}", s.name);
+                }
+            }
+            Ok(Err(e)) => {
+                println!("✗ {name}: {e}");
+                code = 1;
+            }
+            Err(_) => {
+                println!("✗ {name}: no respondió en 30 s");
+                code = 1;
+            }
+        }
+    }
+    Ok(code)
+}
+
 /// Plantilla de la configuración global.
 pub const TEMPLATE: &str = r#"# Configuración global de PublicCode (la del proyecto, pcode.toml, manda sobre esta).
 # Las claves no se escriben aquí: se leen del entorno con {env:VARIABLE}.
@@ -167,6 +220,11 @@ pub const TEMPLATE: &str = r#"# Configuración global de PublicCode (la del proy
 # tipo = "openai-compatible"
 # url = "http://127.0.0.1:4000/v1"
 # clave = "{env:LITELLM_API_KEY}"
+
+# [mcp.github]                     # tools externas por MCP (stdio)
+# orden = ["npx", "-y", "@modelcontextprotocol/server-github"]
+# entorno = { GITHUB_PERSONAL_ACCESS_TOKEN = "{env:GITHUB_TOKEN}" }
+# preguntar = false                # true: pedir aprobación antes de cada llamada
 
 # [politica]                       # se suma a la capa segura por defecto; solo puede endurecerla
 # preguntar_ordenes = ["docker *"]

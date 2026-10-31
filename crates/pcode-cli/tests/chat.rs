@@ -163,3 +163,51 @@ fn chat_jsonl_protocolo_con_aprobacion() {
             .any(|v| v["tipo"] == "texto" && v["texto"] == "segundo")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn mcp_tools_de_un_servidor_real_en_chat_y_en_pcode_mcp() {
+    let d = tempfile::tempdir().unwrap();
+    // Servidor MCP mínimo: los ids de las peticiones de pcode son 1, 2, 3…
+    let srv = d.path().join("reloj.sh");
+    std::fs::write(
+        &srv,
+        r#"read l
+echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}}}}'
+read l
+read l
+echo '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"hora","description":"Hora del servidor","inputSchema":{"type":"object"}}]}}'
+read l
+echo '{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"son las 12:00"}]}}'
+read l
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("pcode.toml"),
+        format!("[mcp.reloj]\norden = [\"sh\", \"{}\"]\n", srv.display()),
+    )
+    .unwrap();
+    pcode(
+        d.path(),
+        json!([
+            resp("", json!([{"id":"1","name":"reloj_hora","arguments":{}}])),
+            resp("Son las doce.", json!([])),
+        ]),
+    )
+    .args(["chat", "qué hora es"])
+    .write_stdin("")
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("⏺ reloj_hora"))
+    .stdout(predicate::str::contains("son las 12:00"))
+    .stderr(predicate::str::contains("1 tools de MCP disponibles"));
+    Command::cargo_bin("pcode")
+        .unwrap()
+        .current_dir(d.path())
+        .arg("mcp")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("✓ reloj: 1 tools"))
+        .stdout(predicate::str::contains("reloj_hora"));
+}
