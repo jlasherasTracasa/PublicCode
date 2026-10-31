@@ -197,7 +197,7 @@ impl Approver for TerminalApprover {
     }
 }
 
-const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /plan           modo plan: solo lee y propone (/construir vuelve)\n  @archivo        adjunta un archivo al mensaje\n  !orden          ejecuta una orden y adjunta su salida al próximo mensaje\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
+const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /deshacer       revierte los archivos del último turno del agente (/rehacer lo reaplica)\n  /plan           modo plan: solo lee y propone (/construir vuelve)\n  @archivo        adjunta un archivo al mensaje\n  !orden          ejecuta una orden y adjunta su salida al próximo mensaje\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
 
 /// Persiste en SQLite los mensajes nuevos de cada vuelta.
 struct Persist {
@@ -322,7 +322,8 @@ async fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
             root,
             timeout: Duration::from_secs(600),
         },
-    );
+    )
+    .with_checkpoints();
     Ok(Prepared {
         agent,
         model,
@@ -508,13 +509,13 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
     if !a.prompt.is_empty() {
         let first = a.prompt.join(" ");
         let r = agent.run_turn(history.clone(), &first).await;
-        history = finish_json_turn(&first, r, &mut persist);
+        history = finish_json_turn(&first, r, &agent, &mut persist);
     }
     let root = std::env::current_dir()?;
     while let Some(msg) = rx.recv().await {
         let full = pcode_tui::run::expand_message(&root, &msg, &[]);
         let r = agent.run_turn(history.clone(), &full).await;
-        history = finish_json_turn(&msg, r, &mut persist);
+        history = finish_json_turn(&msg, r, &agent, &mut persist);
     }
     if let Some(sid) = persist.session {
         let _ = persist.store.finish_session(sid, "chat");
@@ -522,7 +523,12 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
     Ok(0)
 }
 
-fn finish_json_turn(user: &str, r: pcode_core::RunReport, persist: &mut Persist) -> Vec<Message> {
+fn finish_json_turn(
+    user: &str,
+    r: pcode_core::RunReport,
+    agent: &Agent,
+    persist: &mut Persist,
+) -> Vec<Message> {
     let problem = match &r.outcome {
         Outcome::Done { .. } => None,
         Outcome::Failed(m) => Some(m.clone()),
@@ -534,9 +540,25 @@ fn finish_json_turn(user: &str, r: pcode_core::RunReport, persist: &mut Persist)
         "problema": problem,
         "entrada": r.usage.input_tokens,
         "salida": r.usage.output_tokens,
+        "cambios": changes_json(&agent.turn_changes()),
     }));
     persist.save(user, &r.transcript);
     r.transcript
+}
+
+/// Cambios de un turno para el protocolo JSON (`ruta`, `mas`, `menos`, `creado`, `borrado`).
+fn changes_json(c: &[pcode_core::FileChange]) -> serde_json::Value {
+    c.iter()
+        .map(|f| {
+            serde_json::json!({
+                "ruta": f.path,
+                "mas": f.added,
+                "menos": f.removed,
+                "creado": f.created,
+                "borrado": f.deleted,
+            })
+        })
+        .collect()
 }
 
 /// Ejecuta el chat y devuelve el código de salida.
@@ -698,6 +720,14 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
                     "{} tokens de entrada ({} de caché) · {} de salida",
                     total.input_tokens, total.cached_input_tokens, total.output_tokens
                 ),
+                "deshacer" | "undo" => println!(
+                    "{}",
+                    pcode_tui::run::undo_redo(&root, false, pcode_tui::i18n::Lang::Es)
+                ),
+                "rehacer" | "redo" => println!(
+                    "{}",
+                    pcode_tui::run::undo_redo(&root, true, pcode_tui::i18n::Lang::Es)
+                ),
                 _ => println!("Comando desconocido: /{name}. Prueba /ayuda."),
             }
             continue;
@@ -740,6 +770,12 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
             } else {
                 exit_code
             };
+        }
+        if interactive
+            && let Some(n) =
+                pcode_tui::run::changes_summary(pcode_tui::i18n::Lang::Es, &agent.turn_changes())
+        {
+            println!("{}", style.dim(&n));
         }
         history = report.transcript;
         persist.save(&input, &history);

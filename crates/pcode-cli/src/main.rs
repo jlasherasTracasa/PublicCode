@@ -1,4 +1,5 @@
 //! Binario `pcode`.
+mod ask;
 mod backend_run;
 mod chat;
 mod doctor;
@@ -25,6 +26,9 @@ enum Cmd {
     Chat(chat::ChatArgs),
     /// Ejecuta una tarea con el bucle del agente.
     Run(run::RunArgs),
+    /// Pregunta al modelo sin tools ni cambios (`@archivo` adjunta; lo que llegue por stdin, también).
+    #[command(alias = "ask")]
+    Preguntar(ask::AskArgs),
     /// Arranca el demonio (API JSON-RPC, eventos y página web); por defecto solo en loopback.
     Daemon {
         /// Puerto.
@@ -91,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Cmd::Tui(a)) => std::process::exit(chat::tui(a).await?),
         Some(Cmd::Chat(a)) => std::process::exit(chat::chat(a).await?),
         Some(Cmd::Run(a)) => std::process::exit(run::run(a).await?),
+        Some(Cmd::Preguntar(a)) => std::process::exit(ask::ask(a).await?),
         Some(Cmd::Daemon { puerto, escuchar }) => {
             // Un token fijo (PCODE_DAEMON_TOKEN) evita volver a emparejar el móvil en cada arranque.
             let token = std::env::var("PCODE_DAEMON_TOKEN")

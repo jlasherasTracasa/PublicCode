@@ -86,6 +86,52 @@ pub fn project_files(root: &std::path::Path) -> Vec<String> {
     out
 }
 
+/// Resumen de los archivos que tocó un turno: «✎ 2 archivos · a.rs +3 −1 · b.rs nuevo · /deshacer…».
+pub fn changes_summary(lang: Lang, changes: &[pcode_core::FileChange]) -> Option<String> {
+    if changes.is_empty() {
+        return None;
+    }
+    let mut parts = vec![format!("✎ {} {}", changes.len(), t(lang, "files"))];
+    for c in changes.iter().take(6) {
+        let mut p = c.path.clone();
+        if c.created {
+            p.push_str(&format!(" {}", t(lang, "new_file")));
+        } else if c.deleted {
+            p.push_str(&format!(" {}", t(lang, "deleted_file")));
+        }
+        if c.added > 0 {
+            p.push_str(&format!(" +{}", c.added));
+        }
+        if c.removed > 0 {
+            p.push_str(&format!(" −{}", c.removed));
+        }
+        parts.push(p);
+    }
+    if changes.len() > 6 {
+        parts.push("…".into());
+    }
+    parts.push(t(lang, "undo_hint").into());
+    Some(parts.join(" · "))
+}
+
+/// Deshace (o rehace) el último turno del agente en `root` y devuelve el texto para mostrar.
+pub fn undo_redo(root: &std::path::Path, redo: bool, lang: Lang) -> String {
+    let mut cp = pcode_core::Checkpoints::open(root);
+    let r = if redo { cp.redo() } else { cp.undo() };
+    match r {
+        Ok(Some(turn)) => format!(
+            "{} «{}» · {} {}: {}",
+            t(lang, if redo { "redone" } else { "undone" }),
+            turn.label,
+            turn.files.len(),
+            t(lang, "files"),
+            turn.files.join(", ")
+        ),
+        Ok(None) => t(lang, if redo { "redo_none" } else { "undo_none" }).into(),
+        Err(e) => format!("✗ {e}"),
+    }
+}
+
 /// Añade al mensaje el contenido de los `@archivo` mencionados (hasta 100 KB cada uno) y las
 /// salidas de `!orden` pendientes.
 pub fn expand_message(root: &std::path::Path, text: &str, shell: &[String]) -> String {
@@ -257,10 +303,14 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
     let result: std::io::Result<()> = async {
         term.draw(|f| render(&app, f))?;
         'outer: while let Some(msg) = rx.recv().await {
+            let mut note: Option<String> = None;
             let ev = match msg {
                 Msg::Ui(ev) => ev,
                 Msg::Turn(user, report) => {
                     turn = None;
+                    if let Ok(a) = agent.try_lock() {
+                        note = changes_summary(lang, &a.turn_changes());
+                    }
                     let ev = Event::TurnDone {
                         problem: problem(lang, &report),
                         usage: report.usage,
@@ -367,7 +417,14 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                         history.clear();
                         on_turn(None);
                     }
+                    Command::Undo { redo } => {
+                        app.entries
+                            .push(crate::Entry::Info(undo_redo(&root, redo, lang)));
+                    }
                 }
+            }
+            if let Some(n) = note.take() {
+                app.entries.push(crate::Entry::Info(n));
             }
             term.draw(|f| render(&app, f))?;
         }
@@ -388,6 +445,55 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resumen_de_cambios_y_deshacer() {
+        let c = vec![
+            pcode_core::FileChange {
+                path: "src/a.rs".into(),
+                added: 3,
+                removed: 1,
+                created: false,
+                deleted: false,
+            },
+            pcode_core::FileChange {
+                path: "b.rs".into(),
+                added: 2,
+                removed: 0,
+                created: true,
+                deleted: false,
+            },
+        ];
+        assert_eq!(
+            changes_summary(Lang::Es, &c).unwrap(),
+            "✎ 2 archivos · src/a.rs +3 −1 · b.rs nuevo +2 · /deshacer lo revierte"
+        );
+        assert!(changes_summary(Lang::Es, &[]).is_none());
+
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("a.txt"), "antes").unwrap();
+        assert_eq!(
+            undo_redo(d.path(), false, Lang::Es),
+            "No hay ningún turno del agente que deshacer."
+        );
+        let mut cp = pcode_core::Checkpoints::open(d.path());
+        cp.begin_turn("cambia a");
+        cp.save("a.txt").unwrap();
+        std::fs::write(d.path().join("a.txt"), "después").unwrap();
+        assert_eq!(
+            undo_redo(d.path(), false, Lang::Es),
+            "↶ Deshecho «cambia a» · 1 archivos: a.txt"
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("a.txt")).unwrap(),
+            "antes"
+        );
+        assert!(undo_redo(d.path(), true, Lang::Es).starts_with("↷ Rehecho"));
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("a.txt")).unwrap(),
+            "después"
+        );
+    }
 
     #[test]
     fn expandir_adjunta_menciones_y_salidas() {

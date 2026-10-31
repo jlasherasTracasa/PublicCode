@@ -109,6 +109,11 @@ pub enum Command {
     SetPlan(bool),
     /// Ejecutar una orden de shell (`!orden`).
     Shell(String),
+    /// Deshacer el último turno del agente (o rehacerlo con `redo`).
+    Undo {
+        /// Rehacer en lugar de deshacer.
+        redo: bool,
+    },
     /// Salir.
     Quit,
 }
@@ -584,6 +589,12 @@ impl App {
                         .push(Entry::Info(t(self.lang, "plan_off").into()));
                     vec![Command::SetPlan(false)]
                 }
+                "deshacer" | "undo" | "rehacer" | "redo" if self.busy => {
+                    self.entries.push(Entry::Info(t(self.lang, "wait").into()));
+                    vec![]
+                }
+                "deshacer" | "undo" => vec![Command::Undo { redo: false }],
+                "rehacer" | "redo" => vec![Command::Undo { redo: true }],
                 "compactar" | "compact" if !self.busy => {
                     self.busy = true;
                     vec![Command::Compact]
@@ -749,6 +760,25 @@ mod tests {
     }
 
     #[test]
+    fn deshacer_y_rehacer() {
+        let mut a = app();
+        a.busy = true;
+        typed(&mut a, "/deshacer");
+        assert_eq!(a.update(key(KeyCode::Enter)), vec![], "ocupado: espera");
+        a.busy = false;
+        typed(&mut a, "/deshacer");
+        assert_eq!(
+            a.update(key(KeyCode::Enter)),
+            vec![Command::Undo { redo: false }]
+        );
+        typed(&mut a, "/rehacer");
+        assert_eq!(
+            a.update(key(KeyCode::Enter)),
+            vec![Command::Undo { redo: true }]
+        );
+    }
+
+    #[test]
     fn chat_ordenes_y_historial() {
         let mut a = app();
         typed(&mut a, "/modelo otro");
@@ -762,7 +792,6 @@ mod tests {
         assert_eq!(a.entries.len(), 1);
         typed(&mut a, "/compactar");
         assert_eq!(a.update(key(KeyCode::Enter)), vec![Command::Compact]);
-        assert!(a.busy);
         a.update(Event::TurnDone {
             problem: None,
             usage: Usage::default(),

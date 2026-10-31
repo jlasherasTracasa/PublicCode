@@ -9,6 +9,7 @@ pcode-models = { path = "../pcode-models" }
 pcode-tools = { path = "../pcode-tools" }
 pcode-policy = { path = "../pcode-policy" }
 serde_json.workspace = true
+similar.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 tracing.workspace = true

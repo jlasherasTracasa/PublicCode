@@ -165,7 +165,11 @@ pub fn system_prompt(cfg: &Config, root: &std::path::Path) -> String {
         "Eres PublicCode, un agente de programación que trabaja en la terminal del usuario.\n\
          Directorio de trabajo: {}\nSistema: {} (la tool bash usa {})\n\
          Usa las tools (leer, buscar, listar, editar, escribir, bash) para investigar y cambiar el código; \
-         lee antes de editar, haz cambios mínimos y comprueba con los tests cuando existan. \
+         lee antes de editar y comprueba con los tests cuando existan.\n\
+         Ediciones mínimas: cambia solo lo que hace falta para lo que se pide; conserva el estilo, los nombres, \
+         los comentarios y la estructura del código que no tienes que tocar; no reformatees ni reescribas \
+         funciones enteras para un arreglo pequeño; edita con `editar` (no reescribas archivos completos) \
+         y no añadas cosas que nadie ha pedido.\n\
          Responde en el idioma del usuario y sé breve: di qué hiciste y qué queda.",
         root.display(),
         std::env::consts::OS,
@@ -242,6 +246,13 @@ mod tests {
         let mut cfg = Config::default();
         cfg.preferences.model = Some("pref".into());
         assert_eq!(pick_model(None, &cfg, &s), "pref");
+    }
+
+    #[test]
+    fn prompt_de_sistema_pide_ediciones_minimas() {
+        let d = tempfile::tempdir().unwrap();
+        let s = system_prompt(&Config::default(), d.path());
+        assert!(s.contains("Ediciones mínimas") && s.contains("conserva el estilo"));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 //! Bucle del agente.
+use crate::checkpoint::{Checkpoints, FileChange};
 use crate::compress::compress_tool_output;
 use crate::stop_hook::{StopHook, run_acceptance};
 use crate::stuck::{StuckDetector, StuckSignal, hint_for};
@@ -127,6 +128,7 @@ pub struct Agent {
     observer: Option<Observer>,
     last_input_tokens: u64,
     read_only: bool,
+    checkpoints: Option<Checkpoints>,
 }
 
 /// Instrucción que se añade en modo plan.
@@ -164,7 +166,20 @@ impl Agent {
             observer: None,
             last_input_tokens: 0,
             read_only: false,
+            checkpoints: None,
         }
+    }
+    /// Guarda un punto de control por turno antes de cada escritura (para `/deshacer`).
+    pub fn with_checkpoints(mut self) -> Self {
+        self.checkpoints = Some(Checkpoints::open(&self.ctx.root));
+        self
+    }
+    /// Cambios del turno en curso (o del último), si hay puntos de control.
+    pub fn turn_changes(&self) -> Vec<FileChange> {
+        self.checkpoints
+            .as_ref()
+            .map(Checkpoints::current_changes)
+            .unwrap_or_default()
     }
     /// Recibe los eventos (texto, llamadas y resultados de tools) según ocurren.
     pub fn with_observer(mut self, o: Observer) -> Self {
@@ -206,6 +221,20 @@ impl Agent {
             )
         {
             tracing::warn!("auditoría: {e}");
+        }
+    }
+
+    fn checkpoint(&mut self, call: &ToolCall, effects: &[Effect]) {
+        if !effects.contains(&Effect::Write) {
+            return;
+        }
+        let Some(p) = call.arguments.get("path").and_then(|v| v.as_str()) else {
+            return;
+        };
+        if let Some(c) = self.checkpoints.as_mut()
+            && let Err(e) = c.save(p)
+        {
+            tracing::warn!("punto de control de {p}: {e}");
         }
     }
 
@@ -268,11 +297,13 @@ impl Agent {
                     );
                 }
                 self.audit(call, "ask-allowed");
+                self.checkpoint(call, effects);
                 let o = tool.call(call.arguments.clone(), &self.ctx).await;
                 (o, effects.contains(&Effect::Write))
             }
             Decision::Allow => {
                 self.audit(call, "allow");
+                self.checkpoint(call, effects);
                 let o = tool.call(call.arguments.clone(), &self.ctx).await;
                 (o, effects.contains(&Effect::Write))
             }
@@ -371,6 +402,9 @@ impl Agent {
             history.insert(0, Message::system(self.cfg.system_prompt.clone()));
         }
         history.push(Message::user(user));
+        if let Some(c) = self.checkpoints.as_mut() {
+            c.begin_turn(user);
+        }
         self.run_messages(history).await
     }
 

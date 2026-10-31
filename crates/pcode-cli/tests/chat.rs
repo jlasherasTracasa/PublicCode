@@ -225,3 +225,83 @@ fn chat_orden_de_shell_y_modo_plan() {
         .stdout(predicate::str::contains("Modo plan"))
         .stdout(predicate::str::contains("plan: nada que cambiar"));
 }
+
+#[test]
+fn preguntar_responde_sin_tools() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("a.rs"), "fn a() {}").unwrap();
+    pcode(d.path(), json!([resp("a() no hace nada", json!([]))]))
+        .args(["preguntar", "¿qué hace", "@a.rs?"])
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout("a() no hace nada\n");
+    assert!(
+        !d.path().join(".pcode").exists(),
+        "preguntar no crea estado en el proyecto"
+    );
+}
+
+#[test]
+fn preguntar_lee_stdin_y_formato_json() {
+    let d = tempfile::tempdir().unwrap();
+    let out = pcode(d.path(), json!([resp("feat: añade a()", json!([]))]))
+        .args(["preguntar", "--formato", "json", "mensaje de commit"])
+        .write_stdin("diff --git a/a.rs b/a.rs\n+fn a() {}\n")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["texto"], "feat: añade a()");
+    assert_eq!(v["entrada"], 3);
+    pcode(d.path(), json!([]))
+        .args(["preguntar"])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("falta la pregunta"));
+}
+
+#[test]
+fn jsonl_fin_lleva_los_cambios_del_turno_y_deshacer_los_revierte() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("a.txt"), "uno\n").unwrap();
+    let out = pcode(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"escribir","arguments":{"path":"a.txt","content":"uno\ndos\n"}}])
+            ),
+            resp("listo", json!([])),
+        ]),
+    )
+    .args(["chat", "--formato", "jsonl"])
+    .write_stdin("{\"mensaje\":\"añade dos\"}\n")
+    .assert()
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    let fin = String::from_utf8_lossy(&out)
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find(|v| v["tipo"] == "fin")
+        .expect("evento fin");
+    assert_eq!(
+        fin["cambios"],
+        json!([{"ruta":"a.txt","mas":1,"menos":0,"creado":false,"borrado":false}])
+    );
+    pcode(d.path(), json!([]))
+        .arg("chat")
+        .write_stdin("/deshacer\n/salir\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deshecho «añade dos»"));
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("a.txt")).unwrap(),
+        "uno\n"
+    );
+}

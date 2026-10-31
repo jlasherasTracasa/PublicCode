@@ -1579,6 +1579,7 @@ dependencies = [
  "pcode-policy",
  "pcode-tools",
  "serde_json",
+ "similar",
  "tempfile",
  "tokio",
  "tracing",
