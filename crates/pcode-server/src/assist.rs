@@ -585,30 +585,26 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn assist_sin_modelo_da_error_claro() {
-        use std::os::unix::fs::PermissionsExt;
-        let d = tempfile::tempdir().unwrap();
-        let ok = d.path().join("ok.sh");
-        std::fs::write(
-            &ok,
-            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"texto\":\"```\\nfeat: algo\\n```\"}'\n",
-        )
-        .unwrap();
-        let fail = d.path().join("fail.sh");
-        std::fs::write(
-            &fail,
-            "#!/bin/sh\ncat > /dev/null\necho 'Error: no hay ningún modelo configurado' >&2\nexit 1\n",
-        )
-        .unwrap();
-        for f in [&ok, &fail] {
-            std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        assert_eq!(ask(&ok, d.path(), "x").await.unwrap(), "feat: algo");
+        // Se ejecuta `sh preguntar …`: el «binario» es /bin/sh y lee el guion `preguntar` del
+        // directorio. Así no se ejecuta un archivo recién escrito (ETXTBSY si otro hilo del test
+        // hace fork justo entonces).
+        let sh = std::path::Path::new("/bin/sh");
+        let guion = |cuerpo: &str| {
+            let d = tempfile::tempdir().unwrap();
+            std::fs::write(d.path().join("preguntar"), cuerpo).unwrap();
+            d
+        };
+        let ok =
+            guion("cat > /dev/null\nprintf '%s\\n' '{\"texto\":\"```\\nfeat: algo\\n```\"}'\n");
+        let fail =
+            guion("cat > /dev/null\necho 'Error: no hay ningún modelo configurado' >&2\nexit 1\n");
+        assert_eq!(ask(sh, ok.path(), "x").await.unwrap(), "feat: algo");
         assert_eq!(
-            ask(&fail, d.path(), "x").await.unwrap_err(),
+            ask(sh, fail.path(), "x").await.unwrap_err(),
             "no hay ningún modelo configurado"
         );
         assert!(
-            ask(&d.path().join("no-existe"), d.path(), "x")
+            ask(&ok.path().join("no-existe"), ok.path(), "x")
                 .await
                 .is_err()
         );

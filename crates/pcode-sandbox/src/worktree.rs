@@ -28,10 +28,23 @@ const IDENT: [(&str, &str); 4] = [
     ("GIT_COMMITTER_EMAIL", "pcode@localhost"),
 ];
 
+/// En Windows, `canonicalize` devuelve rutas `\\?\C:\…` que git no entiende (las convierte en
+/// `//?/C:/…` y falla al crear directorios): a git se le pasan sin ese prefijo.
+pub(crate) fn plain(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        p.to_path_buf()
+    }
+}
+
 pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, SandboxError> {
     let out = Command::new("git")
         .arg("-C")
-        .arg(dir)
+        .arg(plain(dir))
         .args(args)
         .envs(IDENT)
         .output()
@@ -63,7 +76,13 @@ pub(crate) fn create(root: &Path, state: &Path) -> Result<(), SandboxError> {
     let wt = wt_dir(state);
     git(
         root,
-        &["worktree", "add", "--detach", &wt.to_string_lossy(), "HEAD"],
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            &plain(&wt).to_string_lossy(),
+            "HEAD",
+        ],
     )?;
     // Lo que el usuario tiene sin commitear también lo ve el agente.
     let status = git(
@@ -200,7 +219,12 @@ impl Sandbox {
         let wt = wt_dir(&self.state);
         let _ = git(
             &self.root,
-            &["worktree", "remove", "--force", &wt.to_string_lossy()],
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &plain(&wt).to_string_lossy(),
+            ],
         );
         let _ = git(&self.root, &["worktree", "prune"]);
     }
@@ -208,6 +232,22 @@ impl Sandbox {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rutas_para_git_sin_prefijo_de_windows() {
+        assert_eq!(
+            super::plain(std::path::Path::new(r"\\?\C:\Users\a\wt")),
+            std::path::PathBuf::from(r"C:\Users\a\wt")
+        );
+        assert_eq!(
+            super::plain(std::path::Path::new(r"\\?\UNC\srv\comp\wt")),
+            std::path::PathBuf::from(r"\\srv\comp\wt")
+        );
+        assert_eq!(
+            super::plain(std::path::Path::new("/tmp/x/wt")),
+            std::path::PathBuf::from("/tmp/x/wt")
+        );
+    }
+
     use crate::layer::ChangeKind;
     use crate::run::{Network, Sandbox, SandboxSpec};
     use std::path::Path;
