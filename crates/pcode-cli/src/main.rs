@@ -16,6 +16,9 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Option<Cmd>,
+    /// Sin orden: abre la TUI retomando la última conversación del proyecto.
+    #[arg(long = "continuar")]
+    resume: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -158,10 +161,13 @@ async fn main() -> anyhow::Result<()> {
         None => {
             use std::io::IsTerminal;
             if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-                std::process::exit(chat::tui(chat::ChatArgs::default_args()).await?);
+                let mut a = chat::ChatArgs::default_args();
+                a.resume = cli.resume;
+                std::process::exit(chat::tui(a).await?);
             }
             use clap::CommandFactory;
-            Cli::command().print_help()?;
+            // Si la salida se cierra antes (p. ej. `| head`), no es un error.
+            let _ = Cli::command().print_help();
             println!();
             Ok(())
         }

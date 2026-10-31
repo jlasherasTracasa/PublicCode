@@ -305,3 +305,14 @@ fn jsonl_fin_lleva_los_cambios_del_turno_y_deshacer_los_revierte() {
         "uno\n"
     );
 }
+
+#[test]
+fn continuar_sin_orden_se_acepta_y_sin_terminal_muestra_la_ayuda() {
+    let d = tempfile::tempdir().unwrap();
+    pcode(d.path(), json!([]))
+        .arg("--continuar")
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage: pcode"));
+}

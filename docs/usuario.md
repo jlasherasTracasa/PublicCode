@@ -28,7 +28,12 @@ Los instaladores son por usuario (sin administrador), comprueban el SHA-256 de l
 | el editor en el navegador | `pcode studio` |
 | una conversación en modo línea o por stdin | `pcode chat` |
 | una tarea suelta para scripts y CI | `pcode run "…" --acepta "cargo test"` |
+| una pregunta rápida, sin tools ni cambios | `pcode preguntar "¿qué hace @src/main.rs?"` |
+| algo a partir de una salida | `git diff --cached \| pcode preguntar "escribe el mensaje de commit"` |
 | retomar la última conversación | `pcode --continuar` o `pcode chat --continuar` |
+
+La instalación detallada (manual, desde el código, modelos locales, LSP, Android, proxies, desinstalar) está en
+[instalacion.md](instalacion.md).
 
 ## 3. Configurar
 
@@ -75,7 +80,12 @@ cada servidor MCP.
 | Esc o Ctrl+C | interrumpe al agente (con el agente parado, Ctrl+C sale) |
 | Ctrl+O | despliega la salida completa de las tools |
 | ↑ ↓ · PgUp PgDn | historial · desplazar |
-| `/modelo`, `/nuevo`, `/compactar`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, empezar de nuevo, resumir, tokens, ayuda y salir |
+| `/deshacer`, `/rehacer` | deja los archivos como estaban antes del último turno del agente, o lo vuelve a aplicar |
+| `/modelo`, `/nuevo`, `/compactar`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, empezar de nuevo, resumir, tokens y contexto, ayuda y salir |
+
+Al terminar cada turno, la TUI resume lo que cambió (`✎ 2 archivos · src/a.rs +3 −1 · /deshacer lo revierte`) y la
+barra de estado lleva un **medidor de contexto** (`▰▰▱▱▱▱▱▱ contexto 25 %`, en amarillo desde el 75 %): al 100 %
+la conversación se compacta sola. `/deshacer` y `/rehacer` también funcionan en `pcode chat`.
 
 ## 5. PublicCode Studio
 
@@ -92,6 +102,27 @@ cada servidor MCP.
 | Terminal | Ctrl+\` ; botones para compilar y probar según el proyecto |
 | Agente | Ctrl+I; Ctrl+L le lleva la selección con su archivo y líneas; las aprobaciones salen en el propio panel |
 | Paleta | Ctrl+Mayús+P (o `>` en Ctrl+P) con todas las órdenes |
+| Esquema y símbolos | vista Esquema (Ctrl+Mayús+O para saltar), **migas de pan** con el símbolo del cursor y Ctrl+T para cualquier símbolo del proyecto; en Ctrl+P, `@` símbolos del archivo, `#` del proyecto y `:` línea |
+| Marcas de git | barras en el margen para líneas nuevas (verde), cambiadas (azul) y borradas (rojo); clic para ver el diff |
+| Actividad | Ctrl+Mayús+Y: cada turno del agente con sus archivos (+/−), deshacer y rehacer, y las acciones auditadas con la integridad comprobada |
+| Diseño | temas automático, claro, oscuro y medianoche (botón de la barra o paleta); paneles redimensionables con el ratón o el teclado (doble clic los restablece) |
+
+### 5.1 El asistente ✦
+
+Acciones de un clic que arman el contexto justo para el modelo. Cada una sale de un paper de ACL/EMNLP 2026
+([papers.md §11](papers.md#11-experiencia-del-desarrollador-editor-git-y-revisión)).
+
+| Acción | Dónde | Qué hace |
+|---|---|---|
+| ✦ Generar mensaje | panel Git | escribe el commit con el resumen por archivo, las funciones tocadas, tu estilo y el diff preparado |
+| ✦ Revisar | panel Git, menú ✦, tarjeta del turno | abre un documento con la revisión del diff: errores, alcance, mantenibilidad, tests y seguridad |
+| ✦ Arreglar | Problemas (uno o todos), hover de un error, orden fallida del terminal | manda al agente archivo, línea, símbolo, mensaje y código alrededor, pidiendo la edición mínima |
+| ✦ Concretar | caja del agente | reescribe tu petición como objetivo, archivos probables, pasos, criterio de hecho y preguntas |
+| Explicar · Escribir tests | menú ✦ y paleta | explica el archivo o la selección con su esquema; pide al agente tests en el estilo del proyecto |
+| ↶ Deshacer el turno | tarjeta de cambios, Actividad, Ctrl+Alt+Z | revierte los archivos que tocó el último turno del agente (Ctrl+Alt+Mayús+Z rehace) |
+
+Generar, revisar, concretar y explicar usan `pcode preguntar` (sin tools: no cambian nada); arreglar y escribir
+tests van al agente, con sus aprobaciones.
 
 Los servidores de lenguaje que usa: `rust-analyzer`, `typescript-language-server`, `pyright-langserver`,
 `gopls` y `clangd`. Si falta alguno, Studio lo dice en la barra de estado («LSP ✗») con qué instalar.
@@ -105,6 +136,7 @@ Los servidores de lenguaje que usa: `rust-analyzer`, `typescript-language-server
 | escribir fuera del proyecto, en `.git/` o en `.pcode/` | se rechaza |
 | tu `[politica]` | se suma a lo anterior y solo puede endurecerlo |
 | cualquier acción | queda en `.pcode/audit.jsonl`, con hash encadenado |
+| cada archivo que escribe el agente | se guarda antes en un punto de control del turno: `/deshacer` o «Deshacer el turno» lo restaura |
 
 `--aprobar-todo` evita las preguntas (lo denegado sigue denegado). El modo plan no deja tocar nada. La eval
 de seguridad que acompaña a cada versión está en [evaluacion.md](evaluacion.md#51-resultados-de-la-eval-de-seguridad-10).
@@ -135,6 +167,7 @@ podrás aprobar o denegar. Sin TLS todavía: úsalo en tu red o tras un túnel (
 |---|---|
 | conversaciones | `.pcode/pcode.db` del proyecto (SQLite) |
 | auditoría | `.pcode/audit.jsonl` |
+| puntos de control (últimos 50 turnos) | `.pcode/checkpoints/` |
 | configuración | archivo global y `pcode.toml` |
 | claves | solo en variables de entorno; nunca en archivos |
 

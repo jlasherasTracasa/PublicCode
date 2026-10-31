@@ -7,6 +7,19 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado
 La primera versión estable: PublicCode sirve como herramienta de programación por defecto en Linux y Windows.
 
 ### Añadido
+- **Deshacer lo que hace el agente**: puntos de control por turno (`/deshacer`, `/rehacer` en la TUI y el chat;
+  «Deshacer el turno», Ctrl+Alt+Z y la vista Actividad en Studio) y resumen de archivos cambiados al final de cada turno.
+- **Asistente ✦ en Studio**, basado en papers de ACL/EMNLP 2026: generar el mensaje de commit, revisar los cambios,
+  arreglar con diagnóstico estructurado (desde Problemas, el hover o una orden fallida), concretar la petición,
+  explicar y escribir tests.
+- **Studio pro**: temas automático, claro, oscuro y medianoche; paneles redimensionables; migas de pan; vista Esquema;
+  Ctrl+T y Ctrl+Mayús+O; marcas de git en el margen; barra de estado a lo ancho; avisos apilados; vista Actividad
+  con la integridad de la auditoría.
+- `pcode preguntar`: respuestas sin tools con `@archivo` y stdin (`git diff | pcode preguntar …`), texto o JSON.
+- Medidor de contexto en la TUI y `/uso` con el contexto ocupado.
+- Instrucción de ediciones mínimas en el prompt de sistema.
+- `pcode --continuar` abre la TUI retomando la última conversación.
+- Guía de instalación (`docs/instalacion.md`) y prueba de extremo a extremo de Studio (`tools/studio/e2e.js`).
 - **LSP en Studio**: ir a la definición (F12, Ctrl+clic), referencias (Mayús+F12), información (Ctrl+K), errores
   subrayados y panel Problemas, con rust-analyzer, typescript-language-server, pyright, gopls o clangd
   (configurables en `[lsp.*]`).
@@ -19,6 +32,7 @@ La primera versión estable: PublicCode sirve como herramienta de programación 
 
 ### Cambiado
 - La capa de política por defecto impide escribir en `.git/` y `.pcode/`.
+- Cancelar una sesión o una orden del terminal para también a los procesos que lanzó.
 - Protocolo del demonio 1.0.0.
 
 ## [0.5.0] — 2026-10-31
