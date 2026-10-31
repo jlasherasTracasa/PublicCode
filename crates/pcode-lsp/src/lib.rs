@@ -480,14 +480,55 @@ impl LspClient {
     }
 }
 
-/// Ruta relativa a `root` con `/` (o la absoluta si está fuera).
+/// Ruta absoluta normalizada con `/`: canonicaliza el ancestro existente más cercano (el archivo
+/// puede no existir todavía) y quita el prefijo `\\?\` de Windows. Así coinciden los nombres
+/// cortos 8.3 (`RUNNER~1`) con los largos que devuelven los servidores de lenguaje.
+fn normalized(p: &Path) -> String {
+    let mut base = p.to_path_buf();
+    let mut tail = vec![];
+    let canon = loop {
+        if let Ok(c) = base.canonicalize() {
+            break Some(c);
+        }
+        match (base.file_name().map(|n| n.to_os_string()), base.parent()) {
+            (Some(n), Some(parent)) => {
+                tail.push(n);
+                base = parent.to_path_buf();
+            }
+            _ => break None,
+        }
+    };
+    let mut full = canon.unwrap_or_else(|| p.to_path_buf());
+    for n in tail.iter().rev() {
+        full.push(n);
+    }
+    let s = full.to_string_lossy().replace('\\', "/");
+    s.strip_prefix("//?/").map(String::from).unwrap_or(s)
+}
+
+/// Ruta relativa a `root` con `/` (o la absoluta si está fuera). En Windows compara sin distinguir
+/// mayúsculas, como el sistema de archivos.
 pub fn rel_path(root: &Path, p: &Path) -> String {
-    let root_c = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let p_c = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    p_c.strip_prefix(&root_c)
-        .or_else(|_| p.strip_prefix(root))
-        .map(|r| r.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| p.to_string_lossy().replace('\\', "/"))
+    let (r, f) = (normalized(root), normalized(p));
+    let parts = |s: &str| -> Vec<String> {
+        s.split('/')
+            .filter(|x| !x.is_empty())
+            .map(String::from)
+            .collect()
+    };
+    let (rp, fp) = (parts(&r), parts(&f));
+    let same = |a: &String, b: &String| {
+        if cfg!(windows) {
+            a.eq_ignore_ascii_case(b)
+        } else {
+            a == b
+        }
+    };
+    if fp.len() > rp.len() && rp.iter().zip(&fp).all(|(a, b)| same(a, b)) {
+        fp[rp.len()..].join("/")
+    } else {
+        f
+    }
 }
 
 /// Servidores LSP de un proyecto, arrancados al abrir el primer archivo de cada lenguaje.
@@ -629,6 +670,23 @@ mod tests {
         );
         c.initialize().await.unwrap();
         (c, got)
+    }
+
+    #[test]
+    fn ruta_relativa_con_archivos_que_no_existen_y_raiz_sin_normalizar() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join(".");
+        assert_eq!(
+            rel_path(&root, &d.path().join("src").join("nuevo.rs")),
+            "src/nuevo.rs"
+        );
+        let canon = d.path().canonicalize().unwrap();
+        assert_eq!(rel_path(&canon, &canon.join("a.rs")), "a.rs");
+        let fuera = rel_path(&canon, &std::env::temp_dir().join("otro-proyecto/x.rs"));
+        assert!(
+            fuera.ends_with("otro-proyecto/x.rs") && fuera.contains('/'),
+            "{fuera}"
+        );
     }
 
     #[tokio::test]
