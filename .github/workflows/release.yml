@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -109,12 +111,28 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          path: src
       - name: Sumas SHA-256
         run: cd dist && sha256sum pcode-* > SHA256SUMS && cat SHA256SUMS
+      - name: Procedencia firmada de los binarios (attestation de GitHub)
+        # En repositorios privados sin el plan que lo permite, GitHub la rechaza: no bloquea la release.
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/pcode-*"
+      - name: Notas de la versión desde CHANGELOG.md
+        run: |
+          v="${TAG#v}"
+          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {p=1; next} /^## \[/ {if (p) exit} p' src/CHANGELOG.md > notas.md
+          printf '\n**Instalar**\n\n- Linux: `curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | sh`\n- Windows: `irm https://raw.githubusercontent.com/%s/main/install.ps1 | iex`\n\nGuía: [docs/usuario.md](https://github.com/%s/blob/main/docs/usuario.md)\n' "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" >> notas.md
+          cat notas.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: PublicCode ${{ env.TAG }}
+          body_path: notas.md
           generate_release_notes: true
           files: |
             dist/pcode-*

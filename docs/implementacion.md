@@ -275,7 +275,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 |---|---|---|---|---|
 | [F7.01-redteam-skills](../tareas/F7.01-redteam-skills.md) | Red teaming de skills: exfiltración, instalación de paquetes y órdenes ocultas | haiku | F6.02, F2.20 | pendiente |
 | [F7.02-evals-inyeccion](../tareas/F7.02-evals-inyeccion.md) | Evals de inyección indirecta, envenenamiento de repo y seguridad operativa | coordinador | F1.26, F0.06 | hecha |
-| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: build reproducible, firma, instalación y documentación de usuario | coordinador | F7.02, F5.21, F5.22, F6.04, F0.07 | pendiente |
+| [F7.03-release](../tareas/F7.03-release.md) | Release 1.0: guía de usuario, CHANGELOG, procedencia firmada y versión 1.0.0 | coordinador | F7.02, F0.08, F5.35, F2.21 | hecha |
 
 ### F8
 

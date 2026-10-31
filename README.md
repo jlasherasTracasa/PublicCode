@@ -11,11 +11,14 @@ escritorio** (Linux y Windows), **navegador**, **móvil** (aprobaciones), **IDE*
 y MCP) y **GitHub**. Todos son clientes del mismo demonio, así que una sesión empezada en la terminal
 se sigue en el escritorio.
 
-> **Estado: F1 completa y partes sustanciales de F2, F3 y F5 implementadas y probadas** (332 tests,
-> `clippy -D warnings` limpio). Funciona hoy:
+> **Versión 1.0** · 343 tests y `clippy -D warnings` limpio · [guía de usuario](docs/usuario.md) · [cambios](CHANGELOG.md).
+> Funciona hoy:
 >
 > | Parte | Qué hay | Tareas |
 > |---|---|---|
+> | **LSP** | definición, referencias, hover, errores en línea y panel Problemas en Studio (rust-analyzer, TypeScript, pyright, gopls, clangd) | F5.35 |
+> | **Windows sin WSL** | `--backend` y `pcode flow` con la sandbox N0 (`git worktree`) | F2.21 |
+> | **Seguridad comprobada** | eval de 20 inyecciones y órdenes destructivas y eval de reglas, en cada CI | F7.02, F0.06 |
 > | **Studio** | `pcode studio`: editor en el navegador con explorador, pestañas, resaltado de sintaxis, buscar/reemplazar, Ctrl+P, búsqueda en el proyecto, git (diff, preparar, commit), terminal integrada, tareas del proyecto y el agente al lado | F5.32 |
 > | **Conversaciones** | las sesiones del demonio (web, Studio, APK) admiten varios turnos, streaming y aprobaciones (`pcode chat --formato jsonl`) | F5.33 |
 > | **MCP** | tools externas por MCP (`[mcp.*]`, `pcode mcp`) con la misma política y auditoría | F2.22 |

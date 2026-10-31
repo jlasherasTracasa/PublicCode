@@ -3589,11 +3589,11 @@ papers = ["Beyond the Payload (EMNLP 2026)", "Will the User Ever Know? (EMNLP 20
 [[tarea]]
 id = "F7.03"
 nombre = "release"
-titulo = "Release 1.0: build reproducible, firma, instalación y documentación de usuario"
+titulo = "Release 1.0: guía de usuario, CHANGELOG, procedencia firmada y versión 1.0.0"
 fase = "F7"
 ejecutor = "coordinador"
-depende = ["F7.02", "F5.21", "F5.22", "F6.04", "F0.07"]
-toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "install.sh", "install.ps1"]
+depende = ["F7.02", "F0.08", "F5.35", "F2.21"]
+toca = [".github/workflows/release.yml", "docs/usuario.md", "CHANGELOG.md", "Cargo.toml", "README.md"]
 acepta = "test -s docs/usuario.md && test -s CHANGELOG.md && grep -q sha256 .github/workflows/release.yml"
 contexto = ["docs/PLAN.md (decisiones abiertas: licencia, nombre)"]
 objetivo = "Binarios para Linux (x86_64 y aarch64) y Windows (x86_64) , `SHA256SUMS` firmado, instalación en una línea con verificación, guía de usuario (configurar backends, primer `pcode run`, `pcode flow`, sandboxes, skills) y checklist de seguridad superado (F7.01 y F7.02)."
