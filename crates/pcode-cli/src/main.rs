@@ -37,6 +37,15 @@ enum Cmd {
     /// Flujos de tareas: DAG, aceptación, reintentos e integración.
     #[command(subcommand)]
     Flow(flow_cmd::FlowCmd),
+    /// PublicCode Studio: editor, git, terminal y agente en el navegador, solo en este equipo.
+    Studio {
+        /// Puerto (0 = uno libre).
+        #[arg(long, default_value_t = 0)]
+        puerto: u16,
+        /// No abrir el navegador; solo imprimir la dirección.
+        #[arg(long = "no-abrir")]
+        no_open: bool,
+    },
     /// Comprueba la instalación: configuración, modelo, claves, git, sandbox y agentes externos.
     Doctor {
         /// Configuración del proyecto.
@@ -101,6 +110,26 @@ async fn main() -> anyhow::Result<()> {
             pcode_server::serve(st, std::net::SocketAddr::new(escuchar, puerto)).await?;
             Ok(())
         }
+        Some(Cmd::Studio { puerto, no_open }) => {
+            let token = format!(
+                "{}{}",
+                uuid::Uuid::new_v4().simple(),
+                uuid::Uuid::new_v4().simple()
+            );
+            let st = pcode_server::AppState::new(
+                std::env::current_dir()?,
+                std::env::current_exe()?,
+                Some(token.clone()),
+            );
+            let l = tokio::net::TcpListener::bind(("127.0.0.1", puerto)).await?;
+            let url = format!("http://{}/?t={token}", l.local_addr()?);
+            eprintln!("PublicCode Studio: {url}\n(Ctrl+C para cerrar)");
+            if !no_open {
+                open_browser(&url);
+            }
+            pcode_server::serve_listener(st, l).await?;
+            Ok(())
+        }
         Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
         Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c)?),
         Some(Cmd::Actualizar { check }) => std::process::exit(update::update(check).await?),
@@ -116,5 +145,23 @@ async fn main() -> anyhow::Result<()> {
             println!();
             Ok(())
         }
+    }
+}
+
+/// Abre `url` en el navegador del sistema (sin esperar; si falla, basta con la dirección impresa).
+fn open_browser(url: &str) {
+    let r = if cfg!(windows) {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+    } else {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+    };
+    if r.is_err() {
+        eprintln!("No se pudo abrir el navegador: abre la dirección a mano.");
     }
 }

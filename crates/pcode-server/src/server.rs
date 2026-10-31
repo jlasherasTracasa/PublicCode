@@ -782,6 +782,14 @@ pub fn router(state: Arc<AppState>) -> Router {
 /// Sirve en TCP en la dirección indicada (loopback por defecto en la CLI).
 pub async fn serve(state: Arc<AppState>, addr: std::net::SocketAddr) -> anyhow::Result<()> {
     let l = tokio::net::TcpListener::bind(addr).await?;
+    serve_listener(state, l).await
+}
+
+/// Sirve en un socket ya abierto (p. ej. en un puerto libre elegido por el sistema).
+pub async fn serve_listener(
+    state: Arc<AppState>,
+    l: tokio::net::TcpListener,
+) -> anyhow::Result<()> {
     tracing::info!("pcoded escuchando en http://{}", l.local_addr()?);
     axum::serve(l, router(state)).await?;
     Ok(())

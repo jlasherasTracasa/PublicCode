@@ -4,4 +4,4 @@ mod server;
 pub mod workspace;
 
 pub use approvals::ApprovalBroker;
-pub use server::{AppState, router, serve};
+pub use server::{AppState, router, serve, serve_listener};

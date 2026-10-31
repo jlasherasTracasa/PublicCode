@@ -68,14 +68,14 @@ fn rel_of(root: &Path, p: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// Lista un directorio: carpetas primero y luego archivos, por nombre. Oculta `.git`.
+/// Lista un directorio: carpetas primero y luego archivos, por nombre. Oculta `.git` y `.pcode`.
 pub fn list(root: &Path, rel: &str) -> WsResult<Vec<FileEntry>> {
     let dir = safe_path(root, rel)?;
     let croot = root.canonicalize().map_err(|e| e.to_string())?;
     let mut v: Vec<FileEntry> = std::fs::read_dir(&dir)
         .map_err(|e| format!("no se puede listar {rel}: {e}"))?
         .flatten()
-        .filter(|e| e.file_name() != ".git")
+        .filter(|e| e.file_name() != ".git" && e.file_name() != ".pcode")
         .map(|e| {
             let md = e.metadata().ok();
             let dir = md.as_ref().is_some_and(|m| m.is_dir());
