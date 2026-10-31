@@ -206,6 +206,25 @@
   details.opciones summary { font-size: 12px; color: var(--primario); cursor: pointer; }
   details.opciones input { width: 100%; margin-top: 4px; border: 1.5px solid var(--linea); border-radius: 10px; padding: 5px 8px; background: var(--superficie); }
 
+  /* Buscar y reemplazar en el archivo */
+  .buscador { position: absolute; top: 8px; right: 18px; z-index: 5; background: var(--superficie); border-radius: 14px; box-shadow: var(--sombra-2);
+              padding: 8px; display: grid; grid-template-columns: 220px auto; gap: 6px; align-items: center; font-size: 12px; }
+  .buscador input { border: 1.5px solid var(--linea); border-radius: 10px; padding: 5px 8px; background: var(--superficie-2); outline: none; font: 12.5px var(--mono); }
+  .buscador input:focus { border-color: var(--primario); }
+  .buscador .fila { gap: 4px; align-items: center; flex-wrap: nowrap; }
+  .buscador button { padding: 4px 8px; border-radius: 8px; }
+  .buscador button:hover { background: var(--contenedor); }
+  .buscador .cuenta { color: var(--texto-2); min-width: 54px; text-align: center; }
+  .menu { position: fixed; z-index: 70; background: var(--superficie); border-radius: 12px; box-shadow: var(--sombra-2); padding: 4px; min-width: 170px; }
+  .menu button { display: block; width: 100%; text-align: left; padding: 7px 12px; font-size: 13px; border-radius: 8px; }
+  .menu button:hover { background: var(--contenedor); }
+  .menu button.rojo { color: var(--error); }
+  .tareas { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tareas button { background: rgba(138,180,248,.16); color: #cfe0fb; padding: 2px 10px; border-radius: 999px; font-size: 11.5px; }
+  .tareas button:hover { background: rgba(138,180,248,.3); }
+  .estado-ed button { color: var(--primario); font-size: 12px; padding: 1px 8px; border-radius: 8px; }
+  .estado-ed button:hover { background: var(--contenedor); }
+
   /* Diálogo de apertura rápida */
   .velo { position: fixed; inset: 0; background: rgba(4,20,46,.35); display: grid; justify-items: center; align-items: start; padding-top: 12vh; z-index: 50; }
   .dialogo { width: min(620px, 92vw); background: var(--superficie); border-radius: 20px; box-shadow: var(--sombra-2); overflow: hidden; }
@@ -295,6 +314,9 @@
             <kbd>Ctrl `</kbd><span>Terminal</span>
             <kbd>Ctrl I</kbd><span>Agente</span>
             <kbd>Ctrl W</kbd><span>Cerrar pestaña</span>
+            <kbd>Ctrl F</kbd><span>Buscar y reemplazar en el archivo</span>
+            <kbd>Ctrl G</kbd><span>Ir a una línea</span>
+            <kbd>Ctrl L</kbd><span>Preguntar al agente por la selección</span>
           </div>
         </div>
       </div>
@@ -306,15 +328,21 @@
           <textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Editor"></textarea>
         </div>
       </div>
+      <div id="buscador" class="buscador oculto" role="search">
+        <input id="f-buscar" placeholder="Buscar" aria-label="Buscar en el archivo">
+        <div class="fila"><span id="f-cuenta" class="cuenta"></span><button id="f-ant" title="Anterior (Mayús+Intro)">↑</button><button id="f-sig" title="Siguiente (Intro)">↓</button><button id="f-cerrar" title="Cerrar (Esc)">✕</button></div>
+        <input id="f-reemplazar" placeholder="Reemplazar" aria-label="Reemplazar por">
+        <div class="fila"><button id="f-uno">Reemplazar</button><button id="f-todo">Todo</button></div>
+      </div>
       <div id="vista-diff" class="diff oculto" aria-label="Diferencias"></div>
       <div id="binario" class="binario oculto">Archivo binario: no se puede editar aquí.</div>
     </div>
     <div class="estado-ed">
       <span id="e-archivo">Sin archivo</span>
-      <div class="derecha"><span id="e-pos"></span><span id="e-lang"></span><span>UTF-8</span></div>
+      <div class="derecha"><button id="b-preguntar" class="oculto" title="Preguntar al agente sobre la selección (Ctrl+L)">✦ Preguntar al agente</button><span id="e-pos"></span><span id="e-lang"></span><span>UTF-8</span></div>
     </div>
     <section id="terminal" class="terminal" aria-label="Terminal">
-      <header>TERMINAL <span id="t-estado"></span><span style="flex:1"></span>
+      <header>TERMINAL <span id="t-estado"></span><span id="tareas" class="tareas"></span><span style="flex:1"></span>
         <button id="t-parar" title="Detener (Ctrl+C)">■ Detener</button><button id="t-limpiar">Limpiar</button><button id="t-cerrar">✕</button></header>
       <pre id="salida" class="salida" aria-live="polite"></pre>
       <div class="linea-orden"><span>❯</span><input id="orden" placeholder="cargo test, npm run build, git log…" aria-label="Orden"></div>
@@ -439,6 +467,7 @@ function muestra() {
   $("binario").classList.toggle("oculto", !t || !t.binary);
   $("vista-diff").classList.toggle("oculto", !t || t.kind !== "diff");
   $("e-archivo").textContent = t ? t.path + (t.dirty ? " ●" : "") : "Sin archivo";
+  if (!t || t.kind !== "file") $("buscador").classList.add("oculto");
   $("e-lang").textContent = t && t.kind === "file" ? NOMBRE_LANG[t.lang] || "" : "";
   if (!t) { $("e-pos").textContent = ""; marcaArbol(); return; }
   if (t.kind === "diff") pintaDiff(t);
@@ -530,6 +559,68 @@ ta.addEventListener("keydown", (e) => {
   }
 });
 
+/* ───────── Buscar y reemplazar en el archivo ───────── */
+function coincidencias() {
+  const q = $("f-buscar").value; if (!q) return [];
+  const t = ta.value.toLowerCase(), qq = q.toLowerCase(), out = [];
+  for (let i = t.indexOf(qq); i >= 0 && out.length < 10000; i = t.indexOf(qq, i + Math.max(1, qq.length))) out.push(i);
+  return out;
+}
+function selecciona(pos, len) {
+  ta.focus(); ta.setSelectionRange(pos, pos + len);
+  const linea = ta.value.slice(0, pos).split("\n").length;
+  if (linea * 21 < ta.scrollTop + 40 || linea * 21 > ta.scrollTop + ta.clientHeight - 60) ta.scrollTop = Math.max(0, (linea - 8) * 21);
+  posicion(); $("f-buscar").focus();
+}
+function salta(dir) {
+  const m = coincidencias(), q = $("f-buscar").value;
+  if (!m.length) { $("f-cuenta").textContent = q ? "0 de 0" : ""; return; }
+  const desde = dir > 0 ? ta.selectionEnd : ta.selectionStart - 1;
+  let i = dir > 0 ? m.findIndex((p) => p >= desde) : m.map((p, k) => [p, k]).filter(([p]) => p <= desde).pop()?.[1] ?? -1;
+  if (i < 0) i = dir > 0 ? 0 : m.length - 1;
+  $("f-cuenta").textContent = `${i + 1} de ${m.length}`;
+  selecciona(m[i], q.length);
+}
+function buscador(abrir) {
+  const t = tabActiva(); if (!t || t.kind !== "file") return;
+  $("buscador").classList.toggle("oculto", !abrir);
+  if (abrir) { const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd); if (sel && !sel.includes("\n")) $("f-buscar").value = sel; $("f-buscar").focus(); $("f-buscar").select(); salta(1); }
+  else ta.focus();
+}
+$("f-buscar").addEventListener("input", () => { ta.setSelectionRange(ta.selectionStart, ta.selectionStart); salta(1); });
+$("f-buscar").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); salta(e.shiftKey ? -1 : 1); } else if (e.key === "Escape") buscador(false); });
+$("f-reemplazar").addEventListener("keydown", (e) => { if (e.key === "Escape") buscador(false); else if (e.key === "Enter") { e.preventDefault(); $("f-uno").click(); } });
+$("f-sig").onclick = () => salta(1); $("f-ant").onclick = () => salta(-1); $("f-cerrar").onclick = () => buscador(false);
+$("f-uno").onclick = () => {
+  const q = $("f-buscar").value; if (!q) return;
+  if (ta.value.slice(ta.selectionStart, ta.selectionEnd).toLowerCase() === q.toLowerCase()) {
+    ta.setRangeText($("f-reemplazar").value, ta.selectionStart, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input"));
+  }
+  salta(1);
+};
+$("f-todo").onclick = () => {
+  const q = $("f-buscar").value; if (!q) return;
+  const n = coincidencias().length; if (!n) return;
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  ta.value = ta.value.replace(re, () => $("f-reemplazar").value); ta.dispatchEvent(new Event("input"));
+  aviso(`${n} reemplazos`); salta(1);
+};
+function irA() {
+  const t = tabActiva(); if (!t || t.kind !== "file") return;
+  const n = parseInt(prompt("Ir a la línea:", ""), 10); if (n > 0) irALinea(n);
+}
+function preguntaSeleccion() {
+  const t = tabActiva(); if (!t || t.kind !== "file") return;
+  const a = ta.selectionStart, b = ta.selectionEnd, sel = ta.value.slice(a, b);
+  const l1 = ta.value.slice(0, a).split("\n").length, l2 = l1 + sel.split("\n").length - 1;
+  const contexto = sel ? `En @${t.path} (líneas ${l1}–${l2}):\n\`\`\`\n${sel}\n\`\`\`\n` : `Sobre @${t.path}:\n`;
+  agente(true); if (innerWidth <= 900) vista("agente");
+  const m = $("mensaje"); m.value = contexto + m.value; m.focus(); m.setSelectionRange(m.value.length, m.value.length);
+}
+$("b-preguntar").onclick = preguntaSeleccion;
+ta.addEventListener("select", () => $("b-preguntar").classList.toggle("oculto", ta.selectionStart === ta.selectionEnd));
+ta.addEventListener("keyup", () => $("b-preguntar").classList.toggle("oculto", ta.selectionStart === ta.selectionEnd));
+
 /* ───────── Diff ───────── */
 function pintaDiff(t) {
   const box = $("vista-diff"); box.replaceChildren();
@@ -559,10 +650,42 @@ async function cargaDir(path, ul, nivel) {
       if (S.abiertas.has(it.path)) cargaDir(it.path, sub, nivel + 1);
       fila.onclick = () => { if (S.abiertas.has(it.path)) { S.abiertas.delete(it.path); sub.replaceChildren(); flecha.textContent = "▸"; } else { S.abiertas.add(it.path); flecha.textContent = "▾"; cargaDir(it.path, sub, nivel + 1); } };
     } else fila.onclick = () => abre(it.path);
-    fila.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fila.click(); } };
+    fila.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fila.click(); } else if (e.key === "F2") renombra(it.path); else if (e.key === "Delete") borra(it.path, it.dir); };
+    fila.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, e.clientY, [
+      ["Renombrar o mover (F2)", () => renombra(it.path)],
+      ["Copiar ruta", () => navigator.clipboard?.writeText(it.path).then(() => aviso("Ruta copiada"))],
+      ...(it.dir ? [] : [["Preguntar al agente", () => { agente(true); $("mensaje").value = `Sobre @${it.path}: ` + $("mensaje").value; $("mensaje").focus(); }]]),
+      [it.dir ? "Borrar carpeta vacía (Supr)" : "Borrar (Supr)", () => borra(it.path, it.dir), "rojo"],
+    ]); };
     ul.appendChild(li);
   }
   marcaArbol();
+}
+function menu(x, y, opciones) {
+  document.querySelectorAll(".menu").forEach((m) => m.remove());
+  const m = el("div", "menu"); m.setAttribute("role", "menu");
+  for (const [txt, fn, cls] of opciones) { const b = el("button", cls || "", txt); b.setAttribute("role", "menuitem"); b.onclick = () => { m.remove(); fn(); }; m.appendChild(b); }
+  document.body.appendChild(m);
+  m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px"; m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + "px";
+  m.querySelector("button")?.focus();
+  setTimeout(() => document.addEventListener("click", () => m.remove(), { once: true }), 0);
+  m.addEventListener("keydown", (e) => { if (e.key === "Escape") m.remove(); });
+}
+async function renombra(path) {
+  const to = prompt("Nueva ruta:", path); if (!to || to === path) return;
+  try {
+    await rpc("fs.rename", { from: path, to });
+    for (const t of S.tabs) if (t.kind === "file" && (t.path === path || t.path.startsWith(path + "/"))) { t.path = to + t.path.slice(path.length); t.id = "f:" + t.path; if (S.activa && S.activa.startsWith("f:" + path)) S.activa = t.id; }
+    S.todos = null; pintaPestanas(); muestra(); aviso("Renombrado");
+  } catch (e) { aviso(e.message); }
+}
+async function borra(path, esDir) {
+  if (!confirm(`¿Borrar ${path}${esDir ? " (solo si está vacía)" : ""}? No se puede deshacer desde aquí.`)) return;
+  try {
+    await rpc("fs.delete", { path });
+    const t = S.tabs.find((x) => x.kind === "file" && x.path === path); if (t) { t.dirty = false; cierra(t.id); }
+    S.todos = null; aviso("Borrado " + path);
+  } catch (e) { aviso(e.message); }
 }
 function marcaArbol() { const t = tabActiva(); document.querySelectorAll(".nodo").forEach((n) => n.classList.toggle("activo", !!t && t.kind === "file" && n.dataset.path === t.path)); }
 const refrescaArbol = () => cargaDir("", $("arbol"), 0);
@@ -792,6 +915,9 @@ document.addEventListener("keydown", (e) => {
   else if (k === "`" || e.code === "Backquote") { e.preventDefault(); terminal(); }
   else if (k === "i") { e.preventDefault(); agente(); }
   else if (k === "w" && S.activa) { e.preventDefault(); cierra(S.activa); }
+  else if ((k === "f" || k === "h") && !e.shiftKey && tabActiva()?.kind === "file") { e.preventDefault(); buscador(true); }
+  else if (k === "g" && !e.shiftKey) { e.preventDefault(); irA(); }
+  else if (k === "l") { e.preventDefault(); preguntaSeleccion(); }
 });
 window.addEventListener("beforeunload", (e) => { if (S.tabs.some((t) => t.dirty)) { e.preventDefault(); e.returnValue = ""; } });
 
@@ -836,9 +962,15 @@ function conecta() {
     }
   };
 }
+async function cargaTareas() {
+  try {
+    const ts = await rpc("workspace.tasks"); const box = $("tareas"); box.replaceChildren();
+    for (const t of ts) { const b = el("button", "", "▶ " + t.label); b.title = t.command; b.onclick = () => { terminal(true); ejecuta(t.command); }; box.appendChild(b); }
+  } catch { /* sin tareas */ }
+}
 async function inicio() {
   try { const i = await rpc("server.info"); const r = String(i.repo || ""); $("proyecto").textContent = r.split(/[\\/]/).filter(Boolean).pop() || r; document.title = ($("proyecto").textContent || "") + " · PublicCode"; } catch { /* sin info */ }
-  refrescaArbol(); refrescaGit();
+  refrescaArbol(); refrescaGit(); cargaTareas();
   try { S.sesiones = await rpc("session.list"); } catch { S.sesiones = []; }
   try { S.aprob = await rpc("approvals.list"); } catch { S.aprob = []; }
   pintaSesiones(); pintaConversacion(); pintaPestanas(); muestra(); conecta();

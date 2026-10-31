@@ -293,6 +293,12 @@ pub mod methods {
     pub const FS_READ: &str = "fs.read";
     /// Escribe un archivo: `{path, content}` → `true`.
     pub const FS_WRITE: &str = "fs.write";
+    /// Renombra o mueve: `{from, to}`.
+    pub const FS_RENAME: &str = "fs.rename";
+    /// Borra un archivo o una carpeta vacía: `{path}`.
+    pub const FS_DELETE: &str = "fs.delete";
+    /// Órdenes útiles según el tipo de proyecto: `{}` → `{label, command}[]`.
+    pub const WORKSPACE_TASKS: &str = "workspace.tasks";
     /// Todos los archivos del proyecto (respeta `.gitignore` en repos git): `{}` → `string[]`.
     pub const FS_FILES: &str = "fs.files";
     /// Busca texto: `{query, regex?, caseSensitive?}` → `SearchHit[]`.

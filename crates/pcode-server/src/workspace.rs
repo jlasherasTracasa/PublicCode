@@ -149,6 +149,105 @@ pub fn write(root: &Path, rel: &str, content: &str) -> WsResult<()> {
     std::fs::write(&p, content).map_err(|e| format!("no se puede escribir {rel}: {e}"))
 }
 
+/// Renombra o mueve dentro del proyecto (sin sobrescribir).
+pub fn rename(root: &Path, from: &str, to: &str) -> WsResult<()> {
+    let (a, b) = (safe_path(root, from)?, safe_path(root, to)?);
+    if !a.exists() {
+        return Err(format!("{from} no existe"));
+    }
+    if b.exists() {
+        return Err(format!("{to} ya existe"));
+    }
+    if let Some(parent) = b.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&a, &b).map_err(|e| format!("no se puede renombrar: {e}"))
+}
+
+/// Borra un archivo o una carpeta vacía (nunca carpetas con contenido ni la raíz).
+pub fn delete(root: &Path, rel: &str) -> WsResult<()> {
+    let p = safe_path(root, rel)?;
+    if p == root.canonicalize().map_err(|e| e.to_string())? {
+        return Err("no se puede borrar la raíz del proyecto".into());
+    }
+    let md = std::fs::symlink_metadata(&p).map_err(|e| format!("{rel}: {e}"))?;
+    if md.is_dir() {
+        std::fs::remove_dir(&p)
+            .map_err(|_| format!("{rel} no está vacía: bórrala desde la terminal"))
+    } else {
+        std::fs::remove_file(&p).map_err(|e| format!("no se puede borrar {rel}: {e}"))
+    }
+}
+
+/// Orden sugerida para el proyecto.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Task {
+    /// Texto del botón.
+    pub label: String,
+    /// Orden de shell.
+    pub command: String,
+}
+
+/// Órdenes habituales según los archivos de la raíz (Cargo, npm, Python, Go, Make, Gradle).
+pub fn tasks(root: &Path) -> Vec<Task> {
+    let has = |f: &str| root.join(f).exists();
+    let t = |l: &str, c: &str| Task {
+        label: l.into(),
+        command: c.into(),
+    };
+    let mut v = vec![];
+    if has("Cargo.toml") {
+        v.extend([
+            t("Compilar", "cargo build"),
+            t("Probar", "cargo test"),
+            t("Clippy", "cargo clippy --all-targets"),
+            t("Formatear", "cargo fmt"),
+        ]);
+    }
+    if has("package.json") {
+        let pm = if has("pnpm-lock.yaml") {
+            "pnpm"
+        } else if has("yarn.lock") {
+            "yarn"
+        } else {
+            "npm"
+        };
+        v.extend([
+            t("Instalar", &format!("{pm} install")),
+            t("Probar", &format!("{pm} test")),
+            t("Compilar", &format!("{pm} run build")),
+        ]);
+    }
+    if has("pyproject.toml") || has("requirements.txt") || has("setup.py") {
+        v.push(t("Probar", "python -m pytest"));
+    }
+    if has("go.mod") {
+        v.extend([
+            t("Compilar", "go build ./..."),
+            t("Probar", "go test ./..."),
+        ]);
+    }
+    if has("gradlew") || has("build.gradle") || has("build.gradle.kts") {
+        let g = if has("gradlew") {
+            if cfg!(windows) {
+                "gradlew.bat"
+            } else {
+                "./gradlew"
+            }
+        } else {
+            "gradle"
+        };
+        v.extend([
+            t("Compilar", &format!("{g} build")),
+            t("Probar", &format!("{g} test")),
+        ]);
+    }
+    if has("Makefile") {
+        v.push(t("make", "make"));
+    }
+    v
+}
+
 fn git(root: &Path, args: &[&str]) -> WsResult<String> {
     let out = Command::new("git")
         .arg("-C")
@@ -436,6 +535,30 @@ mod tests {
             2
         );
         assert!(search(d.path(), "(", true, true).is_err());
+    }
+
+    #[test]
+    fn renombrar_borrar_y_tareas() {
+        let d = repo();
+        rename(d.path(), "src/main.rs", "src/app.rs").unwrap();
+        assert!(d.path().join("src/app.rs").exists());
+        std::fs::write(d.path().join("x.txt"), "x").unwrap();
+        assert!(
+            rename(d.path(), "x.txt", "src/app.rs")
+                .unwrap_err()
+                .contains("ya existe")
+        );
+        assert!(delete(d.path(), "src").is_err(), "carpeta con contenido");
+        delete(d.path(), "x.txt").unwrap();
+        assert!(!d.path().join("x.txt").exists());
+        assert!(delete(d.path(), "").is_err(), "la raíz no se borra");
+        assert!(tasks(d.path()).is_empty());
+        std::fs::write(d.path().join("Cargo.toml"), "").unwrap();
+        std::fs::write(d.path().join("package.json"), "{}").unwrap();
+        std::fs::write(d.path().join("yarn.lock"), "").unwrap();
+        let t = tasks(d.path());
+        assert!(t.iter().any(|x| x.command == "cargo test"));
+        assert!(t.iter().any(|x| x.command == "yarn test"));
     }
 
     #[test]

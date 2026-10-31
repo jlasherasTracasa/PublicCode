@@ -637,6 +637,25 @@ async fn rpc(
             }
             ws_reply(id, r.map(|_| true))
         }
+        methods::FS_RENAME => {
+            let (root, from, to) = (st.repo.clone(), str_param(&p, "from"), str_param(&p, "to"));
+            let r = blocking(move || crate::workspace::rename(&root, &from, &to)).await;
+            st.emit(Event::FilesChanged {});
+            ws_reply(id, r.map(|_| true))
+        }
+        methods::FS_DELETE => {
+            let (root, rel) = (st.repo.clone(), str_param(&p, "path"));
+            let r = blocking(move || crate::workspace::delete(&root, &rel)).await;
+            st.emit(Event::FilesChanged {});
+            ws_reply(id, r.map(|_| true))
+        }
+        methods::WORKSPACE_TASKS => {
+            let root = st.repo.clone();
+            ws_reply(
+                id,
+                blocking(move || Ok(crate::workspace::tasks(&root))).await,
+            )
+        }
         methods::FS_FILES => {
             let root = st.repo.clone();
             ws_reply(id, blocking(move || crate::workspace::files(&root)).await)

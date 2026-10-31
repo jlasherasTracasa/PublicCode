@@ -510,8 +510,10 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
         let r = agent.run_turn(history.clone(), &first).await;
         history = finish_json_turn(&first, r, &mut persist);
     }
+    let root = std::env::current_dir()?;
     while let Some(msg) = rx.recv().await {
-        let r = agent.run_turn(history.clone(), &msg).await;
+        let full = pcode_tui::run::expand_message(&root, &msg, &[]);
+        let r = agent.run_turn(history.clone(), &full).await;
         history = finish_json_turn(&msg, r, &mut persist);
     }
     if let Some(sid) = persist.session {
