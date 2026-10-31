@@ -32,6 +32,8 @@ pub struct AppState {
     events: broadcast::Sender<Event>,
     /// Aprobaciones.
     pub approvals: Arc<ApprovalBroker>,
+    terminals: Mutex<HashMap<u64, oneshot::Sender<()>>>,
+    next_terminal: std::sync::atomic::AtomicU64,
 }
 
 impl AppState {
@@ -48,6 +50,8 @@ impl AppState {
             next_id: AtomicI64::new(1),
             approvals: ApprovalBroker::new(events.clone(), Duration::from_secs(1800)),
             events,
+            terminals: Mutex::new(HashMap::new()),
+            next_terminal: std::sync::atomic::AtomicU64::new(1),
         })
     }
     fn emit(&self, e: Event) {
@@ -189,6 +193,106 @@ impl AppState {
         let _ = tokio::join!(t1, t2);
         self.cancels.lock().unwrap().remove(&id);
         self.set_state(id, state);
+        self.emit(Event::FilesChanged {});
+    }
+
+    /// Lanza una orden en la terminal integrada; la salida llega como eventos `terminalOutput`.
+    /// Se deniega lo catastrófico (`rm -rf /`, `mkfs`…) con la misma capa que el agente.
+    fn run_terminal(self: &Arc<Self>, command: String) -> Result<u64, String> {
+        use pcode_policy::{Capabilities, Decision, Policy};
+        if let Decision::Deny(why) =
+            Policy::new(Capabilities::interactive_defaults()).check_command(&command)
+        {
+            return Err(why);
+        }
+        let id = self.next_terminal.fetch_add(1, Ordering::SeqCst);
+        let (tx, mut cancel) = oneshot::channel();
+        self.terminals.lock().unwrap().insert(id, tx);
+        let me = self.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut cmd = pcode_tools::shell_command(&command);
+            cmd.current_dir(&me.repo)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true);
+            let mut child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => {
+                    me.emit(Event::TerminalOutput {
+                        id,
+                        text: format!("no se pudo lanzar la orden: {e}\n"),
+                    });
+                    me.emit(Event::TerminalExit { id, code: None });
+                    me.terminals.lock().unwrap().remove(&id);
+                    return;
+                }
+            };
+            let pump = |r: Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>>, me: Arc<Self>| {
+                tokio::spawn(async move {
+                    let Some(mut r) = r else { return };
+                    let mut buf = vec![0u8; 8192];
+                    while let Ok(n) = r.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        me.emit(Event::TerminalOutput {
+                            id,
+                            text: String::from_utf8_lossy(&buf[..n]).into_owned(),
+                        });
+                    }
+                })
+            };
+            let out = pump(
+                child
+                    .stdout
+                    .take()
+                    .map(|x| Box::new(x) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+                me.clone(),
+            );
+            let err = pump(
+                child
+                    .stderr
+                    .take()
+                    .map(|x| Box::new(x) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+                me.clone(),
+            );
+            // Tiempo máximo: 30 minutos.
+            let code = tokio::select! {
+                st = child.wait() => st.ok().and_then(|s| s.code()),
+                _ = &mut cancel => { let _ = child.kill().await; None }
+                _ = tokio::time::sleep(Duration::from_secs(1800)) => { let _ = child.kill().await; None }
+            };
+            let _ = tokio::join!(out, err);
+            me.terminals.lock().unwrap().remove(&id);
+            me.emit(Event::TerminalExit { id, code });
+            me.emit(Event::FilesChanged {});
+        });
+        Ok(id)
+    }
+}
+
+/// Ejecuta una operación del espacio de trabajo fuera del hilo async.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()))
+}
+
+fn str_param(p: &serde_json::Value, k: &str) -> String {
+    p.get(k)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn ws_reply<T: serde::Serialize>(id: u64, r: Result<T, String>) -> Json<RpcResponse> {
+    match r {
+        Ok(v) => rpc_ok(id, serde_json::to_value(v).unwrap_or_default()),
+        Err(e) => rpc_err(id, -32000, e),
     }
 }
 
@@ -273,6 +377,96 @@ async fn rpc(
             rpc_ok(
                 id,
                 serde_json::json!(tx.map(|t| t.send(()).is_ok()).unwrap_or(false)),
+            )
+        }
+        methods::FS_LIST => {
+            let (root, rel) = (st.repo.clone(), str_param(&p, "path"));
+            ws_reply(
+                id,
+                blocking(move || crate::workspace::list(&root, &rel)).await,
+            )
+        }
+        methods::FS_READ => {
+            let (root, rel) = (st.repo.clone(), str_param(&p, "path"));
+            ws_reply(
+                id,
+                blocking(move || crate::workspace::read(&root, &rel)).await,
+            )
+        }
+        methods::FS_WRITE => {
+            let (root, rel, content) = (
+                st.repo.clone(),
+                str_param(&p, "path"),
+                str_param(&p, "content"),
+            );
+            let r = blocking(move || crate::workspace::write(&root, &rel, &content)).await;
+            if r.is_ok() {
+                st.emit(Event::FilesChanged {});
+            }
+            ws_reply(id, r.map(|_| true))
+        }
+        methods::FS_FILES => {
+            let root = st.repo.clone();
+            ws_reply(id, blocking(move || crate::workspace::files(&root)).await)
+        }
+        methods::SEARCH_TEXT => {
+            let (root, q) = (st.repo.clone(), str_param(&p, "query"));
+            let is_regex = p.get("regex").and_then(|v| v.as_bool()).unwrap_or(false);
+            let case = p
+                .get("caseSensitive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            ws_reply(
+                id,
+                blocking(move || crate::workspace::search(&root, &q, is_regex, case)).await,
+            )
+        }
+        methods::GIT_STATUS => {
+            let root = st.repo.clone();
+            ws_reply(
+                id,
+                blocking(move || crate::workspace::git_status(&root))
+                    .await
+                    .map(|(branch, files)| serde_json::json!({"branch": branch, "files": files})),
+            )
+        }
+        methods::GIT_DIFF => {
+            let root = st.repo.clone();
+            let rel = p.get("path").and_then(|v| v.as_str()).map(String::from);
+            let staged = p.get("staged").and_then(|v| v.as_bool()).unwrap_or(false);
+            ws_reply(
+                id,
+                blocking(move || crate::workspace::git_diff(&root, rel.as_deref(), staged)).await,
+            )
+        }
+        methods::GIT_STAGE | methods::GIT_UNSTAGE => {
+            let root = st.repo.clone();
+            let stage = req.method == methods::GIT_STAGE;
+            let paths: Vec<String> = p
+                .get("paths")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let r = blocking(move || crate::workspace::git_stage(&root, &paths, stage)).await;
+            st.emit(Event::FilesChanged {});
+            ws_reply(id, r.map(|_| true))
+        }
+        methods::GIT_COMMIT => {
+            let (root, msg) = (st.repo.clone(), str_param(&p, "message"));
+            let r = blocking(move || crate::workspace::git_commit(&root, &msg)).await;
+            st.emit(Event::FilesChanged {});
+            ws_reply(id, r)
+        }
+        methods::TERMINAL_RUN => ws_reply(
+            id,
+            st.run_terminal(str_param(&p, "command"))
+                .map(|t| serde_json::json!({"id": t})),
+        ),
+        methods::TERMINAL_KILL => {
+            let t = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let tx = st.terminals.lock().unwrap().remove(&t);
+            rpc_ok(
+                id,
+                serde_json::json!(tx.map(|c| c.send(()).is_ok()).unwrap_or(false)),
             )
         }
         methods::APPROVALS_LIST => rpc_ok(
@@ -595,5 +789,55 @@ mod tests {
                 .unwrap()
                 .contains("HttpOnly")
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_por_rpc_y_terminal_con_eventos() {
+        let d = tempfile::tempdir().unwrap();
+        let st = AppState::new(d.path().to_path_buf(), "/bin/true".into(), None);
+        let a = router(st.clone());
+        let mut rx = st.events.subscribe();
+        let (_, v) = call(
+            &a,
+            "fs.write",
+            serde_json::json!({"path": "a/b.txt", "content": "hola"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"], true);
+        let (_, v) = call(&a, "fs.read", serde_json::json!({"path": "a/b.txt"}), None).await;
+        assert_eq!(v["result"]["content"], "hola");
+        let (_, v) = call(&a, "fs.read", serde_json::json!({"path": "../x"}), None).await;
+        assert!(v["error"]["message"].as_str().unwrap().contains("fuera"));
+        let (_, v) = call(
+            &a,
+            "terminal.run",
+            serde_json::json!({"command": "rm -rf /"}),
+            None,
+        )
+        .await;
+        assert!(v["error"]["message"].as_str().unwrap().contains("denegada"));
+        let (_, v) = call(
+            &a,
+            "terminal.run",
+            serde_json::json!({"command": "echo desde-terminal; exit 3"}),
+            None,
+        )
+        .await;
+        let tid = v["result"]["id"].as_u64().unwrap();
+        let (mut out, mut code) = (String::new(), None);
+        for _ in 0..100 {
+            match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
+                Ok(Ok(Event::TerminalOutput { id, text })) if id == tid => out.push_str(&text),
+                Ok(Ok(Event::TerminalExit { id, code: c })) if id == tid => {
+                    code = c;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        assert!(out.contains("desde-terminal"), "{out}");
+        assert_eq!(code, Some(3));
     }
 }

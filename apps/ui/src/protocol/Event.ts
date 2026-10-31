@@ -35,4 +35,20 @@ allowed: boolean, } | { "tipo": "taskUpdated",
 /**
  * Tarea.
  */
-task: TaskDto, };
+task: TaskDto, } | { "tipo": "terminalOutput", 
+/**
+ * Identificador de la orden.
+ */
+id: bigint, 
+/**
+ * Trozo de salida (stdout y stderr mezclados).
+ */
+text: string, } | { "tipo": "terminalExit", 
+/**
+ * Identificador de la orden.
+ */
+id: bigint, 
+/**
+ * Código de salida (None si la mató una señal o se detuvo).
+ */
+code: number | null, } | { "tipo": "filesChanged", };

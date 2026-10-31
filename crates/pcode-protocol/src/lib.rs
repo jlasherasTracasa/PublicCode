@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Versión del protocolo.
-pub const PROTOCOL_VERSION: &str = "0.1.0";
+pub const PROTOCOL_VERSION: &str = "0.2.0";
 
 /// Estado de una sesión.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -147,6 +147,63 @@ pub enum Event {
         /// Tarea.
         task: TaskDto,
     },
+    /// Salida de una orden de la terminal integrada.
+    TerminalOutput {
+        /// Identificador de la orden.
+        id: u64,
+        /// Trozo de salida (stdout y stderr mezclados).
+        text: String,
+    },
+    /// Terminó una orden de la terminal integrada.
+    TerminalExit {
+        /// Identificador de la orden.
+        id: u64,
+        /// Código de salida (None si la mató una señal o se detuvo).
+        code: Option<i32>,
+    },
+    /// Cambiaron archivos del proyecto (para refrescar el explorador y git).
+    FilesChanged {},
+}
+
+/// Entrada del explorador de archivos.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FileEntry {
+    /// Nombre.
+    pub name: String,
+    /// Ruta relativa a la raíz, con `/`.
+    pub path: String,
+    /// Es un directorio.
+    pub dir: bool,
+    /// Tamaño en bytes (0 en directorios).
+    pub size: u64,
+}
+
+/// Coincidencia de una búsqueda en el proyecto.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SearchHit {
+    /// Ruta relativa.
+    pub path: String,
+    /// Línea (desde 1).
+    pub line: u32,
+    /// Texto de la línea (recortado).
+    pub text: String,
+}
+
+/// Archivo con cambios según git.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GitFile {
+    /// Ruta relativa.
+    pub path: String,
+    /// Estado en el índice (columna X de `git status --porcelain`).
+    pub index: String,
+    /// Estado en el árbol de trabajo (columna Y).
+    pub worktree: String,
 }
 
 /// Parámetros de `session.create`.
@@ -220,6 +277,30 @@ pub mod methods {
     pub const APPROVALS_DECIDE: &str = "approvals.decide";
     /// Estado del flujo.
     pub const FLOW_STATUS: &str = "flow.status";
+    /// Lista un directorio: `{path}` → `FileEntry[]`.
+    pub const FS_LIST: &str = "fs.list";
+    /// Lee un archivo: `{path}` → `{content, binary, size}`.
+    pub const FS_READ: &str = "fs.read";
+    /// Escribe un archivo: `{path, content}` → `true`.
+    pub const FS_WRITE: &str = "fs.write";
+    /// Todos los archivos del proyecto (respeta `.gitignore` en repos git): `{}` → `string[]`.
+    pub const FS_FILES: &str = "fs.files";
+    /// Busca texto: `{query, regex?, caseSensitive?}` → `SearchHit[]`.
+    pub const SEARCH_TEXT: &str = "search.text";
+    /// Estado de git: `{}` → `{branch, files: GitFile[]}`.
+    pub const GIT_STATUS: &str = "git.status";
+    /// Diff: `{path?, staged?}` → texto.
+    pub const GIT_DIFF: &str = "git.diff";
+    /// Prepara archivos: `{paths}`.
+    pub const GIT_STAGE: &str = "git.stage";
+    /// Quita archivos del índice: `{paths}`.
+    pub const GIT_UNSTAGE: &str = "git.unstage";
+    /// Commit de lo preparado: `{message}` → texto de git.
+    pub const GIT_COMMIT: &str = "git.commit";
+    /// Lanza una orden en la terminal integrada: `{command}` → `{id}`.
+    pub const TERMINAL_RUN: &str = "terminal.run";
+    /// Detiene una orden: `{id}`.
+    pub const TERMINAL_KILL: &str = "terminal.kill";
 }
 
 #[cfg(test)]
