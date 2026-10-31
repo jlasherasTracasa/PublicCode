@@ -252,6 +252,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F5.28-apk-android](../tareas/F5.28-apk-android.md) | APK de Android: cliente fino de pcoded (WebView) y demonio accesible desde la red | coordinador | F5.02, F0.07 | hecha |
 | [F5.29-chat](../tareas/F5.29-chat.md) | `pcode chat`: conversación interactiva con el agente (sustituto de Claude Code y opencode) | coordinador | F1.16, F1.22, F1.23, F5.28 | hecha |
 | [F5.30-tui-local](../tareas/F5.30-tui-local.md) | TUI a pantalla completa con el agente en proceso (`pcode`, `pcode tui`) | coordinador | F5.29, F1.25 | hecha |
+| [F5.31-diseno](../tareas/F5.31-diseno.md) | Sistema de diseño Material azul en la TUI, la web del demonio y el APK | coordinador | F5.30, F5.28 | hecha |
 
 ### F6
 

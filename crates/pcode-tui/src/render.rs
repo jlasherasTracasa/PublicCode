@@ -5,7 +5,7 @@ use crate::markdown::{render_markdown_lines, wrap};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 const SPINNER: [&str; 4] = ["◐", "◓", "◑", "◒"];
 /// Líneas de salida de una tool que se muestran plegadas.
@@ -20,13 +20,38 @@ pub fn transcript_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     for e in &app.entries {
         match e {
             Entry::User(text) => {
-                for (i, l) in text.lines().enumerate() {
-                    let prefix = if i == 0 { "› " } else { "  " };
-                    out.extend(wrap(
-                        Line::from(Span::styled(format!("{prefix}{l}"), th.strong())),
-                        width,
+                // Tarjeta: fondo a todo el ancho, una línea de margen arriba y abajo y una barra
+                // de acento a la izquierda.
+                let card = th.bubble();
+                let pad = |l: Line<'static>| -> Line<'static> {
+                    let used = l.width() as u16;
+                    let mut l = l;
+                    l.spans.push(Span::styled(
+                        " ".repeat(width.saturating_sub(used) as usize),
+                        card,
                     ));
+                    l
+                };
+                let bar = Span::styled(
+                    "▌",
+                    card.patch(th.strong()).bg(if th.use_color {
+                        th.bubble_bg
+                    } else {
+                        ratatui::style::Color::Reset
+                    }),
+                );
+                out.push(pad(Line::from(vec![bar.clone()])));
+                for l in text.lines() {
+                    for w in wrap(
+                        Line::from(Span::styled(l.to_string(), card)),
+                        width.saturating_sub(3).max(1),
+                    ) {
+                        let mut spans = vec![bar.clone(), Span::styled(" ", card)];
+                        spans.extend(w.spans);
+                        out.push(pad(Line::from(spans)));
+                    }
                 }
+                out.push(pad(Line::from(vec![bar])));
             }
             Entry::Assistant { text, .. } => out.extend(render_markdown_lines(text, width, th)),
             Entry::Tool {
@@ -122,12 +147,32 @@ pub fn render(app: &App, f: &mut Frame) {
         .flat_map(|l| wrap(Line::from(l.to_string()), inner_w))
         .collect();
     let input_h = (input_lines.len() as u16).clamp(1, 6) + 2;
-    let [body, input_area, status] = Layout::vertical([
+    let [header, body, input_area, status] = Layout::vertical([
+        Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(input_h),
         Constraint::Length(1),
     ])
     .areas(area);
+
+    // Barra superior: logo, nombre y modelo a la izquierda; estado a la derecha.
+    let state = if app.busy {
+        format!("{} {}", SPINNER[app.spinner % 4], t(app.lang, "working"))
+    } else {
+        t(app.lang, "ready").to_string()
+    };
+    let left = format!(" >_ PublicCode  ·  {}", app.model);
+    let right = format!("{state} ");
+    let gap = (header.width as usize).saturating_sub(left.chars().count() + right.chars().count());
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(left, th.bar().add_modifier(ratatui::style::Modifier::BOLD)),
+            Span::styled(" ".repeat(gap), th.bar()),
+            Span::styled(right, th.bar()),
+        ]))
+        .style(th.bar()),
+        header,
+    );
 
     // Transcripción: se pinta desde el final, desplazada `scroll` líneas hacia arriba.
     let lines = transcript_lines(app, body.width.max(1));
@@ -146,12 +191,11 @@ pub fn render(app: &App, f: &mut Frame) {
     } else {
         t(app.lang, "input").to_string()
     };
+    let accent = if app.busy { th.warning() } else { th.strong() };
     let block = Block::bordered()
-        .title(Span::styled(
-            title,
-            if app.busy { th.warning() } else { th.dimmed() },
-        ))
-        .border_style(th.dimmed());
+        .border_type(BorderType::Rounded)
+        .title(Span::styled(title, accent))
+        .border_style(accent);
     let visible = (input_h - 2) as usize;
     let skip = input_lines.len().saturating_sub(visible);
     let shown: Vec<Line> = input_lines.into_iter().skip(skip).collect();
@@ -167,15 +211,9 @@ pub fn render(app: &App, f: &mut Frame) {
         ));
     }
 
-    // Barra de estado.
-    let state = if app.busy {
-        format!("{} {}", SPINNER[app.spinner % 4], t(app.lang, "working"))
-    } else {
-        t(app.lang, "ready").to_string()
-    };
+    // Barra de estado: tokens y atajos.
     let left = format!(
-        " {state} · {} · ↑{} ↓{} {} ",
-        app.model,
+        " ↑{} ↓{} {} ",
         app.usage.input_tokens,
         app.usage.output_tokens,
         t(app.lang, "tokens")
@@ -205,11 +243,20 @@ pub fn render(app: &App, f: &mut Frame) {
         let r = centered(body, w, h);
         f.render_widget(Clear, r);
         f.render_widget(
-            Paragraph::new(lines).block(
-                Block::bordered()
-                    .title(Span::styled(t(app.lang, "approval"), th.warning()))
-                    .border_style(th.warning()),
-            ),
+            Paragraph::new(lines)
+                .block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .title(Span::styled(t(app.lang, "approval"), th.warning()))
+                        .border_style(th.warning()),
+                )
+                .style(if th.use_color {
+                    ratatui::style::Style::new()
+                        .bg(th.bubble_bg)
+                        .fg(th.bubble_fg)
+                } else {
+                    ratatui::style::Style::new()
+                }),
             r,
         );
     }
@@ -266,18 +313,22 @@ mod tests {
     #[test]
     fn render_80x24_transcripcion_entrada_y_estado() {
         let s = screen(&sample(), 80, 24);
-        assert_eq!(s[0], "› arregla el test");
-        assert_eq!(s[2], "Miro el test.");
-        assert_eq!(s[4], "✓ bash cargo test");
-        assert_eq!(s[5], "  ⎿ l1");
-        assert_eq!(s[7], "    l3");
-        assert_eq!(s[8], "    … +2 líneas");
-        assert!(s[20].starts_with("┌ Mensaje"), "{}", s[20]);
         assert!(
-            s[23].starts_with(" ✓ listo · claude-x · ↑0 ↓0 tokens"),
+            s[0].starts_with(" >_ PublicCode  ·  claude-x") && s[0].ends_with("✓ listo"),
             "{}",
-            s[23]
+            s[0]
         );
+        assert_eq!(s[1], "▌", "la tarjeta del usuario tiene margen arriba");
+        assert_eq!(s[2], "▌ arregla el test");
+        assert_eq!(s[3], "▌");
+        assert_eq!(s[5], "Miro el test.");
+        assert_eq!(s[7], "✓ bash cargo test");
+        assert_eq!(s[8], "  ⎿ l1");
+        assert_eq!(s[10], "    l3");
+        assert_eq!(s[11], "    … +2 líneas");
+        assert!(s[20].starts_with("╭ Mensaje"), "{}", s[20]);
+        assert!(s[22].starts_with("╰"), "{}", s[22]);
+        assert!(s[23].starts_with(" ↑0 ↓0 tokens"), "{}", s[23]);
     }
 
     #[test]
@@ -289,7 +340,7 @@ mod tests {
             reason: "acción irreversible".into(),
         });
         let s = screen(&a, 120, 40);
-        assert_eq!(s[9], "    l5", "con Ctrl+O se ve toda la salida");
+        assert_eq!(s[12], "    l5", "con Ctrl+O se ve toda la salida");
         let all = s.join("\n");
         assert!(all.contains("⚠ Requiere aprobación"));
         assert!(all.contains("bash git push --force"));
@@ -321,12 +372,98 @@ mod tests {
         let mut a = App::new(Lang::Es, Theme::by_name("oscuro", true).unwrap(), "m");
         a.input = "uno\ndos\ntres".into();
         let s = screen(&a, 80, 24);
-        assert!(s[18].starts_with("┌"), "{}", s[18]);
+        assert!(s[18].starts_with("╭"), "{}", s[18]);
         assert!(
             s[19].starts_with("│uno  ") && s[19].ends_with('│'),
             "{}",
             s[19]
         );
         assert!(s[21].starts_with("│tres "), "{}", s[21]);
+    }
+
+    fn css(c: ratatui::style::Color, default: &str) -> String {
+        use ratatui::style::Color as C;
+        match c {
+            C::Rgb(r, g, b) => format!("rgb({r},{g},{b})"),
+            C::Reset => default.into(),
+            C::Black => "#000".into(),
+            C::White => "#fff".into(),
+            C::Red | C::LightRed => "#ff6b6b".into(),
+            C::Green | C::LightGreen => "#6dd58c".into(),
+            C::Yellow | C::LightYellow => "#f5c451".into(),
+            C::Blue => "#0b57d0".into(),
+            C::Cyan => "#5fd7ff".into(),
+            C::DarkGray => "#777".into(),
+            C::Gray => "#aaa".into(),
+            _ => default.into(),
+        }
+    }
+
+    /// Vuelca la pantalla a HTML con sus colores (para ver la TUI sin terminal).
+    fn to_html(app: &App, w: u16, h: u16, bg: &str, fg: &str) -> String {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| render(app, f)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let mut out = format!(
+            "<pre style=\"margin:0;padding:12px;background:{bg};color:{fg};font:15px/1.35 'DejaVu Sans Mono',monospace\">"
+        );
+        for y in 0..h {
+            for x in 0..w {
+                let c = &buf[(x, y)];
+                let st = c.style();
+                let bold = if st.add_modifier.contains(ratatui::style::Modifier::BOLD) {
+                    "font-weight:bold;"
+                } else {
+                    ""
+                };
+                let sym = c.symbol().replace('&', "&amp;").replace('<', "&lt;");
+                out.push_str(&format!(
+                    "<span style=\"background:{};color:{};{bold}\">{sym}</span>",
+                    css(st.bg.unwrap_or(ratatui::style::Color::Reset), "transparent"),
+                    css(st.fg.unwrap_or(ratatui::style::Color::Reset), fg)
+                ));
+            }
+            out.push('\n');
+        }
+        out.push_str("</pre>");
+        out
+    }
+
+    #[test]
+    fn render_vista_previa_html() {
+        let mut a = sample();
+        a.theme = Theme::by_name("azul", false).unwrap();
+        a.model = "claude-sonnet-5-5".into();
+        a.update(Event::Agent(AgentEvent::TextDelta(
+            "Listo: he corregido `parse()` y el test pasa.\n\n- **1 archivo** cambiado\n- `cargo test` en verde".into(),
+        )));
+        a.usage.input_tokens = 3120;
+        a.usage.output_tokens = 410;
+        a.input = "ahora documenta el módulo".into();
+        let html = to_html(&a, 100, 30, "#0b1626", "#e3ecfb");
+        assert!(
+            html.contains("rgb(11,87,208)"),
+            "la barra usa el azul del tema"
+        );
+        let mut b = a.clone();
+        b.update(Event::Approval {
+            action: "bash {\"command\":\"git push origin main\"}".into(),
+            reason: "orden con efectos difíciles de deshacer: git push origin main".into(),
+        });
+        let mut c = a.clone();
+        c.theme = Theme::by_name("claro", false).unwrap();
+        if let Ok(dir) = std::env::var("PCODE_TUI_PREVIEW") {
+            for (name, app, bg, fg) in [
+                ("azul", &a, "#0b1626", "#e3ecfb"),
+                ("aprobacion", &b, "#0b1626", "#e3ecfb"),
+                ("claro", &c, "#f7faff", "#0b1b33"),
+            ] {
+                std::fs::write(
+                    format!("{dir}/tui-{name}.html"),
+                    format!("<!doctype html><meta charset=utf-8><body style=\"margin:0;background:{bg}\">{}", to_html(app, 100, 30, bg, fg)),
+                )
+                .unwrap();
+            }
+        }
     }
 }

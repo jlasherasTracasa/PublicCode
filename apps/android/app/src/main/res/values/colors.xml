@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paleta azul de PublicCode (la misma que la web del demonio y la TUI). -->
+<resources>
+    <color name="fondo">#EAF2FD</color>
+    <color name="superficie">#FFFFFF</color>
+    <color name="superficie_2">#F4F8FE</color>
+    <color name="texto">#0B1B33</color>
+    <color name="texto_2">#475A75</color>
+    <color name="primario">#0B57D0</color>
+    <color name="primario_oscuro">#0842A0</color>
+    <color name="sobre_primario">#FFFFFF</color>
+    <color name="contenedor">#D3E3FD</color>
+    <color name="sobre_contenedor">#041E49</color>
+    <color name="linea">#C4D3EA</color>
+</resources>

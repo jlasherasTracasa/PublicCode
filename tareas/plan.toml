@@ -3300,6 +3300,28 @@ Base de F5.07, F5.08 y F5.11 sin esperar al demonio (F5.05): mismo diseño, con 
 '''
 tests = ["render_80x24_transcripcion_entrada_y_estado", "render_120x40_despliega_salidas_y_muestra_aprobacion", "render_sigue_el_final_y_scroll_sube", "chat_streaming_une_trozos_y_tools_cambian_de_estado", "chat_aprobacion_bloquea_el_teclado_hasta_responder", "chat_esc_y_ctrl_c_cancelan_o_salen", "theme_no_color_quita_colores_pero_no_negrita", "i18n_las_dos_tablas_tienen_las_mismas_claves"]
 
+[[tarea]]
+id = "F5.31"
+nombre = "diseno"
+titulo = "Sistema de diseño Material azul en la TUI, la web del demonio y el APK"
+fase = "F5"
+ejecutor = "coordinador"
+depende = ["F5.30", "F5.28"]
+toca = ["crates/pcode-tui/src/theme.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-server/web/index.html", "apps/android/app/src/main/", "docs/interfaces.md", "docs/img/"]
+acepta = "cargo test -p pcode-tui && cargo test -p pcode-server web && grep -q 'Sistema de diseño' docs/interfaces.md"
+contexto = ["docs/interfaces.md (sección «Sistema de diseño»)"]
+objetivo = '''
+1. Paleta y reglas comunes en docs/interfaces.md.
+2. Web del demonio: barra con degradado, tarjetas (nueva tarea, aprobaciones, sesiones), chips de
+   estado, burbujas de conversación, salida en bloque de código, Markdown mínimo seguro, modo oscuro
+   y móvil; muestra y resuelve aprobaciones y permite detener una sesión.
+3. APK: tema Material azul (claro y oscuro), pantalla de emparejamiento en tarjetas, icono nuevo.
+4. TUI: tema `azul` por defecto con barra superior, tarjetas para los mensajes del usuario y bordes
+   redondeados; vista previa HTML desde `TestBackend` (`PCODE_TUI_PREVIEW`).
+'''
+tests = ["render_80x24_transcripcion_entrada_y_estado", "render_vista_previa_html", "theme_no_color_quita_colores_pero_no_negrita", "web_sirve_index_con_cabeceras"]
+
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.PublicCode" parent="android:Theme.Material">
+        <item name="android:colorPrimary">@color/primario_oscuro</item>
+        <item name="android:colorPrimaryDark">@color/primario_oscuro</item>
+        <item name="android:colorAccent">@color/primario</item>
+        <item name="android:windowBackground">@color/fondo</item>
+        <item name="android:navigationBarColor">@color/fondo</item>
+        <item name="android:textColorPrimary">@color/texto</item>
+    </style>
+</resources>

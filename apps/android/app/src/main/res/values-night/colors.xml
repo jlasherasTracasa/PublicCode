@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fondo">#0B1626</color>
+    <color name="superficie">#13233A</color>
+    <color name="superficie_2">#182B46</color>
+    <color name="texto">#E3ECFB</color>
+    <color name="texto_2">#9FB3D1</color>
+    <color name="primario">#8AB4F8</color>
+    <color name="primario_oscuro">#0F1D33</color>
+    <color name="sobre_primario">#062E6F</color>
+    <color name="contenedor">#1F3A5F</color>
+    <color name="sobre_contenedor">#D3E3FD</color>
+    <color name="linea">#2A4268</color>
+</resources>

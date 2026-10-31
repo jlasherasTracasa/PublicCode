@@ -168,6 +168,17 @@ Ciclo de una tarea:
 
 ## Interfaces: terminal, escritorio, web, móvil e IDE
 
+Todas comparten el mismo estilo Material: fondo azul claro, tarjetas con esquinas redondeadas, acento azul
+oscuro y modo oscuro automático ([sistema de diseño](docs/interfaces.md#sistema-de-diseño)).
+
+| TUI (`pcode`) | Aprobación en la TUI |
+|---|---|
+| ![TUI de PublicCode con el tema azul](docs/img/tui-azul.png) | ![Ventana de aprobación en la TUI](docs/img/tui-aprobacion.png) |
+
+| Web del demonio (también en el APK), modo claro | Modo oscuro |
+|---|---|
+| ![Web de PublicCode en modo claro](docs/img/web-claro.png) | ![Web de PublicCode en modo oscuro](docs/img/web-oscuro.png) |
+
 Toda la lógica vive en el demonio `pcoded`; los clientes solo presentan y envían intenciones por una
 API única (`pcode-protocol`). Diseño completo en [docs/interfaces.md](docs/interfaces.md) y
 [ADR-0005](docs/adr/ADR-0005-interfaces.md).
@@ -440,7 +451,8 @@ echo "resume el repo" | pcode chat           # sin terminal: un mensaje por lín
 | `s` / `t` / `n` en la ventana de aprobación | permitir, permitir sin volver a preguntar, negar |
 | `/modelo [nombre]`, `/nuevo`, `/compactar`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, resumir la conversación, ver los tokens, ayuda y salir (también en `pcode chat`) |
 
-Temas: `PCODE_TEMA=oscuro|claro|alto-contraste`; con `NO_COLOR` no hay colores, pero sí símbolos. El idioma
+Temas: `azul` (por defecto), `claro`, `oscuro` y `alto-contraste`, con `PCODE_TEMA` o `[preferencias] tema`;
+con `NO_COLOR` no hay colores, pero sí símbolos. El idioma
 de la interfaz sale de `LANG` (español o inglés).
 
 **Seguridad por defecto**: hay una capa de política que deniega lo catastrófico (`rm -rf /`, `mkfs`,

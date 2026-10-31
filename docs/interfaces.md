@@ -36,6 +36,23 @@ en `crates/pcode-protocol` (JSON-RPC 2.0 más eventos). Consecuencias:
 | Ajustes: backends, proveedores, política, credenciales | `pcode.toml` | — | ✓ (llavero del sistema) | ✓ (sin credenciales) | — | — |
 | Scripts y CI | ✓ `--formato json` | — | — | — | — | — |
 
+## Sistema de diseño
+
+Las tres interfaces que existen hoy (TUI, web del demonio y APK) comparten una paleta Material azul;
+la UI común (F5.12) y el escritorio (F5.18) deben reutilizarla.
+
+| Token | Claro | Oscuro | Uso |
+|---|---|---|---|
+| fondo | `#EAF2FD` | `#0B1626` | fondo de la app (azul claro) |
+| superficie | `#FFFFFF` | `#13233A` | tarjetas (radio 20–24 px, sombra suave) |
+| primario | `#0B57D0` | `#8AB4F8` | botones rellenos, acentos, barra superior (degradado con `#0842A0`) |
+| contenedor | `#D3E3FD` | `#1F3A5F` | botones tonales, chips, tarjetas del usuario |
+| ok / error / aviso | `#146C2E` / `#B3261E` / `#7A5900` | `#6DD58C` / `#FFB4AB` / `#F5C451` | estados (siempre con símbolo: `✓ ✗ ⚠`) |
+
+Reglas: tarjetas en lugar de líneas divisorias; botones en píldora; estados como chips de color con símbolo;
+Markdown del agente sin HTML crudo; nada de fuentes ni recursos remotos. En la TUI, el tema `azul` traduce
+la paleta a la terminal (barra superior azul, tarjetas para tus mensajes y bordes redondeados).
+
 ## Terminal
 
 ### CLI (`pcode …`)
