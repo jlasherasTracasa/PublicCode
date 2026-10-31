@@ -119,3 +119,28 @@ jobs:
           files: |
             dist/pcode-*
             dist/SHA256SUMS
+
+  verify-install:
+    name: Instalar la release recién publicada (${{ matrix.os }})
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux (install.sh por tubería)
+        if: runner.os == 'Linux'
+        run: |
+          PCODE_VERSION="$TAG" sh < install.sh
+          "$HOME/.local/bin/pcode" --version | grep -q "${TAG#v}"
+          "$HOME/.local/bin/pcode" config ruta
+      - name: Windows (install.ps1 con irm | iex)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PCODE_VERSION = $env:TAG
+          Get-Content -Raw ./install.ps1 | Invoke-Expression
+          $v = & (Join-Path $env:LOCALAPPDATA "PublicCode\bin\pcode.exe") --version
+          if ($v -notmatch $env:TAG.TrimStart("v")) { Write-Error "versión inesperada: $v"; exit 1 }

@@ -16,6 +16,9 @@ pub struct Budget {
     pub max_input_tokens: u64,
     /// Tokens de salida máximos.
     pub max_output_tokens: u64,
+    /// Si una petición supera estos tokens de entrada, se compacta la conversación antes de la
+    /// siguiente (0 = nunca).
+    pub max_context_tokens: u64,
 }
 
 impl Default for Budget {
@@ -24,6 +27,7 @@ impl Default for Budget {
             max_steps: 50,
             max_input_tokens: 2_000_000,
             max_output_tokens: 200_000,
+            max_context_tokens: 0,
         }
     }
 }
@@ -84,6 +88,8 @@ pub trait Approver: Send + Sync {
 /// Algo que ocurre durante la ejecución, para mostrarlo en vivo (terminal, UI).
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentEvent {
+    /// Aviso del propio agente (p. ej. que ha compactado el contexto).
+    Info(String),
     /// Trozo de texto del asistente según llega (streaming).
     TextDelta(String),
     /// Mensaje de texto del asistente completo (tras sus trozos).
@@ -119,6 +125,7 @@ pub struct Agent {
     ctx: ToolContext,
     approver: Option<Arc<dyn Approver>>,
     observer: Option<Observer>,
+    last_input_tokens: u64,
 }
 
 impl Agent {
@@ -140,6 +147,7 @@ impl Agent {
             ctx,
             approver: None,
             observer: None,
+            last_input_tokens: 0,
         }
     }
     /// Recibe los eventos (texto, llamadas y resultados de tools) según ocurren.
@@ -240,6 +248,85 @@ impl Agent {
         }
     }
 
+    /// Resume con el propio modelo la parte antigua de la conversación y conserva el sistema y
+    /// los últimos mensajes. Corta siempre antes de un mensaje de usuario o de asistente, para no
+    /// separar una llamada a tool de su resultado. Si algo falla, devuelve `messages` tal cual.
+    pub async fn compact(&mut self, messages: Vec<Message>) -> Vec<Message> {
+        const KEEP: usize = 6;
+        if messages.len() < KEEP + 3 {
+            return messages;
+        }
+        let start = messages.len() - KEEP;
+        let Some(cut) = (2..=start)
+            .rev()
+            .find(|&i| matches!(messages[i].role, Role::User | Role::Assistant))
+        else {
+            return messages;
+        };
+        let clip = |s: &str, n: usize| -> String {
+            if s.chars().count() > n {
+                format!("{}…", s.chars().take(n).collect::<String>())
+            } else {
+                s.to_string()
+            }
+        };
+        let mut text = String::new();
+        for m in &messages[1..cut] {
+            let role = match m.role {
+                Role::User => "usuario",
+                Role::Assistant => "asistente",
+                Role::Tool => "resultado de tool",
+                Role::System => "sistema",
+            };
+            let limit = if m.role == Role::Tool { 1500 } else { 4000 };
+            text.push_str(&format!("### {role}\n{}\n", clip(&m.content, limit)));
+            for c in &m.tool_calls {
+                text.push_str(&format!(
+                    "→ {}({})\n",
+                    c.name,
+                    clip(&c.arguments.to_string(), 300)
+                ));
+            }
+        }
+        let req = ChatRequest {
+            model: self.cfg.model.clone(),
+            messages: vec![
+                Message::system(
+                    "Resume esta conversación entre un usuario y un agente de programación para que el \
+                     agente pueda seguir sin ella: objetivo, decisiones, archivos tocados y su estado, \
+                     órdenes útiles, errores pendientes y próximos pasos. Sé concreto y breve.",
+                ),
+                Message::user(text),
+            ],
+            tools: vec![],
+            max_tokens: Some(2000),
+            ..Default::default()
+        };
+        let summary = match self.provider.chat(&req).await {
+            Ok(r) if !r.message.content.trim().is_empty() => r.message.content,
+            Ok(_) => return messages,
+            Err(e) => {
+                tracing::warn!("no se pudo compactar el contexto: {e}");
+                return messages;
+            }
+        };
+        let dropped = cut - 1;
+        let head = format!("[Resumen de la conversación anterior]\n{summary}");
+        let mut out = vec![messages[0].clone()];
+        let mut rest = messages[cut..].to_vec();
+        if rest[0].role == Role::User {
+            rest[0].content = format!("{head}\n\n---\n{}", rest[0].content);
+        } else {
+            out.push(Message::user(head));
+        }
+        out.extend(rest);
+        self.last_input_tokens = 0;
+        self.emit(AgentEvent::Info(format!(
+            "contexto compactado: {dropped} mensajes resumidos"
+        )));
+        out
+    }
+
     /// Ejecuta una tarea.
     pub async fn run(&mut self, task: &str) -> RunReport {
         self.run_turn(vec![], task).await
@@ -275,6 +362,10 @@ impl Agent {
             };
         }
         loop {
+            let limit = self.cfg.budget.max_context_tokens;
+            if limit > 0 && self.last_input_tokens > limit {
+                messages = self.compact(messages).await;
+            }
             if steps >= self.cfg.budget.max_steps
                 || usage.input_tokens > self.cfg.budget.max_input_tokens
                 || usage.output_tokens > self.cfg.budget.max_output_tokens
@@ -302,6 +393,7 @@ impl Agent {
             };
             steps += 1;
             usage.add(&resp.usage);
+            self.last_input_tokens = resp.usage.input_tokens;
             let msg = resp.message;
             let calls = msg.tool_calls.clone();
             if !msg.content.trim().is_empty() {
@@ -447,6 +539,61 @@ mod tests {
         (a, p)
     }
 
+    #[tokio::test]
+    async fn compacta_cuando_se_supera_el_limite_sin_romper_pares_de_tools() {
+        let d = tempfile::tempdir().unwrap();
+        let mut big = text("paso");
+        big.usage.input_tokens = 1_000;
+        let mut script = vec![];
+        for _ in 0..4 {
+            let mut t = tool("leer", json!({"path": "x"}));
+            t.usage.input_tokens = 1_000;
+            script.push(t);
+        }
+        script.push(text("RESUMEN"));
+        script.push(text("hecho"));
+        std::fs::write(d.path().join("x"), "contenido").unwrap();
+        let (mut a, p) = agent(&d, script, Capabilities::default(), None);
+        a.cfg.budget.max_context_tokens = 500;
+        a.cfg.budget.max_steps = 10;
+        let r = a.run("tarea larga").await;
+        assert!(matches!(r.outcome, Outcome::Done { .. }), "{:?}", r.outcome);
+        let reqs = p.requests();
+        // La petición de resumen no lleva tools; la siguiente empieza por el resumen.
+        let sum = reqs
+            .iter()
+            .position(|q| q.tools.is_empty())
+            .expect("pidió un resumen");
+        let after = &reqs[sum + 1].messages;
+        assert!(
+            after
+                .iter()
+                .any(|m| m.content.contains("[Resumen de la conversación anterior]"))
+        );
+        // Cada resultado de tool sigue a una llamada.
+        for (i, m) in after.iter().enumerate() {
+            if m.role == Role::Tool {
+                assert!(
+                    after[..i]
+                        .iter()
+                        .rev()
+                        .find(|x| x.role != Role::Tool)
+                        .is_some_and(|x| !x.tool_calls.is_empty())
+                );
+            }
+        }
+        assert_eq!(
+            after.len(),
+            8,
+            "sistema, resumen y los 6 mensajes recientes"
+        );
+        assert!(
+            after[1]
+                .content
+                .starts_with("[Resumen de la conversación anterior]\nRESUMEN")
+        );
+        let _ = big;
+    }
     #[tokio::test]
     async fn run_turn_conserva_el_historial_entre_vueltas() {
         let d = tempfile::tempdir().unwrap();

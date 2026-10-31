@@ -30,6 +30,9 @@ pub struct Capabilities {
     /// Órdenes denegadas.
     #[serde(rename = "denegar_ordenes")]
     pub deny_commands: Vec<String>,
+    /// Órdenes que piden confirmación humana antes de ejecutarse.
+    #[serde(rename = "preguntar_ordenes")]
+    pub ask_commands: Vec<String>,
     /// Órdenes permitidas.
     #[serde(rename = "permitir_ordenes")]
     pub allow_commands: Vec<String>,
@@ -90,6 +93,8 @@ impl Capabilities {
         };
         let deny = set(&self.deny_commands);
         let allow = set(&self.allow_commands);
+        let ask = set(&self.ask_commands);
+        let mut ask_reason = None;
         for c in cmds {
             let c = c.split_whitespace().collect::<Vec<_>>().join(" ");
             if deny.is_match(&c) {
@@ -98,8 +103,57 @@ impl Capabilities {
             if !self.allow_commands.is_empty() && !allow.is_match(&c) {
                 return Decision::Deny(format!("orden no permitida: {c}"));
             }
+            if ask_reason.is_none() && ask.is_match(&c) {
+                ask_reason = Some(format!("orden con efectos difíciles de deshacer: {c}"));
+            }
         }
-        Decision::Allow
+        ask_reason.map_or(Decision::Allow, Decision::Ask)
+    }
+
+    /// Capa segura para el uso interactivo (`pcode`, `pcode chat`): deniega lo catastrófico y
+    /// pide confirmación para lo destructivo o lo que sale de la máquina. La configuración del
+    /// usuario se añade encima como otra capa y nunca la amplía.
+    pub fn interactive_defaults() -> Capabilities {
+        let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect();
+        Capabilities {
+            deny_commands: v(&[
+                "rm -rf /",
+                "rm -rf /*",
+                "rm -rf ~",
+                "rm -rf ~/",
+                "rm -fr /",
+                "mkfs*",
+                "dd * of=/dev/sd*",
+                "dd * of=/dev/nvme*",
+                "format [a-zA-Z]:*",
+                "shutdown*",
+                "reboot",
+            ]),
+            ask_commands: v(&[
+                "git push*",
+                "git reset --hard*",
+                "git clean*",
+                "git checkout -- *",
+                "git restore *",
+                "git rebase*",
+                "git stash drop*",
+                "git branch -D*",
+                "rm -r*",
+                "rm -f*",
+                "rmdir /s*",
+                "rd /s*",
+                "del /s*",
+                "Remove-Item*-Recurse*",
+                "npm publish*",
+                "cargo publish*",
+                "docker system prune*",
+                "kubectl delete*",
+                "terraform apply*",
+                "terraform destroy*",
+            ]),
+            ask_irreversible: true,
+            ..Default::default()
+        }
     }
     /// Dominio de red.
     pub fn check_domain(&self, host: &str) -> Decision {
@@ -189,6 +243,43 @@ mod tests {
         let mut c = Capabilities::default();
         f(&mut c);
         c
+    }
+    #[test]
+    fn interactivo_pregunta_lo_destructivo_y_deniega_lo_catastrofico() {
+        let p = Policy::new(Capabilities::interactive_defaults());
+        assert!(matches!(
+            p.check_command("cargo test && git status"),
+            Decision::Allow
+        ));
+        assert!(matches!(
+            p.check_command("git push origin main"),
+            Decision::Ask(_)
+        ));
+        assert!(matches!(
+            p.check_command("cd x && rm -rf build"),
+            Decision::Ask(_)
+        ));
+        assert!(matches!(
+            p.check_command("sudo rm -rf /"),
+            Decision::Deny(_)
+        ));
+        assert!(matches!(
+            p.check_command("bash -c 'mkfs.ext4 /dev/sda1'"),
+            Decision::Deny(_)
+        ));
+        assert!(matches!(
+            p.check_command("cmd /C \"rmdir /s /q build\""),
+            Decision::Ask(_)
+        ));
+        // La capa del usuario puede endurecer, nunca ablandar.
+        let user = Capabilities {
+            deny_commands: vec!["git push*".into()],
+            ..Default::default()
+        };
+        assert!(matches!(
+            p.child(user).check_command("git push"),
+            Decision::Deny(_)
+        ));
     }
     #[test]
     fn write_permitida_y_denegada() {

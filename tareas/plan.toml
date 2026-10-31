@@ -182,6 +182,29 @@ objetivo = '''
 '''
 tests = ["(CI): los jobs `windows` y `linux` en verde; la release publica los dos archivos y `SHA256SUMS`"]
 
+[[tarea]]
+id = "F0.08"
+nombre = "instalacion"
+titulo = "Instalación en una línea, `pcode doctor`, `pcode config` y `pcode actualizar`"
+fase = "F0"
+ejecutor = "coordinador"
+depende = ["F0.07"]
+toca = ["install.sh", "install.ps1", "crates/pcode-cli/src/doctor.rs", "crates/pcode-cli/src/update.rs", "crates/pcode-cli/src/main.rs", ".github/workflows/ci.yml", ".github/workflows/release.yml", "Cargo.toml"]
+acepta = "cargo test -p pcode-cli doctor && cargo test -p pcode-cli update && sh -n install.sh && grep -q 'verify-install' .github/workflows/release.yml"
+contexto = ["README.md (sección «Instalación»)", "install.sh", "install.ps1"]
+objetivo = '''
+1. `install.sh` (`curl … | sh`) e `install.ps1` (`irm … | iex`): por usuario, última release (o
+   `PCODE_VERSION`), verificación con `SHA256SUMS`, PATH del usuario, actualizables con pcode abierto.
+2. `pcode doctor`: versión, configuraciones leídas, modelo elegido, claves presentes (sin mostrarlas),
+   git, shell, sandbox N1 y agentes externos; sale con 1 si no hay modelo.
+3. `pcode config ruta|init|mostrar` y `pcode actualizar [--comprobar]` (descarga, SHA-256 y sustitución
+   del binario en marcha; en Windows renombrando el antiguo).
+4. Perfil release con LTO fina, una unidad de código y sin símbolos.
+5. CI: `install.ps1` con un .zip local en Windows; release: prueba los dos instaladores contra lo publicado.
+'''
+tests = ["la_plantilla_es_toml_valido_y_carga_vacia", "elige_el_archivo_de_la_plataforma", "lee_sha256sums_y_compara_versiones", "(CI) instalador de Windows y verify-install"]
+
+
 # F1 — Núcleo: configuración, modelos, tools, política, bucle, CLI
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1218,6 +1241,29 @@ objetivo = '''
 3. El agente emite `AgentEvent::TextDelta` por cada trozo y `AgentEvent::Text` al completar el mensaje.
 '''
 tests = ["openai_http_stream_entrega_trozos_y_une_la_respuesta", "anthropic_stream_acumula_texto_y_tool_use", "anthropic_http_stream", "gemini_stream_une_texto_y_llamadas", "gemini_http_stream_usa_alt_sse", "observador_recibe_texto_y_tools"]
+
+[[tarea]]
+id = "F1.26"
+nombre = "robustez"
+titulo = "Robustez para el uso diario: reintentos, caché de prompt, compactación, política segura y configuración global"
+fase = "F1"
+ejecutor = "coordinador"
+depende = ["F1.25", "F5.29"]
+toca = ["crates/pcode-models/src/retry.rs", "crates/pcode-models/src/anthropic.rs", "crates/pcode-core/src/agent.rs", "crates/pcode-policy/src/caps.rs", "crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-models retry && cargo test -p pcode-core compacta && cargo test -p pcode-policy interactivo && cargo test -p pcode-config merge"
+contexto = ["crates/pcode-core/src/agent.rs", "crates/pcode-policy/src/caps.rs"]
+objetivo = '''
+1. `RetryProvider`: 4 intentos con espera exponencial ante 429, 5xx, 408 y fallos de red; en streaming
+   solo si aún no se entregó texto.
+2. Anthropic: `cache_control` en sistema, última tool y último mensaje.
+3. `Budget::max_context_tokens` y `Agent::compact`: resumen con el propio modelo, conservando sistema y
+   últimos mensajes sin separar llamadas de sus resultados; `/compactar` en la TUI y en el chat.
+4. `Capabilities::interactive_defaults` y `preguntar_ordenes`: deniega lo catastrófico y pregunta lo
+   destructivo; la configuración del usuario solo endurece.
+5. Configuración global (`user_config_path`, `Config::merge`, `[preferencias]`) y raíces TLS del sistema.
+'''
+tests = ["reintenta_429_y_5xx_hasta_acertar", "no_reintenta_un_400_ni_pasa_del_maximo", "compacta_cuando_se_supera_el_limite_sin_romper_pares_de_tools", "interactivo_pregunta_lo_destructivo_y_deniega_lo_catastrofico", "merge_proyecto_manda_y_global_rellena", "load_layered_lee_pcode_config", "anthropic_peticion_separa_system_y_agrupa_resultados"]
+
 
 
 # F2 — Backends, mini sandbox en Rust, skills, MCP

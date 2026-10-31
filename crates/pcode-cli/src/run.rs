@@ -52,7 +52,7 @@ pub fn load_capabilities(path: &std::path::Path) -> Capabilities {
 
 /// Ejecuta la tarea y devuelve el código de salida.
 pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
-    let cfg = Config::load(&a.config)?;
+    let (cfg, _) = Config::load_layered(&a.config)?;
     if let Some(b) = &a.backend {
         return crate::backend_run::run_with_backend(
             &cfg,
@@ -68,7 +68,7 @@ pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
     let sel = build_provider(&cfg, a.provider.as_deref())?;
     let provider = sel.provider.clone();
     let root = std::env::current_dir()?;
-    let model = pick_model(a.model.as_deref(), &sel);
+    let model = pick_model(a.model.as_deref(), &cfg, &sel);
     let audit = AuditLog::open(&root.join(".pcode/audit.jsonl"))?;
     let store = Store::open(&root.join(".pcode/pcode.db"))?;
     let sid = store.create_session(&model, &a.task)?;

@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
 
@@ -18,7 +18,7 @@ clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "json", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 hex = "0.4"
@@ -30,3 +30,9 @@ futures = "0.3"
 tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
+
+# Binario de release más pequeño y rápido: LTO, una sola unidad de código y sin símbolos.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

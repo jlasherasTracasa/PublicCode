@@ -1,9 +1,11 @@
 //! Binario `pcode`.
 mod backend_run;
 mod chat;
+mod doctor;
 mod flow_cmd;
 mod provider;
 mod run;
+mod update;
 
 use clap::{Parser, Subcommand};
 
@@ -35,6 +37,21 @@ enum Cmd {
     /// Flujos de tareas: DAG, aceptación, reintentos e integración.
     #[command(subcommand)]
     Flow(flow_cmd::FlowCmd),
+    /// Comprueba la instalación: configuración, modelo, claves, git, sandbox y agentes externos.
+    Doctor {
+        /// Configuración del proyecto.
+        #[arg(long = "config", default_value = "pcode.toml")]
+        config: std::path::PathBuf,
+    },
+    /// Configuración global del usuario.
+    #[command(subcommand)]
+    Config(doctor::ConfigCmd),
+    /// Descarga e instala la última versión publicada.
+    Actualizar {
+        /// Solo comprueba si hay versión nueva.
+        #[arg(long = "comprobar")]
+        check: bool,
+    },
     /// Mini sandboxes (overlay copy-on-write sin privilegios).
     #[command(subcommand)]
     Sandbox(backend_run::SandboxCmd),
@@ -84,6 +101,9 @@ async fn main() -> anyhow::Result<()> {
             pcode_server::serve(st, std::net::SocketAddr::new(escuchar, puerto)).await?;
             Ok(())
         }
+        Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
+        Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c)?),
+        Some(Cmd::Actualizar { check }) => std::process::exit(update::update(check).await?),
         Some(Cmd::Flow(c)) => std::process::exit(flow_cmd::flow_cmd(c).await?),
         Some(Cmd::Sandbox(c)) => std::process::exit(backend_run::sandbox_cmd(c).await?),
         None => {

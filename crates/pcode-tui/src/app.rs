@@ -90,6 +90,8 @@ pub enum Command {
     SetModel(String),
     /// Empezar una conversación nueva.
     New,
+    /// Resumir la conversación para liberar contexto.
+    Compact,
     /// Salir.
     Quit,
 }
@@ -211,6 +213,7 @@ impl App {
 
     fn agent(&mut self, e: AgentEvent) {
         match e {
+            AgentEvent::Info(m) => self.entries.push(Entry::Info(format!("· {m}"))),
             AgentEvent::TextDelta(d) => match self.entries.last_mut() {
                 Some(Entry::Assistant { text, done: false }) => text.push_str(&d),
                 _ => self.entries.push(Entry::Assistant {
@@ -406,6 +409,10 @@ impl App {
                     )));
                     vec![Command::SetModel(arg.to_string())]
                 }
+                "compactar" | "compact" if !self.busy => {
+                    self.busy = true;
+                    vec![Command::Compact]
+                }
                 "uso" | "usage" => {
                     self.entries.push(Entry::Info(format!(
                         "{} ↑{} ({} caché) ↓{}",
@@ -571,12 +578,19 @@ mod tests {
         typed(&mut a, "/nuevo");
         assert_eq!(a.update(key(KeyCode::Enter)), vec![Command::New]);
         assert_eq!(a.entries.len(), 1);
+        typed(&mut a, "/compactar");
+        assert_eq!(a.update(key(KeyCode::Enter)), vec![Command::Compact]);
+        assert!(a.busy);
+        a.update(Event::TurnDone {
+            problem: None,
+            usage: Usage::default(),
+        });
         typed(&mut a, "/salir");
         assert_eq!(a.update(key(KeyCode::Enter)), vec![Command::Quit]);
         a.update(key(KeyCode::Up));
         assert_eq!(a.input, "/salir");
         a.update(key(KeyCode::Up));
-        assert_eq!(a.input, "/nuevo");
+        assert_eq!(a.input, "/compactar");
         a.update(key(KeyCode::Down));
         a.update(key(KeyCode::Down));
         assert_eq!(a.input, "");

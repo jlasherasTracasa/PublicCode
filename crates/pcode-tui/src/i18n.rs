@@ -40,6 +40,10 @@ const ES: &[(&str, &str)] = &[
     ),
     ("interrupted", "✗ interrumpido"),
     ("lines", "líneas"),
+    (
+        "nothing_to_compact",
+        "No hay bastante conversación para compactar.",
+    ),
     ("no_output", "(sin salida)"),
     ("wait", "El agente sigue trabajando: espera o pulsa Esc."),
     ("new", "Conversación nueva."),
@@ -56,7 +60,7 @@ const ES: &[(&str, &str)] = &[
     ),
     (
         "help",
-        "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
+        "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/compactar  resume la conversación para liberar contexto\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
     ),
 ];
 
@@ -77,6 +81,7 @@ const EN: &[(&str, &str)] = &[
     ),
     ("interrupted", "✗ interrupted"),
     ("lines", "lines"),
+    ("nothing_to_compact", "Not enough conversation to compact."),
     ("no_output", "(no output)"),
     ("wait", "The agent is still working: wait or press Esc."),
     ("new", "New conversation."),
@@ -93,7 +98,7 @@ const EN: &[(&str, &str)] = &[
     ),
     (
         "help",
-        "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",
+        "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/compact  summarise the conversation to free context\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",
     ),
 ];
 

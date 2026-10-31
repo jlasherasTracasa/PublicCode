@@ -54,7 +54,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           if ((Get-Content hola.txt) -ne "desde Windows") { Write-Error "hola.txt no tiene el contenido esperado"; exit 1 }
           if (-not (Test-Path .pcode\audit.jsonl)) { Write-Error "falta la auditoría"; exit 1 }
+          Remove-Item Env:PCODE_MOCK_SCRIPT
+          # Sin clave, doctor informa y sale con 1: se comprueba que lo explica.
+          $out = & $exe doctor 2>&1 | Out-String
+          if ($out -notmatch "ANTHROPIC_API_KEY") { Write-Error "doctor no explica cómo configurar: $out"; exit 1 }
+          $global:LASTEXITCODE = 0
           Pop-Location
+      - name: Instalador de Windows (install.ps1 con un .zip local)
+        shell: pwsh
+        run: |
+          $pkg = Join-Path $env:RUNNER_TEMP "pcode-vtest-x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory -Path $pkg | Out-Null
+          Copy-Item target\release\pcode.exe, install.ps1 -Destination $pkg
+          $zip = "$pkg.zip"
+          Compress-Archive -Path $pkg -DestinationPath $zip
+          $sum = (Get-FileHash -Algorithm SHA256 $zip).Hash
+          ./install.ps1 -Zip $zip -Sha256 $sum
+          $installed = Join-Path $env:LOCALAPPDATA "PublicCode\bin\pcode.exe"
+          & $installed --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # Reinstalar con pcode ya instalado (actualización) también debe funcionar.
+          ./install.ps1 -Zip $zip -Sha256 $sum
+          & $installed config ruta
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
   android:
     name: Android (tests, lint y APK)

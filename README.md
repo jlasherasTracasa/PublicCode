@@ -19,6 +19,8 @@ se sigue en el escritorio.
 > | **TUI** | `pcode`: interfaz a pantalla completa con el texto en streaming, tools con estado (`✓ ✗` y salida plegable con Ctrl+O), Markdown, aprobaciones en ventana, historial, desplazamiento y temas | F5.30 |
 > | **Chat** | `pcode chat`: el mismo agente en modo línea (también por stdin), con `--continuar`, `/modelo` y Ctrl-C; detecta la clave del entorno | F5.29 |
 > | Streaming | el texto llega token a token desde Anthropic, Gemini y OpenAI-compatible | F1.25 |
+> | Robustez | reintentos ante 429/5xx/red, caché de prompt de Anthropic, compactación automática del contexto, política segura por defecto, configuración global y certificados del sistema | F1.26 |
+> | Instalación | una línea en Linux (`curl … \| sh`) y Windows (`irm … \| iex`) con SHA-256; `pcode doctor`, `pcode config`, `pcode actualizar` | F0.08 |
 > | Proveedores | Anthropic (Messages API), Gemini (`generateContent`) y OpenAI-compatible (LiteLLM, vLLM, Ollama, OpenAI) | F1.22, F1.23 |
 > | Núcleo | bucle del agente con política (capacidades por capas, análisis de shell), auditoría con hash encadenado, presupuestos, hook de parada, detector de atasco, compresión de salidas; proveedores OpenAI-compatible (LiteLLM, vLLM, Ollama) con SSE y reparación de tool calls | F1.01–F1.21 |
 > | Tools | `leer`, `escribir`, `editar`, `buscar`, `listar`, `bash` | F1.08–F1.12 |
@@ -350,45 +352,61 @@ y [tareas/](tareas/).
 
 ## Instalación
 
-Cada etiqueta `v*` publica una [release](https://github.com/jlasherasTracasa/PublicCode/releases)
-con el binario `pcode` y `SHA256SUMS` (workflow [release.yml](.github/workflows/release.yml)).
+Por usuario, sin permisos de administrador. Descarga la última
+[release](https://github.com/jlasherasTracasa/PublicCode/releases), comprueba su SHA-256 y deja `pcode`
+en el PATH.
 
-| Sistema | Archivo | Instalación |
-|---|---|---|
-| Windows 10/11 x64 | `pcode-<versión>-x86_64-pc-windows-msvc.zip` | descomprimir y ejecutar `install.ps1` |
-| Linux x86_64 | `pcode-<versión>-x86_64-unknown-linux-gnu.tar.gz` | descomprimir y ejecutar `install.sh` |
-| Android 8+ | `pcode-<versión>-android.apk` | instalar el APK (permitir orígenes desconocidos); es un cliente del demonio |
-
-En Windows (PowerShell, sin permisos de administrador; instala en `%LOCALAPPDATA%\PublicCode\bin` y lo
-añade al PATH del usuario):
-
-```powershell
-Expand-Archive pcode-v0.1.0-x86_64-pc-windows-msvc.zip -DestinationPath .
-powershell -ExecutionPolicy Bypass -File .\pcode-v0.1.0-x86_64-pc-windows-msvc\install.ps1
-pcode --version
-```
-
-En Linux (instala en `~/.local/bin`):
+**Linux** (x86_64; instala en `~/.local/bin`):
 
 ```bash
-tar xzf pcode-v0.1.0-x86_64-unknown-linux-gnu.tar.gz && ./pcode-v0.1.0-x86_64-unknown-linux-gnu/install.sh
+curl -fsSL https://raw.githubusercontent.com/jlasherasTracasa/PublicCode/main/install.sh | sh
 ```
+
+**Windows 10/11** (PowerShell; instala en `%LOCALAPPDATA%\PublicCode\bin`):
+
+```powershell
+irm https://raw.githubusercontent.com/jlasherasTracasa/PublicCode/main/install.ps1 | iex
+```
+
+Después, en una terminal nueva:
+
+```bash
+pcode doctor            # comprueba configuración, modelo, claves, git, sandbox y agentes externos
+pcode config init       # crea la configuración global comentada (proveedor, modelo, tema…)
+pcode                   # abre la TUI en el proyecto actual
+pcode actualizar        # instala la última versión (verifica el SHA-256); --comprobar solo avisa
+```
+
+| Variable de los instaladores | Para qué |
+|---|---|
+| `PCODE_VERSION` | instalar una versión concreta (`v0.4.0`) en lugar de la última |
+| `PCODE_DIR` | otra carpeta de instalación (solo `install.sh`) |
+| `PCODE_REPO` | instalar desde un fork |
+
+También vale descargar a mano el `.zip` o el `.tar.gz` de la release y ejecutar el `install.ps1` o el
+`install.sh` que trae dentro, o compilar: `cargo install --path crates/pcode-cli --locked`.
+
+| Archivo de la release | Para |
+|---|---|
+| `pcode-<versión>-x86_64-pc-windows-msvc.zip` | Windows 10/11 x64 |
+| `pcode-<versión>-x86_64-unknown-linux-gnu.tar.gz` | Linux x86_64 (glibc 2.35 o superior) |
+| `pcode-<versión>-android.apk` | Android 8+: cliente del demonio para seguir sesiones y aprobar desde el móvil |
+| `SHA256SUMS` | sumas de los tres |
 
 **Android**: la app no ejecuta agentes; muestra sesiones y aprobaciones de un `pcoded` de tu red.
 En el equipo, `pcode daemon --escuchar 0.0.0.0` (con `PCODE_DAEMON_TOKEN` para un token fijo) y pega
 en la app la URL `http://IP:7878/?t=…` que imprime. Sin TLS todavía: úsalo en tu red local o tras un
 túnel (WireGuard, Tailscale).
 
-Desde el código: `cargo install --path crates/pcode-cli --locked` (Rust según `rust-toolchain.toml`).
-
 | Función | Linux | Windows |
 |---|---|---|
-| `pcode run` (bucle del agente con política y auditoría) | ✓ | ✓ |
+| `pcode` / `pcode tui` / `pcode chat` (agente con política, auditoría y aprobaciones) | ✓ | ✓ |
+| `pcode doctor`, `pcode config`, `pcode actualizar` | ✓ | ✓ |
 | `pcode daemon` (API, web y aprobaciones) | ✓ | ✓ |
 | `pcode sandbox …`, `pcode run --backend`, `pcode flow` | ✓ (N1) | dentro de WSL2; N0 nativo en F2.21 |
 
-Publicar una versión: `git tag v0.1.0 && git push origin v0.1.0`, o lanzar *Release* a mano desde
-Actions con el nombre de la etiqueta.
+Publicar una versión: subir una etiqueta `vX.Y.Z` o lanzar *Release* a mano desde Actions con el nombre
+de la etiqueta; el workflow publica los archivos y después prueba los dos instaladores contra ellos.
 
 ## Uso rápido (lo que ya funciona)
 
@@ -420,13 +438,22 @@ echo "resume el repo" | pcode chat           # sin terminal: un mensaje por lín
 | Ctrl+O | despliega o pliega la salida completa de las tools |
 | Esc | interrumpe al agente; Ctrl+C también y, con el agente parado, sale |
 | `s` / `t` / `n` en la ventana de aprobación | permitir, permitir sin volver a preguntar, negar |
-| `/modelo [nombre]`, `/nuevo`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, ver los tokens, ayuda y salir (también en `pcode chat`) |
+| `/modelo [nombre]`, `/nuevo`, `/compactar`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, olvidar el historial, resumir la conversación, ver los tokens, ayuda y salir (también en `pcode chat`) |
 
 Temas: `PCODE_TEMA=oscuro|claro|alto-contraste`; con `NO_COLOR` no hay colores, pero sí símbolos. El idioma
 de la interfaz sale de `LANG` (español o inglés).
 
-Lo que pide confirmación (según `[politica]`) se pregunta: `s` sí, `t` sí y no volver a preguntar,
-cualquier otra cosa no. Lo denegado por la política no se puede aprobar. Las instrucciones del proyecto
+**Seguridad por defecto**: hay una capa de política que deniega lo catastrófico (`rm -rf /`, `mkfs`,
+`dd` a un disco, `format C:`…) y pregunta antes de lo destructivo o lo que sale de tu máquina
+(`git push`, `git reset --hard`, `git clean`, `rm -r`/`rm -f`, `rmdir /s`, `npm publish`, `terraform apply`…).
+Tu `[politica]` (global y del proyecto) se suma encima y solo puede endurecerla. Lo que pide confirmación
+se pregunta: `s` sí, `t` sí y no volver a preguntar, cualquier otra cosa no.
+
+**Sesiones largas**: cuando el contexto se acerca al límite del modelo, la conversación se compacta sola
+(el propio modelo resume lo antiguo y se conservan los últimos mensajes); `/compactar` lo hace a mano.
+Los errores 429, 5xx y cortes de red se reintentan con espera exponencial, y con Anthropic se usa la caché
+de prompt, así que cada paso del agente solo paga lo nuevo. Las conexiones usan los certificados del
+sistema, de modo que funciona tras proxies corporativos (`HTTPS_PROXY`). Lo denegado por la política no se puede aprobar. Las instrucciones del proyecto
 (`AGENTS.md` y `CLAUDE.md`, o las de `[proyecto] instrucciones`) se añaden al prompt, y cada acción queda en
 `.pcode/audit.jsonl`. Las conversaciones se guardan en `.pcode/pcode.db`.
 
@@ -471,8 +498,16 @@ tools/papers/buscar_papers.py --tema skills --tema sandbox-seguridad --top 30
 
 ## Configuración
 
-`pcode.toml` en la raíz del proyecto (opcional: sin él se usan las claves del entorno). El primer proveedor
-de la lista es el que se usa si no pasas `--proveedor`. Tipos: `openai-compatible` (LiteLLM, vLLM, Ollama,
+Dos archivos, los dos opcionales (sin ninguno se usan las claves del entorno):
+
+| Archivo | Dónde | Para |
+|---|---|---|
+| global | `~/.config/pcode/pcode.toml` en Linux, `%APPDATA%\pcode\pcode.toml` en Windows (o `PCODE_CONFIG`); `pcode config init` lo crea | tus proveedores y preferencias, para todos los proyectos |
+| proyecto | `pcode.toml` en la raíz | lo propio del repo; manda sobre el global |
+
+`[preferencias]` admite `proveedor`, `modelo`, `tema` y `contexto_max` (tokens a partir de los que la
+conversación se compacta sola; por defecto 160 000 con Anthropic, 400 000 con Gemini y 100 000 con
+OpenAI-compatible). Si no eliges proveedor, se usa el primero del proyecto o, si no hay, el del global. Tipos: `openai-compatible` (LiteLLM, vLLM, Ollama,
 OpenAI), `anthropic` y `gemini`; a los dos últimos, si no pones `clave`, se les busca `ANTHROPIC_API_KEY` y
 `GEMINI_API_KEY`. Las secciones de backends, roles y `[politica]` son las de F2 y F3.
 

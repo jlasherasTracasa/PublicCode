@@ -33,6 +33,7 @@ pub type OnTurn = Box<dyn FnMut(Option<(&str, &[Message])>) + Send>;
 enum Msg {
     Ui(Event),
     Turn(String, RunReport),
+    Compacted(Vec<Message>),
 }
 
 /// Aprobador que pregunta en la TUI.
@@ -157,6 +158,21 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                     on_turn(Some((&user, &history)));
                     ev
                 }
+                Msg::Compacted(h) => {
+                    turn = None;
+                    if h.len() == history.len() {
+                        app.entries
+                            .push(crate::Entry::Info(t(lang, "nothing_to_compact").into()));
+                    } else {
+                        history = h;
+                        on_turn(None);
+                        on_turn(Some(("(compactada)", &history)));
+                    }
+                    Event::TurnDone {
+                        problem: None,
+                        usage: Default::default(),
+                    }
+                }
             };
             for cmd in app.update(ev) {
                 match cmd {
@@ -187,6 +203,13 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                         if let Ok(mut a) = agent.try_lock() {
                             a.set_model(m);
                         }
+                    }
+                    Command::Compact => {
+                        let (agent, tx, h) = (agent.clone(), tx.clone(), history.clone());
+                        turn = Some(tokio::spawn(async move {
+                            let out = agent.lock().await.compact(h).await;
+                            let _ = tx.send(Msg::Compacted(out));
+                        }));
                     }
                     Command::New => {
                         history.clear();

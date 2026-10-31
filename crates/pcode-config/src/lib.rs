@@ -35,6 +35,46 @@ pub struct Config {
     /// Sandbox.
     #[serde(rename = "sandbox")]
     pub sandbox: SandboxCfg,
+    /// Preferencias del usuario.
+    #[serde(rename = "preferencias")]
+    pub preferences: PrefsCfg,
+}
+
+/// Sección `[preferencias]` (sobre todo en la configuración global del usuario).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct PrefsCfg {
+    /// Proveedor por defecto (nombre de `[proveedores.*]`).
+    #[serde(rename = "proveedor")]
+    pub provider: Option<String>,
+    /// Modelo por defecto.
+    #[serde(rename = "modelo")]
+    pub model: Option<String>,
+    /// Tema de la TUI: `oscuro`, `claro` o `alto-contraste`.
+    #[serde(rename = "tema")]
+    pub theme: Option<String>,
+    /// Tokens de entrada a partir de los que se compacta la conversación.
+    #[serde(rename = "contexto_max")]
+    pub max_context_tokens: Option<u64>,
+}
+
+/// Ruta de la configuración global del usuario: `PCODE_CONFIG`, o
+/// `%APPDATA%\\pcode\\pcode.toml` en Windows, o `$XDG_CONFIG_HOME/pcode/pcode.toml`
+/// (por defecto `~/.config/pcode/pcode.toml`) en el resto.
+pub fn user_config_path() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    if let Some(p) = std::env::var_os("PCODE_CONFIG").filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(p));
+    }
+    let base = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    };
+    base.map(|b| b.join("pcode").join("pcode.toml"))
 }
 
 /// Sección `[proyecto]`.
@@ -130,6 +170,50 @@ impl Config {
         Ok(c)
     }
 
+    /// Une la configuración global (`user`) y la del proyecto (`project`): el proyecto manda en
+    /// los proveedores, backends y roles con el mismo nombre, en las instrucciones si las define y
+    /// en cada preferencia que ponga. Si el proyecto define proveedores y no elige uno, se usa el
+    /// primero del proyecto.
+    pub fn merge(user: Config, project: Config) -> Config {
+        let mut c = user;
+        let project_first = project.providers.keys().next().cloned();
+        c.providers.extend(project.providers);
+        c.backends.extend(project.backends);
+        c.roles.extend(project.roles);
+        if !project.project.instructions.is_empty() {
+            c.project = project.project;
+        }
+        let p = project.preferences;
+        c.preferences.provider = p
+            .provider
+            .or(project_first)
+            .or(c.preferences.provider)
+            .or_else(|| c.providers.keys().next().cloned());
+        c.preferences.model = p.model.or(c.preferences.model);
+        c.preferences.theme = p.theme.or(c.preferences.theme);
+        c.preferences.max_context_tokens =
+            p.max_context_tokens.or(c.preferences.max_context_tokens);
+        c.sandbox = project.sandbox;
+        c
+    }
+
+    /// Carga la configuración global del usuario (si existe) y la del proyecto, y las une con
+    /// [`Config::merge`]. Devuelve también los archivos que se leyeron.
+    pub fn load_layered(project: &Path) -> Result<(Config, Vec<std::path::PathBuf>), ConfigError> {
+        let mut read = vec![];
+        let user = match user_config_path() {
+            Some(p) if p.is_file() => {
+                read.push(p.clone());
+                Config::load(&p)?
+            }
+            _ => Config::default(),
+        };
+        if project.is_file() {
+            read.push(project.to_path_buf());
+        }
+        Ok((Config::merge(user, Config::load(project)?), read))
+    }
+
     /// Lee un archivo; si no existe, devuelve la configuración por defecto.
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
         match std::fs::read_to_string(path) {
@@ -143,6 +227,38 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_proyecto_manda_y_global_rellena() {
+        let user = Config::from_str(
+            "[preferencias]\nmodelo = \"m-global\"\ntema = \"claro\"\n[proveedores.anthropic]\ntipo = \"anthropic\"\n",
+        )
+        .unwrap();
+        let only_user = Config::merge(user.clone(), Config::default());
+        assert_eq!(only_user.preferences.provider.as_deref(), Some("anthropic"));
+        let project = Config::from_str(
+            "[preferencias]\nmodelo = \"m-proyecto\"\n[proveedores.litellm]\ntipo = \"openai-compatible\"\nurl = \"http://x\"\n",
+        )
+        .unwrap();
+        let c = Config::merge(user, project);
+        assert_eq!(c.providers.len(), 2);
+        assert_eq!(c.preferences.provider.as_deref(), Some("litellm"));
+        assert_eq!(c.preferences.model.as_deref(), Some("m-proyecto"));
+        assert_eq!(c.preferences.theme.as_deref(), Some("claro"));
+    }
+
+    #[test]
+    fn load_layered_lee_pcode_config() {
+        let d = tempfile::tempdir().unwrap();
+        let g = d.path().join("global.toml");
+        std::fs::write(&g, "[preferencias]\nmodelo = \"g\"\n").unwrap();
+        // SAFETY de la prueba: ningún otro test de este crate lee PCODE_CONFIG.
+        unsafe { std::env::set_var("PCODE_CONFIG", &g) };
+        let (c, read) = Config::load_layered(&d.path().join("no-existe.toml")).unwrap();
+        unsafe { std::env::remove_var("PCODE_CONFIG") };
+        assert_eq!(c.preferences.model.as_deref(), Some("g"));
+        assert_eq!(read, vec![g]);
+    }
 
     const EJEMPLO: &str = r#"
 [proyecto]

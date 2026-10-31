@@ -125,6 +125,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F0.05-adrs](../tareas/F0.05-adrs.md) | ADRs iniciales: lenguaje, backends, sandbox, skills | coordinador | — | hecha |
 | [F0.06-eval-reglas](../tareas/F0.06-eval-reglas.md) | Eval de cumplimiento de reglas: archivos fuera de `toca` y órdenes git prohibidas | haiku | — | pendiente |
 | [F0.07-ci-windows-release](../tareas/F0.07-ci-windows-release.md) | CI en Linux y Windows, y release de la CLI con instaladores | coordinador | F0.02, F1.20 | hecha |
+| [F0.08-instalacion](../tareas/F0.08-instalacion.md) | Instalación en una línea, `pcode doctor`, `pcode config` y `pcode actualizar` | coordinador | F0.07 | hecha |
 
 ### F1
 
@@ -155,6 +156,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F1.23-gemini](../tareas/F1.23-gemini.md) | Proveedor Gemini (generateContent): formato y cliente HTTP | haiku | F1.05 | hecha |
 | [F1.24-shell-portable](../tareas/F1.24-shell-portable.md) | Shell portable (sh en Linux, cmd en Windows) y política que entra en cmd y PowerShell | coordinador | F1.12, F1.14 | hecha |
 | [F1.25-streaming](../tareas/F1.25-streaming.md) | Streaming de texto en los proveedores y en el agente | coordinador | F1.06, F1.22, F1.23 | hecha |
+| [F1.26-robustez](../tareas/F1.26-robustez.md) | Robustez para el uso diario: reintentos, caché de prompt, compactación, política segura y configuración global | coordinador | F1.25, F5.29 | hecha |
 
 ### F2
 

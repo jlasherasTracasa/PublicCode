@@ -2,9 +2,10 @@
 use anyhow::{Context, bail};
 use pcode_config::{Config, ProviderCfg};
 use pcode_models::{
-    AnthropicProvider, GeminiProvider, MockProvider, OpenAiCompatProvider, Provider,
+    AnthropicProvider, GeminiProvider, MockProvider, OpenAiCompatProvider, Provider, RetryProvider,
 };
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Proveedor elegido y el modelo que se usa si el usuario no indica otro.
 pub struct Selected {
@@ -12,6 +13,19 @@ pub struct Selected {
     pub provider: Arc<dyn Provider>,
     /// Modelo por defecto del proveedor.
     pub default_model: Option<String>,
+    /// Tokens de entrada a partir de los que conviene compactar (ventana del modelo con margen).
+    pub context_limit: u64,
+}
+
+impl Selected {
+    fn new(p: Arc<dyn Provider>, model: Option<&str>, context_limit: u64) -> Selected {
+        // Reintentos ante 429, 5xx y cortes de red: 4 intentos, esperando 2, 4 y 8 s.
+        Selected {
+            provider: Arc::new(RetryProvider::new(p, 4, Duration::from_secs(2))),
+            default_model: model.map(String::from),
+            context_limit,
+        }
+    }
 }
 
 const ANTHROPIC_URL: &str = "https://api.anthropic.com";
@@ -32,14 +46,15 @@ fn from_cfg(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
         }
     };
     match p.kind.as_str() {
-        "openai-compatible" | "" => Ok(Selected {
-            provider: Arc::new(OpenAiCompatProvider::new(
+        "openai-compatible" | "" => Ok(Selected::new(
+            Arc::new(OpenAiCompatProvider::new(
                 name,
                 p.url.clone(),
                 p.api_key.clone(),
             )),
-            default_model: None,
-        }),
+            None,
+            100_000,
+        )),
         "anthropic" => {
             let key = p
                 .api_key
@@ -48,10 +63,11 @@ fn from_cfg(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
                 .with_context(|| {
                     format!("al proveedor {name} le falta `clave` o ANTHROPIC_API_KEY")
                 })?;
-            Ok(Selected {
-                provider: Arc::new(AnthropicProvider::new(name, url(ANTHROPIC_URL), key)),
-                default_model: Some(ANTHROPIC_MODEL.into()),
-            })
+            Ok(Selected::new(
+                Arc::new(AnthropicProvider::new(name, url(ANTHROPIC_URL), key)),
+                Some(ANTHROPIC_MODEL),
+                160_000,
+            ))
         }
         "gemini" => {
             let key = p
@@ -62,10 +78,11 @@ fn from_cfg(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
                 .with_context(|| {
                     format!("al proveedor {name} le falta `clave` o GEMINI_API_KEY")
                 })?;
-            Ok(Selected {
-                provider: Arc::new(GeminiProvider::new(name, url(GEMINI_URL), key)),
-                default_model: Some(GEMINI_MODEL.into()),
-            })
+            Ok(Selected::new(
+                Arc::new(GeminiProvider::new(name, url(GEMINI_URL), key)),
+                Some(GEMINI_MODEL),
+                400_000,
+            ))
         }
         k => bail!(
             "el proveedor {name} es de tipo desconocido: {k} (openai-compatible, anthropic o gemini)"
@@ -74,7 +91,7 @@ fn from_cfg(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
 }
 
 /// Construye el proveedor. Orden: `PCODE_MOCK_SCRIPT` (pruebas), el indicado con `--proveedor`,
-/// el primero de `pcode.toml` y, por último, la clave que haya en el entorno
+/// `[preferencias] proveedor` (o el primero configurado) y, por último, la clave que haya en el entorno
 /// (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY`).
 pub fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Selected> {
     if let Ok(script) = std::env::var("PCODE_MOCK_SCRIPT") {
@@ -83,9 +100,10 @@ pub fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Select
                 &script,
             ))?),
             default_model: None,
+            context_limit: 100_000,
         });
     }
-    if let Some(n) = name {
+    if let Some(n) = name.or(cfg.preferences.provider.as_deref()) {
         let p = cfg
             .providers
             .get(n)
@@ -130,10 +148,12 @@ pub fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Select
     )
 }
 
-/// Modelo a usar: `--modelo`, `PCODE_MODEL`, el del proveedor o `default` (LiteLLM lo resuelve).
-pub fn pick_model(flag: Option<&str>, sel: &Selected) -> String {
+/// Modelo a usar: `--modelo`, `PCODE_MODEL`, `[preferencias] modelo`, el del proveedor o
+/// `default` (LiteLLM lo resuelve).
+pub fn pick_model(flag: Option<&str>, cfg: &Config, sel: &Selected) -> String {
     flag.map(String::from)
         .or_else(|| env("PCODE_MODEL"))
+        .or_else(|| cfg.preferences.model.clone())
         .or_else(|| sel.default_model.clone())
         .unwrap_or_else(|| "default".into())
 }
@@ -143,12 +163,13 @@ pub fn pick_model(flag: Option<&str>, sel: &Selected) -> String {
 pub fn system_prompt(cfg: &Config, root: &std::path::Path) -> String {
     let mut s = format!(
         "Eres PublicCode, un agente de programación que trabaja en la terminal del usuario.\n\
-         Directorio de trabajo: {}\nSistema: {}\n\
+         Directorio de trabajo: {}\nSistema: {} (la tool bash usa {})\n\
          Usa las tools (leer, buscar, listar, editar, escribir, bash) para investigar y cambiar el código; \
          lee antes de editar, haz cambios mínimos y comprueba con los tests cuando existan. \
          Responde en el idioma del usuario y sé breve: di qué hiciste y qué queda.",
         root.display(),
-        std::env::consts::OS
+        std::env::consts::OS,
+        if cfg!(windows) { "cmd.exe" } else { "sh" }
     );
     let mut files = cfg.project.instructions.clone();
     if files.is_empty() {
@@ -186,7 +207,10 @@ mod tests {
         };
         let s = from_cfg("a", &p).unwrap();
         assert_eq!(s.default_model.as_deref(), Some(ANTHROPIC_MODEL));
-        assert_eq!(pick_model(Some("otro"), &s), "otro");
+        assert_eq!(pick_model(Some("otro"), &Config::default(), &s), "otro");
+        let mut cfg = Config::default();
+        cfg.preferences.model = Some("pref".into());
+        assert_eq!(pick_model(None, &cfg, &s), "pref");
     }
 
     #[test]

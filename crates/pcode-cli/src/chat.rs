@@ -113,6 +113,7 @@ fn render(st: Style, e: &AgentEvent) {
             let _ = std::io::stdout().flush();
         }
         AgentEvent::Text(_) => println!("\n"),
+        AgentEvent::Info(m) => println!("{}", st.dim(&format!("· {m}"))),
         AgentEvent::ToolCall { name, arguments } => {
             println!(
                 "{} {}",
@@ -191,7 +192,7 @@ impl Approver for TerminalApprover {
     }
 }
 
-const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
+const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
 
 /// Persiste en SQLite los mensajes nuevos de cada vuelta.
 struct Persist {
@@ -248,12 +249,13 @@ struct Prepared {
     history: Vec<Message>,
     persist: Persist,
     resumed: Option<(i64, usize)>,
+    theme: Option<String>,
 }
 
 fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
-    let cfg = Config::load(&a.config)?;
+    let (cfg, _) = Config::load_layered(&a.config)?;
     let sel = build_provider(&cfg, a.provider.as_deref())?;
-    let model = pick_model(a.model.as_deref(), &sel);
+    let model = pick_model(a.model.as_deref(), &cfg, &sel);
     let root = std::env::current_dir()?;
     let sys = system_prompt(&cfg, &root);
     std::fs::create_dir_all(root.join(".pcode")).context("no se pudo crear .pcode")?;
@@ -282,7 +284,7 @@ fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
     let agent = Agent::new(
         sel.provider.clone(),
         pcode_tools::native_registry(),
-        Policy::new(crate::run::load_capabilities(&a.config)),
+        interactive_policy(&a.config),
         Some(audit),
         AgentConfig {
             agent_id: "chat".into(),
@@ -290,6 +292,10 @@ fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
             system_prompt: sys,
             budget: Budget {
                 max_steps: a.max_steps,
+                max_context_tokens: cfg
+                    .preferences
+                    .max_context_tokens
+                    .unwrap_or(sel.context_limit),
                 ..Default::default()
             },
             stop_hook: None,
@@ -305,7 +311,18 @@ fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
         history,
         persist,
         resumed,
+        theme: cfg.preferences.theme.clone(),
     })
+}
+
+/// Política del uso interactivo: la capa segura por defecto, la `[politica]` global del usuario y
+/// la del proyecto (cada capa solo puede endurecer la anterior).
+fn interactive_policy(project: &std::path::Path) -> Policy {
+    let mut p = Policy::new(pcode_policy::Capabilities::interactive_defaults());
+    if let Some(user) = pcode_config::user_config_path().filter(|u| u.is_file()) {
+        p = p.child(crate::run::load_capabilities(&user));
+    }
+    p.child(crate::run::load_capabilities(project))
 }
 
 /// `pcode tui`: la interfaz a pantalla completa.
@@ -328,7 +345,11 @@ pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
             history: p.history,
             approve_all: a.approve_all,
             lang: pcode_tui::Lang::from_env(),
-            theme: pcode_tui::Theme::from_env(),
+            theme: p
+                .theme
+                .as_deref()
+                .and_then(|t| pcode_tui::Theme::by_name(t, std::env::var_os("NO_COLOR").is_some()))
+                .unwrap_or_else(pcode_tui::Theme::from_env),
         },
         on_turn,
     )
@@ -346,6 +367,7 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
         mut history,
         mut persist,
         resumed,
+        ..
     } = prepare(&a)?;
     if a.resume {
         match resumed {
@@ -430,6 +452,19 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
                         agent.set_model(current_model.clone());
                         println!("{}", style.dim(&format!("Modelo: {current_model}")));
                     }
+                }
+                "compactar" | "compact" => {
+                    let before = history.len();
+                    history = agent.compact(history).await;
+                    if history.len() == before {
+                        println!(
+                            "{}",
+                            style.dim("No hay bastante conversación para compactar.")
+                        );
+                    }
+                    persist.saved = 0;
+                    persist.session = None;
+                    persist.save("(compactada)", &history);
                 }
                 "uso" | "usage" => println!(
                     "{} tokens de entrada ({} de caché) · {} de salida",

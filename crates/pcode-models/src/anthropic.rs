@@ -60,16 +60,31 @@ pub fn to_request_body(req: &ChatRequest) -> Value {
         "max_tokens": req.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
         "messages": msgs,
     });
+    // Caché de prompt: tres marcas (sistema, tools y último mensaje) para que cada paso del
+    // agente solo pague lo nuevo de la conversación.
+    let cache = json!({"type": "ephemeral"});
     if !system.is_empty() {
-        b["system"] = json!(system.join("\n\n"));
+        b["system"] =
+            json!([{"type": "text", "text": system.join("\n\n"), "cache_control": cache}]);
     }
     if !req.tools.is_empty() {
-        b["tools"] = Value::Array(
-            req.tools
-                .iter()
-                .map(|t| json!({"name": t.name, "description": t.description, "input_schema": t.parameters}))
-                .collect(),
-        );
+        let mut tools: Vec<Value> = req
+            .tools
+            .iter()
+            .map(|t| json!({"name": t.name, "description": t.description, "input_schema": t.parameters}))
+            .collect();
+        if let Some(last) = tools.last_mut() {
+            last["cache_control"] = cache.clone();
+        }
+        b["tools"] = Value::Array(tools);
+    }
+    if let Some(last) = b["messages"].as_array_mut().and_then(|m| m.last_mut()) {
+        if let Some(text) = last["content"].as_str().map(String::from) {
+            last["content"] = json!([{"type": "text", "text": text}]);
+        }
+        if let Some(block) = last["content"].as_array_mut().and_then(|c| c.last_mut()) {
+            block["cache_control"] = cache;
+        }
     }
     if let Some(t) = req.temperature {
         b["temperature"] = json!(t);
@@ -332,7 +347,9 @@ mod tests {
     #[test]
     fn anthropic_peticion_separa_system_y_agrupa_resultados() {
         let b = to_request_body(&req());
-        assert_eq!(b["system"], "sé breve");
+        assert_eq!(b["system"][0]["text"], "sé breve");
+        assert_eq!(b["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(b["tools"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(b["max_tokens"], DEFAULT_MAX_TOKENS);
         let m = b["messages"].as_array().unwrap();
         assert_eq!(m.len(), 3, "user, assistant y un único lote de resultados");
@@ -340,6 +357,11 @@ mod tests {
         assert_eq!(m[1]["content"][2]["type"], "tool_use");
         assert_eq!(m[2]["content"].as_array().unwrap().len(), 2);
         assert_eq!(m[2]["content"][1]["tool_use_id"], "t2");
+        assert_eq!(m[2]["content"][1]["cache_control"]["type"], "ephemeral");
+        assert!(
+            m[0]["content"].is_string(),
+            "solo el último mensaje lleva marca"
+        );
         assert_eq!(b["tools"][0]["input_schema"]["type"], "object");
     }
 
