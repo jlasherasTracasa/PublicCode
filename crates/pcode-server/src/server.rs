@@ -651,7 +651,7 @@ fn turn_json(t: &pcode_core::TurnInfo, changes: &[pcode_core::FileChange]) -> se
 }
 
 /// Prompt del asistente según `kind` (`commit`, `revisar`, `arreglar`, `concretar`, `explicar`,
-/// `tests`).
+/// `tests`, `orden`).
 fn assist_prompt(root: &std::path::Path, p: &serde_json::Value) -> Result<String, String> {
     let path = str_param(p, "path");
     let lines = p.get("lines").and_then(|v| {
@@ -671,6 +671,11 @@ fn assist_prompt(root: &std::path::Path, p: &serde_json::Value) -> Result<String
             crate::assist::fix_prompt(root, &path, &diags)
         }
         k @ ("explicar" | "tests") => crate::assist::file_prompt(root, &path, k, lines),
+        "orden" => crate::assist::command_prompt(
+            &str_param(p, "command"),
+            p.get("code").and_then(|v| v.as_i64()).map(|c| c as i32),
+            &str_param(p, "output"),
+        ),
         k => Err(format!("tipo de ayuda desconocido: {k}")),
     }
 }

@@ -6,6 +6,15 @@
 <meta name="theme-color" content="#0b57d0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1d33" media="(prefers-color-scheme: dark)">
 <title>PublicCode</title>
+<script>
+  // Tema antes de pintar nada (sin destello): auto, claro, oscuro o medianoche.
+  (function () {
+    var t = "auto"; try { t = localStorage.getItem("pcode.tema") || "auto"; } catch (e) { /* sin almacenamiento */ }
+    var oscuro = t === "oscuro" || t === "medianoche" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = t === "auto" ? (oscuro ? "oscuro" : "claro") : t;
+    if (oscuro) document.documentElement.dataset.dark = "";
+  })();
+</script>
 <style>
   /* PublicCode Studio: editor, git, terminal y agente. Paleta Material azul (docs/interfaces.md). */
   :root {
@@ -18,18 +27,24 @@
     --t-kw: #0842a0; --t-str: #146c2e; --t-com: #7b8aa3; --t-num: #9a3412; --t-fn: #7c3aed; --t-ty: #0e7490; --t-mac: #b45309;
     --sombra: 0 1px 2px rgba(11,30,73,.10), 0 2px 8px rgba(11,30,73,.08); --sombra-2: 0 6px 24px rgba(11,30,73,.18);
     --mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, "DejaVu Sans Mono", ui-monospace, monospace;
+    --barra-a: #0842a0; --barra-b: #0b57d0; --estado: #0b57d0; color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --fondo: #0b1626; --superficie: #13233a; --superficie-2: #182b46; --superficie-3: #1c3150;
-      --texto: #e3ecfb; --texto-2: #9fb3d1; --primario: #8ab4f8; --primario-2: #aecbfa; --sobre-primario: #062e6f;
-      --contenedor: #1f3a5f; --sobre-contenedor: #d3e3fd; --linea: #2a4268;
-      --codigo: #08111f; --sobre-codigo: #cfe0fb;
-      --ok: #6dd58c; --ok-fondo: #0f3d20; --error: #ffb4ab; --error-fondo: #5c1610; --aviso: #f5c451; --aviso-fondo: #4a3800;
-      --ed-fondo: #0f1d33; --ed-texto: #dbe7fb; --ed-gutter: #5f769a; --ed-linea-activa: #16294a; --ed-sel: #2a4a7a;
-      --t-kw: #8ab4f8; --t-str: #8fd9a8; --t-com: #6b7f9e; --t-num: #f5b97a; --t-fn: #c9a7ff; --t-ty: #7fd4e8; --t-mac: #f5c451;
-      --sombra: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.25); --sombra-2: 0 6px 24px rgba(0,0,0,.5);
-    }
+  :root[data-dark] {
+    --fondo: #0b1626; --superficie: #13233a; --superficie-2: #182b46; --superficie-3: #1c3150;
+    --texto: #e3ecfb; --texto-2: #9fb3d1; --primario: #8ab4f8; --primario-2: #aecbfa; --sobre-primario: #062e6f;
+    --contenedor: #1f3a5f; --sobre-contenedor: #d3e3fd; --linea: #2a4268;
+    --codigo: #08111f; --sobre-codigo: #cfe0fb;
+    --ok: #6dd58c; --ok-fondo: #0f3d20; --error: #ffb4ab; --error-fondo: #5c1610; --aviso: #f5c451; --aviso-fondo: #4a3800;
+    --ed-fondo: #0f1d33; --ed-texto: #dbe7fb; --ed-gutter: #5f769a; --ed-linea-activa: #16294a; --ed-sel: #2a4a7a;
+    --t-kw: #8ab4f8; --t-str: #8fd9a8; --t-com: #6b7f9e; --t-num: #f5b97a; --t-fn: #c9a7ff; --t-ty: #7fd4e8; --t-mac: #f5c451;
+    --sombra: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.25); --sombra-2: 0 6px 24px rgba(0,0,0,.5);
+    --barra-a: #0f1d33; --barra-b: #16335c; --estado: #16335c; color-scheme: dark;
+  }
+  /* Medianoche: negro azulado para pantallas OLED y salas a oscuras. */
+  :root[data-theme="medianoche"] {
+    --fondo: #03060c; --superficie: #0a1220; --superficie-2: #070d18; --superficie-3: #0d1729; --linea: #1a2740;
+    --contenedor: #13243f; --ed-fondo: #050a14; --ed-linea-activa: #0c1628; --ed-gutter: #4a5f82; --codigo: #02050b;
+    --primario: #7aa2ff; --barra-a: #050a14; --barra-b: #0d1d3a; --estado: #0d1d3a;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -42,8 +57,7 @@
 
   /* Barra superior */
   .barra { display: flex; align-items: center; gap: 12px; padding: 8px 14px; padding-top: max(8px, env(safe-area-inset-top));
-           background: linear-gradient(120deg, var(--primario-2), var(--primario)); color: #fff; box-shadow: var(--sombra-2); z-index: 10; }
-  @media (prefers-color-scheme: dark) { .barra { background: linear-gradient(120deg, #0f1d33, #16335c); } }
+           background: linear-gradient(120deg, var(--barra-a), var(--barra-b)); color: #fff; box-shadow: var(--sombra-2); z-index: 10; }
   .logo { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.18);
           font: 700 13px var(--mono); letter-spacing: -1px; flex: none; }
   .barra h1 { margin: 0; font-size: 16px; font-weight: 600; white-space: nowrap; }
@@ -87,7 +101,7 @@
   .nodo .flecha { width: 12px; flex: none; color: var(--texto-2); font-size: 10px; }
   .nodo .ico { width: 16px; flex: none; text-align: center; font-size: 12px; }
   .nodo.git-M .nombre { color: #b45309; } .nodo.git-A .nombre, .nodo.git-U .nombre { color: var(--ok); }
-  @media (prefers-color-scheme: dark) { .nodo.git-M .nombre { color: #f5c451; } }
+  :root[data-dark] .nodo.git-M .nombre { color: #f5c451; }
 
   /* Búsqueda y git */
   .campo-lat { margin: 4px 10px 8px; display: flex; gap: 4px; align-items: center; background: var(--superficie); border: 1.5px solid var(--linea);
@@ -120,8 +134,13 @@
   .vacio { color: var(--texto-2); font-size: 13px; padding: 10px 14px; }
 
   /* Centro: pestañas, editor y terminal */
-  .centro { display: grid; grid-template-rows: auto 1fr auto var(--alto-terminal, 0); min-width: 0; min-height: 0; background: var(--ed-fondo); }
-  .centro.con-terminal { --alto-terminal: 230px; }
+  .centro { display: grid; grid-template-rows: auto auto 1fr var(--alto-terminal, 0); min-width: 0; min-height: 0; background: var(--ed-fondo); }
+  .centro.con-terminal { --alto-terminal: var(--alto-terminal-usuario, 240px); }
+  .migas.vacia { min-height: 0; height: 0; padding: 0; border: 0; }
+  .centro { overflow: hidden; }
+  .centro:not(.con-terminal) .terminal { visibility: hidden; }
+  body[data-vista="terminal"] .terminal { visibility: visible; }
+  html, body { overscroll-behavior: none; }
   .pestanas { display: flex; overflow-x: auto; background: var(--superficie-2); border-bottom: 1px solid var(--linea); min-height: 38px; scrollbar-width: thin; }
   .pestana { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 12px; height: 38px; font-size: 13px; white-space: nowrap; cursor: pointer;
              border-right: 1px solid var(--linea); color: var(--texto-2); border-radius: 0; flex: none; }
@@ -225,7 +244,7 @@
   .inicio .heroe { max-width: 960px; margin: 0 auto 20px; border-radius: 28px; padding: 28px 32px; color: #fff;
                    background: radial-gradient(120% 140% at 100% 0%, #4c8dff 0%, transparent 55%), linear-gradient(135deg, var(--primario-2), var(--primario));
                    box-shadow: var(--sombra-2); display: flex; gap: 22px; align-items: center; }
-  @media (prefers-color-scheme: dark) { .inicio .heroe { background: radial-gradient(120% 140% at 100% 0%, #2b5aa8 0%, transparent 55%), linear-gradient(135deg, #0f1d33, #16335c); } }
+  :root[data-dark] .inicio .heroe { background: radial-gradient(120% 140% at 100% 0%, #2b5aa8 0%, transparent 55%), linear-gradient(135deg, var(--barra-a), var(--barra-b)); }
   .inicio .heroe .logo { width: 72px; height: 72px; border-radius: 22px; font-size: 28px; background: rgba(255,255,255,.18); color: #fff; margin: 0; }
   .inicio .heroe h2 { margin: 0 0 4px; font-size: 24px; color: #fff; }
   .inicio .heroe .meta { opacity: .85; font-size: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -307,11 +326,141 @@
   .dialogo li[aria-selected="true"] { background: var(--contenedor); color: var(--sobre-contenedor); }
   .aviso-flotante { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); background: var(--codigo); color: #fff; padding: 9px 16px; border-radius: 12px; box-shadow: var(--sombra-2); font-size: 13px; z-index: 60; }
 
+  /* ───────── 1.0: diseño pro ───────── */
+  body { grid-template-rows: auto 1fr auto auto; }
+  .barra { gap: 10px; padding: 7px 12px; }
+  .barra .logo { background: linear-gradient(135deg, rgba(255,255,255,.32), rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+  .abrir-rapido { backdrop-filter: blur(6px); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); transition: background-color .15s; }
+  .abrir-rapido:hover { background: rgba(255,255,255,.24); }
+  .boton-redondo { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.12); font-size: 15px; flex: none; }
+  .boton-redondo:hover { background: rgba(255,255,255,.24); }
+  .chispa { background: linear-gradient(135deg, #6f5cff, #0b57d0 55%, #00a3c4); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 600;
+            font-size: 12.5px; box-shadow: 0 2px 10px rgba(80,70,255,.25); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+  .chispa:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .chispa:disabled { opacity: .6; cursor: progress; transform: none; }
+  .chispa.mini { padding: 2px 9px; font-size: 11.5px; box-shadow: none; }
+  .chispa .giro { width: 11px; height: 11px; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff; border-radius: 50%; animation: gira .8s linear infinite; }
+  @keyframes gira { to { transform: rotate(360deg); } }
+
+  /* Paneles redimensionables */
+  .lateral, .agente { position: relative; }
+  .asa { position: absolute; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; touch-action: none; }
+  .asa::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background-color .15s; }
+  .asa:hover::after, .asa.activa::after { background: var(--primario); width: 2px; }
+  .lateral .asa { right: -4px; } .agente .asa { left: -3px; }
+  .asa-h { position: absolute; left: 0; right: 0; top: -4px; height: 7px; cursor: row-resize; z-index: 6; touch-action: none; }
+  .asa-h:hover, .asa-h.activa { background: linear-gradient(transparent 3px, var(--primario) 3px, var(--primario) 5px, transparent 5px); }
+  .terminal { position: relative; }
+  body.arrastrando, body.arrastrando * { user-select: none !important; cursor: inherit; }
+
+  /* Migas de pan */
+  .migas { display: flex; align-items: center; gap: 2px; padding: 3px 12px; font-size: 12.5px; color: var(--texto-2); background: var(--ed-fondo);
+           border-bottom: 1px solid color-mix(in srgb, var(--linea) 60%, transparent); white-space: nowrap; overflow: hidden; min-height: 26px; }
+  .migas button { padding: 1px 6px; border-radius: 6px; color: inherit; display: inline-flex; align-items: center; gap: 5px; }
+  .migas button:hover { background: var(--contenedor); color: var(--sobre-contenedor); }
+  .migas .sep { opacity: .5; font-size: 11px; }
+  .migas .ultimo { color: var(--texto); font-weight: 500; }
+
+  /* Marcas de git en el margen */
+  .gutter { position: relative; padding-left: 18px; }
+  #capa-git { position: absolute; top: 10px; left: 0; width: 8px; }
+  .gm { position: absolute; left: 4px; width: 4px; height: 21px; border-radius: 2px; cursor: pointer; pointer-events: auto; }
+  .gm.added { background: #2da44e; } .gm.modified { background: #3b82f6; }
+  .gm.deleted { height: 0; width: 0; left: 3px; margin-top: 15px; border-left: 6px solid #e5534b; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-radius: 0; }
+  :root[data-dark] .gm.added { background: #3fb950; } :root[data-dark] .gm.modified { background: #6cb6ff; }
+
+  /* Esquema y símbolos */
+  .simbolo { display: flex; align-items: center; gap: 7px; width: calc(100% - 12px); margin: 0 6px; padding: 3px 8px; border-radius: 8px; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; }
+  .simbolo:hover { background: var(--contenedor); }
+  .simbolo.actual { background: var(--contenedor); color: var(--sobre-contenedor); font-weight: 500; }
+  .simbolo .linea { margin-left: auto; color: var(--texto-2); font: 11px var(--mono); }
+  .k { width: 18px; height: 18px; border-radius: 6px; display: inline-grid; place-items: center; font: 700 10px/1 var(--mono); color: #fff; flex: none; }
+  .k-fn, .k-method { background: #7c3aed; } .k-struct, .k-class { background: #d97706; } .k-enum { background: #0e7490; }
+  .k-trait, .k-interface { background: #0891b2; } .k-impl { background: #64748b; } .k-mod { background: #2563eb; } .k-type { background: #0d9488; }
+  .k-const { background: #be123c; } .k-macro { background: #b45309; } .k-h1, .k-h2, .k-h3, .k-h4, .k-h5, .k-h6 { background: #475569; }
+  .filtro { margin: 2px 10px 8px; }
+
+  /* Barra de estado a lo ancho */
+  .estado-ed { background: var(--estado); color: #fff; border-top: 0; padding: 0 6px; gap: 2px; min-height: 26px; font-size: 12px; z-index: 5; }
+  .estado-ed > span, .estado-ed button, .estado-ed .derecha > span { padding: 3px 8px; border-radius: 0; color: #fff; }
+  .estado-ed button:hover, .estado-ed .seg:hover { background: rgba(255,255,255,.14); }
+  .estado-ed .derecha { gap: 2px; }
+  .estado-ed .cuenta-diag .e, .estado-ed .cuenta-diag .w { color: #fff; }
+  .estado-ed .seg { cursor: pointer; }
+  .estado-ed .seg.trabajando::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #9ef0b5; animation: latido 1.2s infinite; }
+
+  /* Avisos apilados */
+  .avisos { position: fixed; right: 16px; bottom: 40px; display: flex; flex-direction: column; gap: 8px; z-index: 80; max-width: min(420px, calc(100vw - 32px)); }
+  .aviso { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-radius: 14px; background: var(--superficie); color: var(--texto);
+           box-shadow: var(--sombra-2); border-left: 4px solid var(--primario); font-size: 13px; animation: entra .2s ease-out; }
+  .aviso.ok { border-left-color: var(--ok); } .aviso.error { border-left-color: var(--error); }
+  .aviso .ic { font-size: 15px; } .aviso.ok .ic { color: var(--ok); } .aviso.error .ic { color: var(--error); } .aviso .ic { color: var(--primario); }
+  .aviso .txt { flex: 1; min-width: 0; }
+  .aviso button { color: var(--primario); font-weight: 600; padding: 3px 8px; border-radius: 8px; white-space: nowrap; }
+  .aviso button:hover { background: var(--contenedor); }
+  @keyframes entra { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .aviso { animation: none; } }
+
+  /* Documentos (revisión, explicación) */
+  .documento { position: absolute; inset: 0; overflow: auto; background: var(--fondo); padding: 28px 20px 60px; }
+  .documento article { max-width: 860px; margin: 0 auto; background: var(--superficie); border-radius: 22px; box-shadow: var(--sombra); padding: 26px 30px; line-height: 1.6; }
+  .documento .cab { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--texto-2); font-size: 12.5px; }
+  .documento .cab .k { width: 26px; height: 26px; border-radius: 9px; background: linear-gradient(135deg, #6f5cff, #0b57d0); font-size: 13px; }
+  .md h1, .md h2, .md h3 { margin: 16px 0 6px; line-height: 1.3; } .md h1 { font-size: 20px; } .md h2 { font-size: 17px; } .md h3 { font-size: 15px; }
+  .md p { margin: 6px 0; } .md ul, .md ol { margin: 6px 0; padding-left: 22px; } .md li { margin: 3px 0; }
+  .md code { font: 12.5px var(--mono); padding: 1px 5px; border-radius: 6px; background: var(--contenedor); color: var(--sobre-contenedor); }
+  .md pre { margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: var(--codigo); color: var(--sobre-codigo); font: 12.5px/1.5 var(--mono); overflow: auto; white-space: pre; }
+  .md blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--primario); color: var(--texto-2); }
+  .cargando { display: grid; place-items: center; gap: 12px; padding: 60px 0; color: var(--texto-2); }
+  .cargando .giro { width: 28px; height: 28px; border: 3px solid var(--contenedor); border-top-color: var(--primario); border-radius: 50%; animation: gira .8s linear infinite; }
+
+  /* Tarjeta de fin de turno */
+  .tarjeta-turno { align-self: stretch; border-radius: 16px; background: var(--superficie); box-shadow: var(--sombra); padding: 10px 12px; border: 1px solid var(--linea); }
+  .tarjeta-turno .cab { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+  .tarjeta-turno .cab .num { margin-left: auto; font: 500 11.5px var(--mono); }
+  .tarjeta-turno .arch { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 3px 6px; border-radius: 8px; font-size: 12.5px; }
+  .tarjeta-turno .arch:hover { background: var(--contenedor); }
+  .tarjeta-turno .arch .nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mas { color: var(--ok); font: 600 11.5px var(--mono); } .menos { color: var(--error); font: 600 11.5px var(--mono); }
+  .barra-cambio { display: inline-flex; gap: 1px; } .barra-cambio i { width: 6px; height: 6px; border-radius: 1px; background: var(--linea); }
+  .barra-cambio i.a { background: var(--ok); } .barra-cambio i.d { background: var(--error); }
+  .tarjeta-turno .fila { margin-top: 8px; }
+  .tarjeta-turno.deshecho { opacity: .6; }
+
+  /* Actividad */
+  .linea-tiempo { padding: 0 10px 14px; }
+  .turno { position: relative; margin: 0 0 10px 10px; padding: 8px 10px 8px 14px; border-radius: 12px; background: var(--superficie); box-shadow: var(--sombra); font-size: 12.5px; }
+  .turno::before { content: ""; position: absolute; left: -10px; top: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--primario); box-shadow: 0 0 0 3px var(--contenedor); }
+  .turno.deshecho::before { background: var(--texto-2); }
+  .turno .t { font-weight: 600; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turno .meta { color: var(--texto-2); font-size: 11.5px; margin-bottom: 4px; }
+  .evento { display: flex; gap: 8px; align-items: baseline; padding: 2px 4px 2px 10px; font-size: 12px; }
+  .evento .d { width: 14px; flex: none; text-align: center; } .evento .d.allow { color: var(--ok); } .evento .d.deny, .evento .d.ask-denied { color: var(--error); } .evento .d.ask-allowed { color: var(--aviso); }
+  .evento .a { font: 600 11.5px var(--mono); color: var(--primario); flex: none; }
+  .evento .o { color: var(--texto-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--mono); }
+  .integridad { margin: 0 14px 10px; font-size: 12px; padding: 6px 10px; border-radius: 10px; background: var(--ok-fondo); color: var(--ok); }
+  .integridad.rota { background: var(--error-fondo); color: var(--error); }
+
+  /* Problemas, hover y terminal con ✦ */
+  .problema { align-items: center; }
+  .problema .arreglar { opacity: 0; flex: none; }
+  .problema:hover .arreglar, .problema:focus-within .arreglar { opacity: 1; }
+  .hover .acciones-hover { margin-top: 8px; display: flex; gap: 6px; font-family: Roboto, "Segoe UI", system-ui, sans-serif; }
+  .hover { pointer-events: auto; }
+  .fallo-terminal { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0 6px; }
+  .entrada-agente .herramientas { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .entrada-agente .herramientas .chispa { padding: 4px 10px; font-size: 12px; }
+  .agente-cab { background: var(--superficie); }
+
+  /* Inicio: tarjeta del asistente */
+  .card.asistente { background: linear-gradient(160deg, color-mix(in srgb, #6f5cff 10%, var(--superficie)), var(--superficie) 60%); }
+  .card .nota-papers { font-size: 11.5px; color: var(--texto-2); margin-top: 10px; }
+
   /* Navegación inferior (móvil) */
   .nav-movil { display: none; }
   @media (max-width: 900px) {
     .cuerpo, .cuerpo.sin-agente { grid-template-columns: 1fr; }
-    .actividad, .abrir-rapido, #b-agente, #b-terminal, .barra .proyecto { display: none; }
+    .actividad, .abrir-rapido, #b-agente, #b-terminal, .barra .proyecto, .estado-ed, .asa, .asa-h, .migas { display: none !important; }
     .lateral, .centro, .agente { display: none; }
     body[data-vista="archivos"] .lateral, body[data-vista="git"] .lateral, body[data-vista="buscar"] .lateral,
     body[data-vista="editor"] .centro, body[data-vista="terminal"] .centro, body[data-vista="agente"] .agente { display: flex; }
@@ -319,6 +468,11 @@
     body[data-vista="terminal"] .centro { grid-template-rows: 0 0 0 1fr; --alto-terminal: 1fr; }
     body[data-vista="terminal"] .centro > :not(.terminal) { display: none; }
     .agente { border-left: 0; }
+    .barra { gap: 8px; padding-left: 10px; padding-right: 10px; overflow: hidden; }
+    .barra h1 { font-size: 15px; }
+    #b-asistente { padding: 6px 10px; font-size: 0; } #b-asistente::before { content: "✦"; font-size: 14px; }
+    .conexion { font-size: 0; padding: 6px; gap: 0; }
+    .agente, .conversacion { min-width: 0; max-width: 100vw; }
     .nav-movil { display: flex; justify-content: space-around; background: var(--superficie); border-top: 1px solid var(--linea);
                  padding: 4px 4px max(4px, env(safe-area-inset-bottom)); box-shadow: 0 -2px 10px rgba(11,30,73,.08); }
     .nav-movil button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; padding: 6px 0; color: var(--texto-2); border-radius: 14px; }
@@ -333,8 +487,10 @@
   <span id="proyecto" class="proyecto"></span>
   <span id="rama" class="pastilla oculto" title="Rama de git"></span>
   <button id="b-abrir" class="abrir-rapido" title="Abrir archivo (Ctrl+P)">⌕ Buscar archivo… <kbd>Ctrl P</kbd></button>
+  <button id="b-asistente" class="chispa" title="Acciones del asistente">✦ Asistente</button>
   <button id="b-terminal" class="boton-barra" aria-pressed="false" title="Terminal (Ctrl+`)">Terminal</button>
   <button id="b-agente" class="boton-barra" aria-pressed="true" title="Agente (Ctrl+I)">Agente</button>
+  <button id="b-tema" class="boton-redondo" title="Tema: automático" aria-label="Tema"></button>
   <span id="conexion" class="pastilla conexion" role="status">conectado</span>
 </header>
 
@@ -343,10 +499,13 @@
     <button data-panel="archivos" aria-pressed="true" title="Explorador (Ctrl+Shift+E)"><svg class="i" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4l2 2h7A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></svg></button>
     <button data-panel="buscar" aria-pressed="false" title="Buscar en el proyecto (Ctrl+Shift+F)"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>
     <button data-panel="problemas" aria-pressed="false" title="Problemas (Ctrl+Shift+M)"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5M12 17.5v.01"/></svg><span id="n-diag" class="insignia oculto"></span></button>
+    <button data-panel="esquema" aria-pressed="false" title="Esquema del archivo (Ctrl+Shift+O)"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h4M4 12h4M4 19h4M11 5h9M13 12h7M13 19h7M8 5v14"/></svg></button>
     <button data-panel="git" aria-pressed="false" title="Git (Ctrl+Shift+G)"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="8.5" r="2.5"/><path d="M6 8v8M18 11c0 4-6 3.5-11 6"/></svg><span id="n-git" class="insignia oculto"></span></button>
+    <button data-panel="actividad" aria-pressed="false" title="Actividad del agente y deshacer (Ctrl+Shift+Y)"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
   </nav>
 
   <aside class="lateral" aria-label="Panel lateral">
+    <div class="asa" data-asa="lateral" title="Arrastra para cambiar el ancho (doble clic: restablecer)"></div>
     <section id="p-archivos" class="panel">
       <header>Explorador
         <div class="acciones"><button id="b-nuevo" title="Archivo nuevo">＋</button><button id="b-refrescar" title="Refrescar">⟳</button></div>
@@ -366,10 +525,20 @@
       <header id="t-problemas">Problemas</header>
       <div id="problemas" class="scroll"></div>
     </section>
+    <section id="p-esquema" class="panel oculto">
+      <header>Esquema <span id="esquema-archivo" style="text-transform:none;letter-spacing:0;font-weight:500"></span></header>
+      <div class="campo-lat filtro"><input id="q-esquema" placeholder="Filtrar símbolos" aria-label="Filtrar símbolos"></div>
+      <div id="esquema" class="scroll"></div>
+    </section>
+    <section id="p-actividad" class="panel oculto">
+      <header>Actividad <div class="acciones"><button id="b-actividad" title="Refrescar">⟳</button></div></header>
+      <div id="actividad" class="scroll"></div>
+    </section>
     <section id="p-git" class="panel oculto">
       <header>Cambios <div class="acciones"><button id="b-git" title="Refrescar">⟳</button></div></header>
       <div class="commit">
         <textarea id="msg-commit" placeholder="Mensaje del commit (Ctrl+Intro)" aria-label="Mensaje del commit"></textarea>
+        <div class="fila"><button id="b-generar" class="chispa" title="Genera el mensaje a partir del diff preparado">✦ Generar mensaje</button><button id="b-revisar" class="tonal" title="El asistente revisa los cambios antes del commit">✦ Revisar</button></div>
         <button id="b-commit" class="relleno">✓ Commit</button>
       </div>
       <div id="cambios" class="scroll"></div>
@@ -378,6 +547,7 @@
 
   <main id="centro" class="centro">
     <div id="pestanas" class="pestanas" role="tablist"></div>
+    <nav id="migas" class="migas vacia" aria-label="Ruta y símbolo"></nav>
     <div id="area" class="area">
       <div id="bienvenida" class="inicio">
         <section class="heroe">
@@ -395,6 +565,14 @@
             <button class="accion" data-accion="ordenes"><span class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span><span><b>Paleta de órdenes</b><small>Todo lo que puede hacer Studio</small></span><kbd>Ctrl ⇧ P</kbd></button>
             <button class="accion" data-accion="terminal"><span class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M12 17h7"/></svg></span><span><b>Terminal</b><small>Con botones para compilar y probar</small></span><kbd>Ctrl `</kbd></button>
           </section>
+          <section class="card asistente" aria-labelledby="h-asistente">
+            <h3 id="h-asistente">✦ Asistente</h3>
+            <button class="accion" data-accion="revisar"><span class="ic">✦</span><span><b>Revisar los cambios</b><small>Errores, alcance, mantenibilidad y tests antes del commit</small></span></button>
+            <button class="accion" data-accion="commit"><span class="ic">✎</span><span><b>Generar el mensaje de commit</b><small>Desde el diff, los símbolos tocados y tu estilo</small></span></button>
+            <button class="accion" data-accion="concretar"><span class="ic">◎</span><span><b>Concretar una petición</b><small>Objetivo, archivos, pasos y preguntas antes de empezar</small></span></button>
+            <button class="accion" data-accion="actividad"><span class="ic">↶</span><span><b>Actividad y deshacer</b><small>Cada turno del agente, con sus archivos, reversible</small></span><kbd>Ctrl ⇧ Y</kbd></button>
+            <div class="nota-papers">Cada acción se basa en un paper de ACL/EMNLP 2026 sobre agentes de código (docs/papers.md §11).</div>
+          </section>
           <section class="card" aria-labelledby="h-recientes">
             <h3 id="h-recientes">Recientes</h3>
             <div id="recientes"></div>
@@ -410,13 +588,16 @@
               <kbd>Ctrl K</kbd><span>Información del símbolo</span>
               <kbd>Ctrl L</kbd><span>Preguntar al agente por la selección</span>
               <kbd>Ctrl G</kbd><span>Ir a una línea</span>
+              <kbd>Ctrl T</kbd><span>Ir a un símbolo del proyecto</span>
+              <kbd>Ctrl ⇧ O</kbd><span>Símbolos del archivo</span>
+              <kbd>Ctrl Alt Z</kbd><span>Deshacer el último turno del agente</span>
               <kbd>Ctrl ⇧ M</kbd><span>Problemas</span>
             </div>
           </section>
         </div>
       </div>
       <div id="editor" class="editor oculto">
-        <div id="gutter" class="gutter" aria-hidden="true"></div>
+        <div id="gutter" class="gutter" aria-hidden="true"><div id="numeros"></div><div id="capa-git"></div></div>
         <div class="codigo">
           <div id="resalte-linea" class="resalte-linea"></div>
           <div id="capa-diag" class="capa-diag" aria-hidden="true"></div>
@@ -432,14 +613,10 @@
       </div>
       <div id="vista-diff" class="diff oculto" aria-label="Diferencias"></div>
       <div id="binario" class="binario oculto">Archivo binario: no se puede editar aquí.</div>
-    </div>
-    <div class="estado-ed">
-      <span id="e-archivo">Sin archivo</span>
-      <span id="e-diag" class="cuenta-diag" title="Problemas (Ctrl+Shift+M)"></span>
-      <span id="e-lsp" title="Servidor de lenguaje"></span>
-      <div class="derecha"><button id="b-preguntar" class="oculto" title="Preguntar al agente sobre la selección (Ctrl+L)">✦ Preguntar al agente</button><span id="e-pos"></span><span id="e-lang"></span><span>UTF-8</span></div>
+      <div id="documento" class="documento oculto"></div>
     </div>
     <section id="terminal" class="terminal" aria-label="Terminal">
+      <div class="asa-h" data-asa="terminal" title="Arrastra para cambiar el alto"></div>
       <header>TERMINAL <span id="t-estado"></span><span id="tareas" class="tareas"></span><span style="flex:1"></span>
         <button id="t-parar" title="Detener (Ctrl+C)">■ Detener</button><button id="t-limpiar">Limpiar</button><button id="t-cerrar">✕</button></header>
       <pre id="salida" class="salida" aria-live="polite"></pre>
@@ -448,6 +625,7 @@
   </main>
 
   <aside id="agente" class="agente" aria-label="Agente">
+    <div class="asa" data-asa="agente" title="Arrastra para cambiar el ancho (doble clic: restablecer)"></div>
     <div class="agente-cab">
       <select id="sesion" aria-label="Conversación"></select>
       <span id="estado-sesion" class="chip oculto"></span>
@@ -460,10 +638,18 @@
         <input id="backend" placeholder="Agente: claude-code, gemini, copilot… (vacío = el propio)">
         <input id="acepta" placeholder="Criterio de aceptación: cargo test">
       </details>
-      <div class="fila"><span class="nota">Ctrl+Intro envía · el agente edita archivos de este proyecto</span><button id="b-enviar" class="relleno">Enviar</button></div>
+      <div class="herramientas"><button id="b-concretar" class="chispa" title="Convierte la petición en un enunciado claro, con archivos y preguntas, antes de enviarla">✦ Concretar</button><span class="nota">Ctrl+Intro envía · @archivo</span><button id="b-enviar" class="relleno">Enviar</button></div>
     </div>
   </aside>
 </div>
+
+<footer class="estado-ed" role="status">
+  <button id="e-rama" class="seg" title="Git (Ctrl+Shift+G)">⑂</button>
+  <span id="e-diag" class="cuenta-diag seg" title="Problemas (Ctrl+Shift+M)"></span>
+  <span id="e-agente" class="seg" title="Agente (Ctrl+I)"></span>
+  <span id="e-archivo">Sin archivo</span>
+  <div class="derecha"><button id="b-preguntar" class="oculto" title="Preguntar al agente sobre la selección (Ctrl+L)">✦ Preguntar al agente</button><span id="e-pos"></span><span id="e-lang"></span><span id="e-lsp" title="Servidor de lenguaje"></span><span>UTF-8</span><button id="e-tema" title="Cambiar de tema">Tema</button></div>
+</footer>
 
 <nav class="nav-movil" aria-label="Vistas">
   <button data-vista="agente" aria-pressed="true">✦<span>Agente</span></button>
@@ -474,8 +660,9 @@
 </nav>
 
 <div id="hover" class="hover oculto" role="tooltip"></div>
+<div id="avisos" class="avisos" aria-live="polite"></div>
 <div id="velo" class="velo oculto" role="dialog" aria-modal="true" aria-label="Abrir archivo">
-  <div class="dialogo"><input id="q-archivo" placeholder="Nombre de archivo… (empieza por > para órdenes)" aria-label="Nombre de archivo u orden"><ul id="l-archivos" role="listbox"></ul></div>
+  <div class="dialogo"><input id="q-archivo" placeholder="Archivo…   > órdenes · @ símbolos del archivo · # del proyecto · : línea" aria-label="Archivo, orden o símbolo"><ul id="l-archivos" role="listbox"></ul></div>
 </div>
 
 <script>
@@ -492,7 +679,16 @@ async function rpc(method, params) {
   return j.result;
 }
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-function aviso(t) { const a = el("div", "aviso-flotante", t); document.body.appendChild(a); setTimeout(() => a.remove(), 2600); }
+/** Aviso apilado abajo a la derecha: `tipo` ok | error | (info); `accion` = [texto, función]. */
+function aviso(t, tipo, accion) {
+  const box = $("avisos"), a = el("div", "aviso" + (tipo ? " " + tipo : ""));
+  a.setAttribute("role", tipo === "error" ? "alert" : "status");
+  a.append(el("span", "ic", tipo === "ok" ? "✓" : tipo === "error" ? "✗" : "ℹ"), el("span", "txt", t));
+  if (accion) { const b = el("button", "", accion[0]); b.onclick = () => { a.remove(); accion[1](); }; a.append(b); }
+  box.appendChild(a); while (box.children.length > 4) box.firstChild.remove();
+  setTimeout(() => a.remove(), accion ? 8000 : 3400);
+}
+const fallo = (e) => aviso(e.message || String(e), "error");
 const base = (p) => p.split("/").pop();
 const dir = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
 
@@ -551,7 +747,7 @@ function pintaPestanas() {
     const b = el("div", "pestana" + (t.id === S.activa ? " activa" : "") + (t.dirty ? " sucia" : ""));
     b.setAttribute("role", "tab"); b.tabIndex = 0; b.title = t.path;
     if (t.kind === "file") { const dot = insignia(base(t.path)); dot.className = "punto"; dot.textContent = ""; b.append(dot); }
-    b.append(el("span", "", (t.kind === "diff" ? "± " : "") + base(t.path)));
+    b.append(el("span", "", t.kind === "doc" ? "✦ " + t.path : (t.kind === "diff" ? "± " : "") + base(t.path)));
     const x = el("button", "cerrar"); x.title = "Cerrar (Ctrl+W)"; x.append(el("span", "", "×"));
     x.onclick = (e) => { e.stopPropagation(); cierra(t.id); };
     b.append(x);
@@ -567,13 +763,17 @@ function muestra() {
   $("editor").classList.toggle("oculto", !t || t.kind !== "file" || t.binary);
   $("binario").classList.toggle("oculto", !t || !t.binary);
   $("vista-diff").classList.toggle("oculto", !t || t.kind !== "diff");
+  $("documento").classList.toggle("oculto", !t || t.kind !== "doc");
+  if (t && t.kind === "doc") pintaDocumento(t);
+  pintaMigas(); pintaEsquema();
   $("e-archivo").textContent = t ? t.path + (t.dirty ? " ●" : "") : "Sin archivo";
   if (!t || t.kind !== "file") $("buscador").classList.add("oculto");
   $("e-lang").textContent = t && t.kind === "file" ? NOMBRE_LANG[t.lang] || "" : "";
   if (!t) { $("e-pos").textContent = ""; marcaArbol(); return; }
   if (t.kind === "diff") pintaDiff(t);
   else if (!t.binary) {
-    ta.value = t.content; repinta(); ta.scrollTop = t.scroll || 0; ta.scrollLeft = 0; sincroniza(); pintaDiags(); pintaEstadoLsp();
+    ta.value = t.content; repinta(); ta.scrollTop = t.scroll || 0; ta.scrollLeft = 0; sincroniza(); pintaDiags(); pintaEstadoLsp(); pintaMarcas();
+    if (!S.outline[t.path]) cargaEsquema(t, true);
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(t.sel || 0, t.sel || 0); if (t.irA) { irALinea(t.irA); t.irA = null; } posicion(); });
   }
   marcaArbol();
@@ -603,8 +803,8 @@ async function abre(path, linea) {
   try {
     const f = await rpc("fs.read", { path });
     const t = { id: "f:" + path, kind: "file", path, content: f.content, saved: f.content, binary: f.binary, dirty: false, lang: langDe(path), irA: linea };
-    S.tabs.push(t); activa(t.id); lspSync(t, true);
-  } catch (e) { aviso(e.message); }
+    S.tabs.push(t); activa(t.id); lspSync(t, true); cargaMarcas(t);
+  } catch (e) { fallo(e); }
 }
 async function abreDiff(path, staged) {
   const id = "d:" + (staged ? "s:" : "") + path;
@@ -613,7 +813,7 @@ async function abreDiff(path, staged) {
     const ya = S.tabs.find((t) => t.id === id);
     if (ya) { ya.text = text; activa(id); return; }
     S.tabs.push({ id, kind: "diff", path, text, staged }); activa(id);
-  } catch (e) { aviso(e.message); }
+  } catch (e) { fallo(e); }
 }
 function cierra(id) {
   const t = S.tabs.find((x) => x.id === id); if (!t) return;
@@ -625,7 +825,7 @@ function cierra(id) {
 async function guarda() {
   const t = tabActiva(); if (!t || t.kind !== "file" || t.binary) return;
   try {
-    await rpc("fs.write", { path: t.path, content: t.content }); t.saved = t.content; t.dirty = false; pintaPestanas(); muestra(); aviso("Guardado " + base(t.path));
+    await rpc("fs.write", { path: t.path, content: t.content }); t.saved = t.content; t.dirty = false; pintaPestanas(); muestra(); aviso("Guardado " + base(t.path), "ok"); cargaMarcas(t);
     if (LSP_EXT.test(t.path) && !S.lspError[grupoLsp(t.path)]) rpc("lsp.saved", { path: t.path }).catch(() => {});
   }
   catch (e) { aviso("No se pudo guardar: " + e.message); }
@@ -635,7 +835,7 @@ function repinta() {
   const t = tabActiva(); if (!t || t.kind !== "file") return;
   hlc.innerHTML = resalta(ta.value, t.lang) + "\n";
   const n = ta.value.split("\n").length;
-  if (gutter.dataset.n !== String(n)) { gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n"); gutter.dataset.n = n; }
+  if (gutter.dataset.n !== String(n)) { $("numeros").textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n"); gutter.dataset.n = n; }
 }
 function sincroniza() {
   hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; gutter.scrollTop = ta.scrollTop;
@@ -647,6 +847,7 @@ function posicion() {
   const antes = ta.value.slice(0, ta.selectionStart).split("\n");
   $("e-pos").textContent = `Lín ${antes.length}, col ${antes[antes.length - 1].length + 1}`;
   sincroniza();
+  if (S.lineaMigas !== antes.length) { S.lineaMigas = antes.length; pintaMigas(); marcaSimboloActual(); }
 }
 function irALinea(n) {
   const lines = ta.value.split("\n"); let pos = 0; for (let i = 0; i < Math.min(n - 1, lines.length); i++) pos += lines[i].length + 1;
@@ -657,7 +858,7 @@ ta.addEventListener("input", () => {
   t.content = ta.value; const sucia = t.content !== t.saved;
   if (sucia !== t.dirty) { t.dirty = sucia; pintaPestanas(); $("e-archivo").textContent = t.path + (sucia ? " ●" : ""); }
   cancelAnimationFrame(pendiente); pendiente = requestAnimationFrame(() => { repinta(); sincroniza(); });
-  lspSync(t);
+  lspSync(t); cargaEsquema(t);
 });
 ta.addEventListener("scroll", sincroniza);
 ["click", "keyup", "select"].forEach((ev) => ta.addEventListener(ev, posicion));
@@ -788,11 +989,16 @@ function pintaProblemas() {
   const box = $("problemas"); box.replaceChildren(); let e = 0, w = 0;
   for (const [p, ds] of Object.entries(S.diags)) {
     if (!ds.length) continue;
-    const g = el("div", "grupo"); const tt = el("div", "grupo-titulo"); tt.append(el("span", "", base(p)), el("span", "dir", dir(p)), el("span", "", "· " + ds.length)); g.appendChild(tt);
+    const g = el("div", "grupo"); const tt = el("div", "grupo-titulo"); tt.append(el("span", "", base(p)), el("span", "dir", dir(p)), el("span", "", "· " + ds.length));
+    const todos = el("button", "chispa mini", "✦ Arreglar todos"); todos.style.marginLeft = "auto"; todos.title = "El agente los arregla con ediciones mínimas";
+    todos.onclick = () => arreglar(p, ds); tt.appendChild(todos); g.appendChild(tt);
     for (const d of [...ds].sort((a, b) => a.severity - b.severity || a.line - b.line)) {
       if (d.severity === 1) e++; else if (d.severity === 2) w++;
-      const b = el("button", "problema"); b.append(el("span", "sev s" + d.severity, d.severity === 1 ? "✗" : d.severity === 2 ? "⚠" : "ℹ"), el("span", "txt", d.message), el("span", "pos", `${d.line + 1}:${d.character + 1}`));
-      b.title = (d.source ? d.source + ": " : "") + d.message; b.onclick = () => abre(p, d.line + 1); g.appendChild(b);
+      const b = el("div", "problema"); b.tabIndex = 0; b.setAttribute("role", "button");
+      const fx = el("button", "chispa mini arreglar", "✦"); fx.title = "Arreglar con el agente"; fx.onclick = (ev) => { ev.stopPropagation(); arreglar(p, [d]); };
+      b.append(el("span", "sev s" + d.severity, d.severity === 1 ? "✗" : d.severity === 2 ? "⚠" : "ℹ"), el("span", "txt", d.message), el("span", "pos", `${d.line + 1}:${d.character + 1}`), fx);
+      b.title = (d.source ? d.source + ": " : "") + d.message; b.onclick = () => abre(p, d.line + 1);
+      b.onkeydown = (ev) => { if (ev.key === "Enter") abre(p, d.line + 1); }; g.appendChild(b);
     }
     box.appendChild(g);
   }
@@ -810,7 +1016,7 @@ async function irADefinicion(pos) {
     const locs = await rpc("lsp.definition", { path: t.path, ...(pos || posCursor()) });
     if (!locs.length) { aviso("No se encontró la definición"); return; }
     abre(locs[0].path, locs[0].line + 1);
-  } catch (e) { aviso(e.message); }
+  } catch (e) { fallo(e); }
 }
 async function referencias() {
   const t = tabActiva(); if (!t || t.kind !== "file" || !LSP_EXT.test(t.path)) return;
@@ -821,7 +1027,7 @@ async function referencias() {
     const box = $("problemas"); box.replaceChildren(); $("t-problemas").textContent = `Referencias · ${locs.length}`;
     for (const l of locs) { const b = el("button", "problema"); b.append(el("span", "sev s3", "→"), el("span", "txt", l.path), el("span", "pos", `${l.line + 1}:${l.character + 1}`)); b.onclick = () => abre(l.path, l.line + 1); box.appendChild(b); }
     if (!locs.length) box.appendChild(el("div", "vacio", "Sin referencias."));
-  } catch (e) { aviso(e.message); }
+  } catch (e) { fallo(e); }
 }
 function ocultaHover() { $("hover").classList.add("oculto"); }
 async function muestraHover(pos, x, y) {
@@ -834,6 +1040,10 @@ async function muestraHover(pos, x, y) {
   const h = $("hover"); h.replaceChildren();
   for (const d of diags) h.appendChild(el("div", "diag-msg s" + d.severity, (d.severity === 1 ? "✗ " : "⚠ ") + d.message));
   if (texto) h.appendChild(document.createTextNode(texto));
+  if (diags.length) {
+    const f = el("div", "acciones-hover"), b = el("button", "chispa mini", "✦ Arreglar con el agente");
+    b.onclick = () => { ocultaHover(); arreglar(t.path, diags); }; f.appendChild(b); h.appendChild(f);
+  }
   h.classList.remove("oculto");
   h.style.left = Math.min(x, innerWidth - h.offsetWidth - 12) + "px"; h.style.top = Math.max(8, y - h.offsetHeight - 8) + "px";
 }
@@ -846,12 +1056,14 @@ function posRaton(e) {
   if (c >= l.length && vis > v) return null;
   return { line, character: c };
 }
-let tHover = 0;
+let tHover = 0, tOculta = 0;
 ta.addEventListener("mousemove", (e) => {
-  clearTimeout(tHover); ocultaHover();
+  clearTimeout(tHover); clearTimeout(tOculta); tOculta = setTimeout(ocultaHover, 260);
   tHover = setTimeout(() => { const p = posRaton(e); if (p) muestraHover(p, e.clientX, e.clientY); }, 550);
 });
-ta.addEventListener("mouseleave", () => { clearTimeout(tHover); ocultaHover(); });
+ta.addEventListener("mouseleave", (e) => { clearTimeout(tHover); if (!$("hover").contains(e.relatedTarget)) { clearTimeout(tOculta); tOculta = setTimeout(ocultaHover, 260); } });
+$("hover").addEventListener("mouseenter", () => clearTimeout(tOculta));
+$("hover").addEventListener("mouseleave", () => { tOculta = setTimeout(ocultaHover, 200); });
 ta.addEventListener("keydown", (e) => {
   ocultaHover();
   if (e.key === "F12") { e.preventDefault(); e.shiftKey ? referencias() : irADefinicion(); }
@@ -925,7 +1137,7 @@ async function renombra(path) {
     await rpc("fs.rename", { from: path, to });
     for (const t of S.tabs) if (t.kind === "file" && (t.path === path || t.path.startsWith(path + "/"))) { t.path = to + t.path.slice(path.length); t.id = "f:" + t.path; if (S.activa && S.activa.startsWith("f:" + path)) S.activa = t.id; }
     S.todos = null; pintaPestanas(); muestra(); aviso("Renombrado");
-  } catch (e) { aviso(e.message); }
+  } catch (e) { fallo(e); }
 }
 async function borra(path, esDir) {
   if (!confirm(`¿Borrar ${path}${esDir ? " (solo si está vacía)" : ""}? No se puede deshacer desde aquí.`)) return;
@@ -933,7 +1145,7 @@ async function borra(path, esDir) {
     await rpc("fs.delete", { path });
     const t = S.tabs.find((x) => x.kind === "file" && x.path === path); if (t) { t.dirty = false; cierra(t.id); }
     S.todos = null; aviso("Borrado " + path);
-  } catch (e) { aviso(e.message); }
+  } catch (e) { fallo(e); }
 }
 function marcaArbol() { const t = tabActiva(); document.querySelectorAll(".nodo").forEach((n) => n.classList.toggle("activo", !!t && t.kind === "file" && n.dataset.path === t.path)); }
 const refrescaArbol = () => cargaDir("", $("arbol"), 0);
@@ -941,7 +1153,7 @@ $("b-refrescar").onclick = () => { refrescaArbol(); refrescaGit(); };
 $("b-nuevo").onclick = async () => {
   const t = tabActiva(); const sugerido = t && t.kind === "file" ? (dir(t.path) ? dir(t.path) + "/" : "") : "";
   const p = prompt("Ruta del archivo nuevo (relativa al proyecto):", sugerido); if (!p || p.endsWith("/")) return;
-  try { await rpc("fs.write", { path: p, content: "" }); S.todos = null; await refrescaArbol(); abre(p); } catch (e) { aviso(e.message); }
+  try { await rpc("fs.write", { path: p, content: "" }); S.todos = null; await refrescaArbol(); abre(p); } catch (e) { fallo(e); }
 };
 
 /* ───────── Búsqueda ───────── */
@@ -974,6 +1186,7 @@ async function refrescaGit() {
   try {
     const st = await rpc("git.status");
     S.gitFiles = st.files; $("rama").textContent = "⑂ " + st.branch; $("rama").classList.remove("oculto");
+    $("e-rama").textContent = "⑂ " + st.branch + (st.files.length ? ` · ${st.files.length}✎` : " ✓");
     $("ini-rama").textContent = "⑂ " + st.branch; $("ini-cambios").textContent = st.files.length ? `· ${st.files.length} cambios sin commitear` : "· sin cambios";
     const n = st.files.length; $("n-git").textContent = n; $("n-git").classList.toggle("oculto", n === 0);
     box.replaceChildren();
@@ -986,7 +1199,7 @@ async function refrescaGit() {
         const c = el("div", "cambio"); c.tabIndex = 0; c.title = f.path;
         const nom = el("span", "nombre"); nom.append(document.createTextNode(base(f.path)), el("span", "dir", dir(f.path)));
         const btn = el("button", "mini", staged ? "−" : "+"); btn.title = staged ? "Quitar de lo preparado" : "Preparar";
-        btn.onclick = async (e) => { e.stopPropagation(); try { await rpc(staged ? "git.unstage" : "git.stage", { paths: [f.path] }); } catch (er) { aviso(er.message); } };
+        btn.onclick = async (e) => { e.stopPropagation(); try { await rpc(staged ? "git.unstage" : "git.stage", { paths: [f.path] }); } catch (er) { fallo(er); } };
         c.append(nom, btn, el("span", "letra " + letra, letra));
         c.onclick = () => (letra === "D" ? abreDiff(f.path, staged) : f.index === "?" ? abre(f.path) : abreDiff(f.path, staged));
         g.appendChild(c);
@@ -995,7 +1208,7 @@ async function refrescaGit() {
     };
     grupo("Preparados", prep, true); grupo("Cambios", sin, false);
     if (!n) box.appendChild(el("div", "vacio", "No hay cambios."));
-    if (sin.length && !prep.length) { const t = el("button", "tonal", "Preparar todo"); t.style.margin = "4px 14px"; t.onclick = () => rpc("git.stage", { paths: sin.map((f) => f.path) }).catch((e) => aviso(e.message)); box.appendChild(t); }
+    if (sin.length && !prep.length) { const t = el("button", "tonal", "Preparar todo"); t.style.margin = "4px 14px"; t.onclick = () => rpc("git.stage", { paths: sin.map((f) => f.path) }).catch((e) => fallo(e)); box.appendChild(t); }
   } catch (e) { S.gitFiles = []; box.replaceChildren(el("div", "vacio", e.message)); }
 }
 $("b-git").onclick = refrescaGit;
@@ -1017,7 +1230,7 @@ function escribeSalida(nodo) { const s = $("salida"); s.appendChild(nodo); s.scr
 async function ejecuta(cmd) {
   if (!cmd.trim()) return;
   S.historial.push(cmd); S.hIdx = -1;
-  escribeSalida(el("span", "orden", "❯ " + cmd + "\n"));
+  escribeSalida(el("span", "orden", "❯ " + cmd + "\n")); S.ultimaOrden = cmd; S.salidaOrden = "";
   try { const r = await rpc("terminal.run", { command: cmd }); S.terminal = r.id; $("t-estado").textContent = "· en marcha"; }
   catch (e) { escribeSalida(el("span", "fin-mal", e.message + "\n")); }
 }
@@ -1057,6 +1270,8 @@ function pintaSesiones() {
   $("b-parar").classList.toggle("oculto", !(s && (s.state === "running" || s.state === "waitingApproval")));
   const ocupado = s && (s.state === "running" || s.state === "waitingApproval");
   $("b-enviar").disabled = !!ocupado; $("b-enviar").textContent = ocupado ? "Trabajando…" : "Enviar";
+  const ea = $("e-agente"); ea.classList.toggle("trabajando", !!ocupado);
+  ea.textContent = s ? `✦ #${s.id} · ${ESTADOS[s.state] || s.state}` : "✦ Agente";
 }
 function pintaConversacion() {
   const box = $("conversacion"); box.replaceChildren();
@@ -1084,6 +1299,7 @@ function pintaConversacion() {
     return b;
   };
   for (const e of S.trans[S.sesion] || []) {
+    if (e.tipo === "cambios") { box.appendChild(tarjetaTurno(e)); continue; }
     const b = el("div", "burbuja " + e.tipo);
     if (e.tipo === "output") b.textContent = e.text; else b.appendChild(md(e.text));
     box.appendChild(fila(b, e.tipo));
@@ -1091,7 +1307,7 @@ function pintaConversacion() {
   if (S.vivo[S.sesion]) box.appendChild(fila(el("div", "burbuja assistant", S.vivo[S.sesion]), "assistant"));
   box.scrollTop = box.scrollHeight;
 }
-async function decide(id, allowed) { try { await rpc("approvals.decide", { id, allowed }); } catch (e) { aviso(e.message); } S.aprob = S.aprob.filter((a) => a.id !== id); pintaConversacion(); }
+async function decide(id, allowed) { try { await rpc("approvals.decide", { id, allowed }); } catch (e) { fallo(e); } S.aprob = S.aprob.filter((a) => a.id !== id); pintaConversacion(); }
 async function eligeSesion(id) {
   S.sesion = id === "" || id === null ? null : Number(id);
   if (S.sesion !== null && !S.trans[S.sesion]) S.trans[S.sesion] = await rpc("session.transcript", { session: S.sesion });
@@ -1110,7 +1326,7 @@ async function enviar() {
       S.sesion = info.id; S.trans[info.id] ||= [];
     }
     $("mensaje").value = "";
-  } catch (e) { aviso(e.message); }
+  } catch (e) { fallo(e); }
   pintaSesiones(); pintaConversacion();
 }
 $("b-enviar").onclick = enviar;
@@ -1132,12 +1348,17 @@ function puntua(q, s) {
 let selRapida = 0;
 async function abreRapido() {
   $("velo").classList.remove("oculto"); $("q-archivo").value = ""; $("q-archivo").focus();
-  if (!S.todos) { try { S.todos = await rpc("fs.files"); } catch (e) { S.todos = []; aviso(e.message); } }
+  if (!S.todos) { try { S.todos = await rpc("fs.files"); } catch (e) { S.todos = []; fallo(e); } }
   filtraRapido();
 }
 function filtraRapido() {
   const raw = $("q-archivo").value;
   if (raw.startsWith(">")) { filtraOrdenes(raw.slice(1).trim()); return; }
+  if (raw.startsWith("@")) { filtraSimbolos(raw.slice(1).trim(), false); return; }
+  if (raw.startsWith("#")) { filtraSimbolos(raw.slice(1).trim(), true); return; }
+  if (raw.startsWith(":")) { const n = parseInt(raw.slice(1), 10), ul = $("l-archivos"); ul.replaceChildren(); selRapida = 0;
+    if (n > 0 && tabActiva()?.kind === "file") { const li = el("li"); li.setAttribute("aria-selected", true); li.append(el("span", "", `Ir a la línea ${n}`)); li.onclick = () => { cierraRapido(); irALinea(n); }; ul.appendChild(li); }
+    return; }
   const q = raw.trim(), ul = $("l-archivos"); ul.replaceChildren(); selRapida = 0;
   const todos = S.todos || [];
   const lista = q ? todos.map((f) => [puntua(q, f), f]).filter((x) => x[0] >= 0).sort((a, b) => b[0] - a[0]).slice(0, 60).map((x) => x[1]) : todos.slice(0, 60);
@@ -1148,7 +1369,7 @@ $("q-archivo").addEventListener("input", filtraRapido);
 $("q-archivo").addEventListener("keydown", (e) => {
   const items = [...$("l-archivos").children];
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); selRapida = Math.max(0, Math.min(items.length - 1, selRapida + (e.key === "ArrowDown" ? 1 : -1))); items.forEach((li, i) => li.setAttribute("aria-selected", i === selRapida)); items[selRapida]?.scrollIntoView({ block: "nearest" }); }
-  else if (e.key === "Enter" && items[selRapida]) { const it = items[selRapida]; cierraRapido(); if (it.dataset.orden !== undefined) ORDENES[Number(it.dataset.orden)][2](); else abre(it.dataset.path); }
+  else if (e.key === "Enter" && items[selRapida]) items[selRapida].click();
   else if (e.key === "Escape") cierraRapido();
 });
 $("velo").onclick = (e) => { if (e.target === $("velo")) cierraRapido(); };
@@ -1166,7 +1387,7 @@ const ORDENES = [
   ["Buscar en el proyecto", "Ctrl Mayús F", () => panel("buscar")],
   ["Explorador", "Ctrl Mayús E", () => panel("archivos")],
   ["Git: ver cambios", "Ctrl Mayús G", () => panel("git")],
-  ["Git: preparar todo", "", async () => { await refrescaGit(); const p = S.gitFiles.map((f) => f.path); if (p.length) rpc("git.stage", { paths: p }).then(() => aviso("Preparado")).catch((e) => aviso(e.message)); }],
+  ["Git: preparar todo", "", async () => { await refrescaGit(); const p = S.gitFiles.map((f) => f.path); if (p.length) rpc("git.stage", { paths: p }).then(() => aviso("Preparado")).catch((e) => fallo(e)); }],
   ["Problemas", "Ctrl Mayús M", () => { pintaProblemas(); panel("problemas"); }],
   ["Terminal", "Ctrl `", () => terminal()],
   ["Agente: mostrar u ocultar", "Ctrl I", () => agente()],
@@ -1174,6 +1395,24 @@ const ORDENES = [
   ["Agente: preguntar por la selección", "Ctrl L", () => preguntaSeleccion()],
   ["Archivo nuevo", "", () => $("b-nuevo").click()],
   ["Refrescar explorador y git", "", () => { refrescaArbol(); refrescaGit(); }],
+  ["Ir a un símbolo del proyecto", "Ctrl T", () => abreSimbolos(true)],
+  ["Símbolos del archivo", "Ctrl Mayús O", () => abreSimbolos(false)],
+  ["Esquema del archivo", "", () => panel("esquema")],
+  ["✦ Asistente: revisar los cambios", "", () => asistente("revisar", {}, "Revisión de los cambios")],
+  ["✦ Asistente: generar el mensaje de commit", "", () => { panel("git"); generaCommit(); }],
+  ["✦ Asistente: concretar la petición", "", () => { agente(true); concretar(); }],
+  ["✦ Asistente: explicar el archivo o la selección", "", () => explicar()],
+  ["✦ Asistente: escribir tests", "", () => escribeTests()],
+  ["✦ Asistente: arreglar los problemas del archivo", "", () => { const t = tabActiva(); const ds = t ? S.diags[t.path] || [] : []; ds.length ? arreglar(t.path, ds) : aviso("No hay problemas en el archivo abierto"); }],
+  ["Agente: deshacer el último turno", "Ctrl Alt Z", () => deshacerTurno()],
+  ["Agente: rehacer el turno", "Ctrl Alt Mayús Z", () => rehacerTurno()],
+  ["Actividad del agente", "Ctrl Mayús Y", () => panel("actividad")],
+  ["Tema: cambiar", "", () => cambiaTema()],
+  ["Tema: automático", "", () => cambiaTema("auto")],
+  ["Tema: claro", "", () => cambiaTema("claro")],
+  ["Tema: oscuro", "", () => cambiaTema("oscuro")],
+  ["Tema: medianoche", "", () => cambiaTema("medianoche")],
+  ["Restablecer el tamaño de los paneles", "", () => restableceLayout()],
 ];
 let selOrden = 0;
 function paleta() {
@@ -1184,11 +1423,339 @@ function filtraOrdenes(q) {
   const lista = ORDENES.map((o) => [q ? puntua(q, o[0]) : 0, o]).filter((x) => x[0] >= 0).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
   lista.forEach((o, i) => { const li = el("li"); li.setAttribute("role", "option"); li.setAttribute("aria-selected", i === 0); li.append(el("span", "", o[0]), el("span", "atajo", o[1])); li.onclick = () => { cierraRapido(); o[2](); }; li.dataset.orden = ORDENES.indexOf(o); ul.appendChild(li); });
 }
-document.querySelectorAll("[data-accion]").forEach((b) => (b.onclick = () => ({ abrir: abreRapido, agente: () => agente(true), ordenes: paleta, terminal: () => terminal(true) })[b.dataset.accion]()));
+document.querySelectorAll("[data-accion]").forEach((b) => (b.onclick = () => ({ abrir: abreRapido, agente: () => agente(true), ordenes: paleta, terminal: () => terminal(true),
+  revisar: () => asistente("revisar", {}, "Revisión de los cambios"), commit: () => { panel("git"); generaCommit(); },
+  concretar: () => { agente(true); if (!$("mensaje").value.trim()) { aviso("Escribe tu petición y pulsa ✦ Concretar"); $("mensaje").focus(); } else concretar(); },
+  actividad: () => panel("actividad") })[b.dataset.accion]()));
+
+/* ───────── Temas ───────── */
+const TEMAS = ["auto", "claro", "oscuro", "medianoche"];
+const ICONO_TEMA = { auto: "◐", claro: "☀", oscuro: "☾", medianoche: "★" };
+const SVG_TEMA = {
+  auto: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+  claro: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>',
+  oscuro: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  medianoche: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="currentColor"/><path d="M17 3.5l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="currentColor"/></svg>',
+};
+const NOMBRE_TEMA = { auto: "Automático", claro: "Claro", oscuro: "Oscuro", medianoche: "Medianoche" };
+function temaGuardado() { try { return localStorage.getItem("pcode.tema") || "auto"; } catch { return "auto"; } }
+function aplicaTema(t) {
+  const oscuro = t === "oscuro" || t === "medianoche" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const r = document.documentElement; r.dataset.theme = t === "auto" ? (oscuro ? "oscuro" : "claro") : t;
+  if (oscuro) r.dataset.dark = ""; else delete r.dataset.dark;
+  $("b-tema").innerHTML = SVG_TEMA[t]; $("b-tema").title = "Tema: " + NOMBRE_TEMA[t] + " (clic para cambiar)";
+  $("b-tema").setAttribute("aria-label", "Tema: " + NOMBRE_TEMA[t]);
+  $("e-tema").textContent = "Tema: " + NOMBRE_TEMA[t];
+}
+function cambiaTema(t) {
+  const sig = t || TEMAS[(TEMAS.indexOf(temaGuardado()) + 1) % TEMAS.length];
+  try { localStorage.setItem("pcode.tema", sig); } catch { /* sin almacenamiento */ }
+  aplicaTema(sig);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => aplicaTema(temaGuardado()));
+$("b-tema").onclick = () => cambiaTema(); $("e-tema").onclick = () => cambiaTema();
+
+/* ───────── Paneles redimensionables ───────── */
+const LAYOUT_DEF = { lateral: 280, agente: 380, terminal: 240 };
+function layout() { try { return { ...LAYOUT_DEF, ...JSON.parse(localStorage.getItem("pcode.layout") || "{}") }; } catch { return { ...LAYOUT_DEF }; } }
+function aplicaLayout(l) {
+  const c = $("cuerpo").style; c.setProperty("--ancho-lateral", l.lateral + "px"); c.setProperty("--ancho-agente", l.agente + "px");
+  $("centro").style.setProperty("--alto-terminal-usuario", l.terminal + "px");
+}
+function guardaLayout(l) { try { localStorage.setItem("pcode.layout", JSON.stringify(l)); } catch { /* sin almacenamiento */ } }
+function limitaLayout(k, v) { const max = k === "terminal" ? innerHeight * 0.75 : innerWidth * 0.5; return Math.round(Math.min(max, Math.max(k === "terminal" ? 90 : 180, v))); }
+document.querySelectorAll("[data-asa]").forEach((h) => {
+  const k = h.dataset.asa; h.tabIndex = 0; h.setAttribute("role", "separator");
+  h.setAttribute("aria-orientation", k === "terminal" ? "horizontal" : "vertical");
+  h.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add("activa"); document.body.classList.add("arrastrando");
+    document.body.style.cursor = k === "terminal" ? "row-resize" : "col-resize";
+    const l = layout(), x0 = e.clientX, y0 = e.clientY, v0 = l[k];
+    const mueve = (ev) => { const d = k === "terminal" ? y0 - ev.clientY : k === "agente" ? x0 - ev.clientX : ev.clientX - x0; l[k] = limitaLayout(k, v0 + d); aplicaLayout(l); sincroniza(); };
+    const suelta = () => { h.classList.remove("activa"); document.body.classList.remove("arrastrando"); document.body.style.cursor = ""; h.removeEventListener("pointermove", mueve); guardaLayout(l); pintaDiags(); };
+    h.addEventListener("pointermove", mueve); h.addEventListener("pointerup", suelta, { once: true });
+  });
+  h.addEventListener("dblclick", () => { const l = layout(); l[k] = LAYOUT_DEF[k]; aplicaLayout(l); guardaLayout(l); });
+  h.addEventListener("keydown", (e) => {
+    const paso = { ArrowLeft: -16, ArrowRight: 16, ArrowUp: 16, ArrowDown: -16 }[e.key]; if (!paso) return;
+    e.preventDefault(); const l = layout(); l[k] = limitaLayout(k, l[k] + (k === "agente" ? -paso : paso)); aplicaLayout(l); guardaLayout(l);
+  });
+});
+function restableceLayout() { guardaLayout({ ...LAYOUT_DEF }); aplicaLayout(LAYOUT_DEF); aviso("Paneles restablecidos", "ok"); }
+
+/* ───────── Esquema, migas de pan y símbolos ───────── */
+S.outline = {}; S.marcas = {};
+let tEsquema = 0;
+const LETRA_K = { fn: "ƒ", method: "m", struct: "S", class: "C", enum: "E", trait: "T", interface: "I", impl: "≡", mod: "M", type: "τ", const: "K", macro: "!", h1: "#", h2: "#", h3: "#", h4: "#", h5: "#", h6: "#" };
+const NOMBRE_K = { fn: "función", method: "método", struct: "struct", class: "clase", enum: "enum", trait: "trait", interface: "interfaz", impl: "impl", mod: "módulo", type: "tipo", const: "constante", macro: "macro" };
+function kBadge(kind) { const b = el("span", "k k-" + kind, LETRA_K[kind] || "·"); b.title = NOMBRE_K[kind] || kind; b.setAttribute("aria-hidden", "true"); return b; }
+async function cargaEsquema(t, ya) {
+  if (!t || t.kind !== "file" || t.binary) return;
+  clearTimeout(tEsquema);
+  const f = async () => {
+    try { S.outline[t.path] = await rpc("fs.outline", { path: t.path, content: t.content }); } catch { S.outline[t.path] = []; }
+    if (tabActiva() === t) { pintaEsquema(); pintaMigas(); }
+  };
+  if (ya) await f(); else tEsquema = setTimeout(f, 600);
+}
+function cadenaSimbolos(syms, line) {
+  const c = [];
+  for (const s of syms) { if (s.line > line) break; while (c.length && c[c.length - 1].depth >= s.depth) c.pop(); c.push(s); }
+  return c;
+}
+function pintaMigas() {
+  const nav = $("migas"), t = tabActiva(); nav.replaceChildren();
+  if (!t || t.kind !== "file") { nav.classList.add("vacia"); return; }
+  nav.classList.remove("vacia");
+  const partes = t.path.split("/");
+  partes.forEach((p, i) => {
+    if (i) nav.appendChild(el("span", "sep", "›"));
+    const b = el("button", i === partes.length - 1 ? "ultimo" : "");
+    if (i === partes.length - 1) b.append(insignia(p));
+    b.append(document.createTextNode(p));
+    b.onclick = i === partes.length - 1 ? () => abreSimbolos(false) : () => { const d = partes.slice(0, i + 1).join("/"); S.abiertas.add(d); panel("archivos"); refrescaArbol(); };
+    nav.appendChild(b);
+  });
+  const syms = S.outline[t.path] || [];
+  for (const s of cadenaSimbolos(syms, S.lineaMigas || 1)) {
+    nav.appendChild(el("span", "sep", "›"));
+    const b = el("button"); b.append(kBadge(s.kind), document.createTextNode(s.name)); b.title = `${NOMBRE_K[s.kind] || s.kind} · línea ${s.line}`;
+    b.onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); menu(r.left, r.bottom + 4, syms.filter((x) => x.depth === s.depth).slice(0, 40).map((x) => [`${LETRA_K[x.kind] || "·"}  ${x.name}`, () => irALinea(x.line)])); };
+    nav.appendChild(b);
+  }
+}
+function pintaEsquema() {
+  if ($("p-esquema").classList.contains("oculto")) return;
+  const box = $("esquema"), t = tabActiva(); box.replaceChildren();
+  $("esquema-archivo").textContent = t && t.kind === "file" ? "· " + base(t.path) : "";
+  if (!t || t.kind !== "file") { box.appendChild(el("div", "vacio", "Abre un archivo para ver sus símbolos.")); return; }
+  const q = $("q-esquema").value.trim().toLowerCase(), syms = S.outline[t.path] || [];
+  const lista = q ? syms.filter((s) => s.name.toLowerCase().includes(q)) : syms;
+  for (const s of lista) {
+    const b = el("button", "simbolo"); b.style.paddingLeft = 8 + (q ? 0 : s.depth * 14) + "px"; b.dataset.linea = s.line;
+    b.append(kBadge(s.kind), el("span", "", s.name), el("span", "linea", s.line)); b.onclick = () => irALinea(s.line); box.appendChild(b);
+  }
+  if (!lista.length) box.appendChild(el("div", "vacio", syms.length ? "Ningún símbolo coincide." : "Sin símbolos reconocidos en este archivo."));
+  marcaSimboloActual();
+}
+function marcaSimboloActual() {
+  const t = tabActiva(); if (!t || t.kind !== "file") return;
+  const c = cadenaSimbolos(S.outline[t.path] || [], S.lineaMigas || 1), act = c[c.length - 1];
+  document.querySelectorAll("#esquema .simbolo").forEach((b) => b.classList.toggle("actual", !!act && Number(b.dataset.linea) === act.line));
+}
+$("q-esquema").addEventListener("input", pintaEsquema);
+function abreSimbolos(proyecto) { $("velo").classList.remove("oculto"); const i = $("q-archivo"); i.value = proyecto ? "#" : "@"; i.focus(); filtraRapido(); }
+let tSimbolos = 0;
+function filtraSimbolos(q, proyecto) {
+  const ul = $("l-archivos"); selRapida = 0;
+  const pinta = (hits) => {
+    ul.replaceChildren();
+    hits.slice(0, 80).forEach((h, i) => {
+      const li = el("li"); li.setAttribute("role", "option"); li.setAttribute("aria-selected", i === 0);
+      li.append(kBadge(h.kind), el("span", "", h.name), el("span", "dir", proyecto ? `${h.path}:${h.line}` : `línea ${h.line}`));
+      li.onclick = () => { cierraRapido(); proyecto ? abre(h.path, h.line) : irALinea(h.line); }; ul.appendChild(li);
+    });
+    if (!hits.length) ul.appendChild(el("li", "vacio", proyecto ? (q ? "Ningún símbolo coincide." : "Escribe parte del nombre de una función, tipo o clase.") : "Sin símbolos en este archivo."));
+  };
+  if (!proyecto) {
+    const t = tabActiva(); const syms = t && t.kind === "file" ? S.outline[t.path] || [] : [];
+    pinta(q ? syms.map((s) => [puntua(q, s.name), s]).filter((x) => x[0] >= 0).sort((a, b) => b[0] - a[0]).map((x) => x[1]) : syms);
+    return;
+  }
+  clearTimeout(tSimbolos);
+  if (!q) { pinta([]); return; }
+  tSimbolos = setTimeout(async () => { try { pinta(await rpc("search.symbols", { query: q })); } catch (e) { fallo(e); } }, 180);
+}
+
+/* ───────── Marcas de git en el margen ───────── */
+async function cargaMarcas(t) {
+  if (!t || t.kind !== "file" || t.binary) return;
+  try { S.marcas[t.path] = await rpc("git.lineChanges", { path: t.path }); } catch { S.marcas[t.path] = []; }
+  if (tabActiva() === t) pintaMarcas();
+}
+function pintaMarcas() {
+  const capa = $("capa-git"), t = tabActiva(); capa.replaceChildren();
+  if (!t || t.kind !== "file") return;
+  for (const m of S.marcas[t.path] || []) {
+    const d = el("div", "gm " + m.kind); d.style.top = (m.line - 1) * 21 + "px";
+    d.title = { added: "Línea nueva", modified: "Línea cambiada", deleted: "Líneas borradas aquí" }[m.kind] + " (clic: ver diff)";
+    d.onclick = () => abreDiff(t.path, false); capa.appendChild(d);
+  }
+}
+$("gutter").style.pointerEvents = "auto";
+
+/* ───────── Documentos del asistente ───────── */
+function mdBloques(text) {
+  const frag = document.createDocumentFragment();
+  const inline = (parent, t) => t.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).forEach((x) => {
+    if (/^`[^`]+`$/.test(x)) parent.appendChild(el("code", "", x.slice(1, -1)));
+    else if (/^\*\*[^*]+\*\*$/.test(x)) parent.appendChild(el("strong", "", x.slice(2, -2)));
+    else if (x) parent.appendChild(document.createTextNode(x));
+  });
+  text.split(/```[^\n]*\n?/).forEach((part, i) => {
+    if (i % 2 === 1) { frag.appendChild(el("pre", "", part.replace(/\n$/, ""))); return; }
+    let lista = null, parrafo = null;
+    for (const linea of part.split("\n")) {
+      const h = linea.match(/^(#{1,3})\s+(.*)$/), li = linea.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/), cita = linea.match(/^>\s?(.*)$/);
+      if (h) { lista = parrafo = null; const e = el("h" + h[1].length); inline(e, h[2]); frag.appendChild(e); }
+      else if (li) { parrafo = null; if (!lista) { lista = el(/^\s*\d/.test(linea) ? "ol" : "ul"); frag.appendChild(lista); } const e = el("li"); inline(e, li[1]); lista.appendChild(e); }
+      else if (cita) { lista = parrafo = null; const e = el("blockquote"); inline(e, cita[1]); frag.appendChild(e); }
+      else if (!linea.trim()) { lista = parrafo = null; }
+      else { lista = null; if (!parrafo) { parrafo = el("p"); frag.appendChild(parrafo); } else parrafo.appendChild(document.createElement("br")); inline(parrafo, linea); }
+    }
+  });
+  return frag;
+}
+function pintaDocumento(t) {
+  const box = $("documento"); box.replaceChildren();
+  const art = el("article"), cab = el("div", "cab");
+  cab.append(el("span", "k", "✦"), el("b", "", t.path), el("span", "", "· " + t.cuando.toLocaleTimeString()));
+  art.appendChild(cab);
+  if (t.cargando) { const c = el("div", "cargando"); c.append(el("div", "giro"), el("div", "", "El asistente está leyendo el contexto…")); art.appendChild(c); }
+  else { const m = el("div", "md"); m.appendChild(mdBloques(t.text)); art.appendChild(m); }
+  box.appendChild(art);
+}
+async function asistente(kind, extra, titulo) {
+  const t = { id: "doc:" + kind + ":" + Date.now(), kind: "doc", path: titulo, text: "", cargando: true, cuando: new Date() };
+  S.tabs.push(t); activa(t.id);
+  try { t.text = (await rpc("assist.run", { kind, ...extra })).text; } catch (e) { t.text = "**No se pudo:** " + e.message; }
+  t.cargando = false; if (S.activa === t.id) muestra();
+}
+function ocupado(b, on, texto) {
+  if (!b) return;
+  if (on) { b.dataset.txt = b.textContent; b.disabled = true; b.replaceChildren(el("span", "giro"), document.createTextNode(" " + (texto || "Pensando…"))); }
+  else { b.disabled = false; b.textContent = b.dataset.txt || b.textContent; }
+}
+async function generaCommit() {
+  const b = $("b-generar"); ocupado(b, true, "Leyendo el diff…");
+  try { $("msg-commit").value = (await rpc("assist.run", { kind: "commit" })).text; $("msg-commit").focus(); aviso("Mensaje generado: revísalo antes del commit", "ok"); }
+  catch (e) { fallo(e); }
+  ocupado(b, false);
+}
+async function concretar() {
+  const m = $("mensaje"), b = $("b-concretar");
+  if (!m.value.trim()) { aviso("Escribe primero lo que quieres: el asistente lo concreta con archivos, pasos y preguntas."); m.focus(); return; }
+  ocupado(b, true, "Explorando…");
+  try { m.value = (await rpc("assist.run", { kind: "concretar", text: m.value })).text; m.focus(); m.style.height = "auto"; m.style.height = Math.min(320, m.scrollHeight + 4) + "px"; aviso("Petición concretada: revísala y envía", "ok"); }
+  catch (e) { fallo(e); }
+  ocupado(b, false);
+}
+function selLineas() {
+  if (ta.selectionStart === ta.selectionEnd) return null;
+  return [ta.value.slice(0, ta.selectionStart).split("\n").length, ta.value.slice(0, ta.selectionEnd).split("\n").length];
+}
+async function alAgente(texto) { agente(true); if (innerWidth <= 900) vista("agente"); $("mensaje").value = texto; await enviar(); }
+async function arreglar(path, diags) {
+  try { await alAgente(await rpc("assist.prompt", { kind: "arreglar", path, diagnostics: diags.map((d) => ({ line: d.line, message: d.message, severity: d.severity })) })); }
+  catch (e) { fallo(e); }
+}
+function explicar() { const t = tabActiva(); if (!t || t.kind !== "file") { aviso("Abre un archivo primero"); return; } const l = selLineas(); asistente("explicar", { path: t.path, lines: l }, "Explicación de " + base(t.path) + (l ? ` ${l[0]}-${l[1]}` : "")); }
+async function escribeTests() {
+  const t = tabActiva(); if (!t || t.kind !== "file") { aviso("Abre un archivo primero"); return; }
+  try { await alAgente(await rpc("assist.prompt", { kind: "tests", path: t.path, lines: selLineas() })); } catch (e) { fallo(e); }
+}
+$("b-generar").onclick = generaCommit;
+$("b-revisar").onclick = () => asistente("revisar", {}, "Revisión de los cambios");
+$("b-concretar").onclick = concretar;
+$("b-asistente").onclick = (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  menu(r.left, r.bottom + 6, [
+    ["✦ Revisar los cambios", () => asistente("revisar", {}, "Revisión de los cambios")],
+    ["✎ Generar el mensaje de commit", () => { panel("git"); generaCommit(); }],
+    ["◎ Concretar la petición al agente", () => { agente(true); concretar(); }],
+    ["? Explicar el archivo o la selección", explicar],
+    ["✓ Escribir tests del archivo", escribeTests],
+    ["⚠ Arreglar los problemas del archivo", () => { const t = tabActiva(); const ds = t ? S.diags[t.path] || [] : []; ds.length ? arreglar(t.path, ds) : aviso("No hay problemas en el archivo abierto"); }],
+    ["↶ Deshacer el último turno del agente", deshacerTurno],
+    ["◷ Actividad del agente", () => panel("actividad")],
+  ]);
+};
+
+/* ───────── Turnos del agente: cambios, deshacer y actividad ───────── */
+function barraCambio(a, d) {
+  const s = el("span", "barra-cambio"), tot = a + d, na = tot ? Math.round((a / tot) * 5) : 0;
+  for (let i = 0; i < 5; i++) s.appendChild(el("i", !tot ? "" : i < na ? "a" : "d"));
+  return s;
+}
+function filaCambio(c, cls) {
+  const b = el("button", cls); b.title = c.path;
+  b.append(insignia(base(c.path)), el("span", "nombre", base(c.path) + (c.created ? " (nuevo)" : c.deleted ? " (borrado)" : "")),
+    el("span", "mas", "+" + c.added), el("span", "menos", "−" + c.removed), barraCambio(c.added, c.removed));
+  b.onclick = () => (c.deleted ? aviso("El archivo ya no existe") : S.gitFiles.some((f) => f.path === c.path) && !c.created ? abreDiff(c.path, false) : abre(c.path));
+  return b;
+}
+function tarjetaTurno(e) {
+  const d = el("div", "tarjeta-turno" + (e.deshecho ? " deshecho" : "")), cab = el("div", "cab");
+  const a = e.changes.reduce((x, c) => x + c.added, 0), r = e.changes.reduce((x, c) => x + c.removed, 0);
+  const num = el("span", "num"); num.append(el("span", "mas", "+" + a), document.createTextNode(" "), el("span", "menos", "−" + r));
+  cab.append(el("span", "", `✎ ${e.changes.length} ${e.changes.length === 1 ? "archivo cambiado" : "archivos cambiados"}`), num);
+  d.appendChild(cab);
+  for (const c of e.changes) d.appendChild(filaCambio(c, "arch"));
+  const f = el("div", "fila");
+  if (e.deshecho) { const b = el("button", "tonal", "↷ Rehacer"); b.onclick = async () => { if (await rehacerTurno()) { e.deshecho = false; pintaConversacion(); } }; f.appendChild(b); }
+  else { const b = el("button", "tonal", "↶ Deshacer el turno"); b.title = "Deja los archivos como estaban antes de este turno (Ctrl+Alt+Z)"; b.onclick = async () => { if (await deshacerTurno()) { e.deshecho = true; pintaConversacion(); } }; f.appendChild(b); }
+  const rv = el("button", "chispa mini", "✦ Revisar"); rv.onclick = () => asistente("revisar", {}, "Revisión de los cambios"); f.appendChild(rv);
+  d.appendChild(f);
+  return d;
+}
+async function deshacerTurno() {
+  try {
+    const t = await rpc("checkpoint.undo");
+    if (!t) { aviso("No hay ningún turno del agente que deshacer"); return false; }
+    aviso(`Deshecho «${t.label || "turno " + t.turn}» · ${t.changes.length} archivos`, "ok", ["Rehacer", rehacerTurno]);
+    if (!$("p-actividad").classList.contains("oculto")) pintaActividad();
+    return true;
+  } catch (e) { fallo(e); return false; }
+}
+async function rehacerTurno() {
+  try {
+    const t = await rpc("checkpoint.redo");
+    if (!t) { aviso("No hay nada que rehacer"); return false; }
+    aviso(`Rehecho «${t.label || "turno " + t.turn}»`, "ok");
+    if (!$("p-actividad").classList.contains("oculto")) pintaActividad();
+    return true;
+  } catch (e) { fallo(e); return false; }
+}
+function hace(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  return s < 60 ? "hace un momento" : s < 3600 ? `hace ${Math.round(s / 60)} min` : s < 86400 ? `hace ${Math.round(s / 3600)} h` : new Date(ms).toLocaleDateString();
+}
+const ICONO_DECISION = { allow: "✓", deny: "✗", "ask-allowed": "⚠", "ask-denied": "✗", unknown: "?" };
+async function pintaActividad() {
+  const box = $("actividad");
+  const [turnos, act] = await Promise.all([rpc("checkpoint.list").catch(() => []), rpc("workspace.activity", { limit: 120 }).catch(() => ({ items: [], intact: true }))]);
+  box.replaceChildren();
+  const f = el("div", "fila"); f.style.margin = "4px 14px 12px";
+  const u = el("button", "tonal", "↶ Deshacer"), r = el("button", "tonal", "↷ Rehacer");
+  u.title = "Ctrl+Alt+Z"; u.onclick = deshacerTurno; r.onclick = rehacerTurno; f.append(u, r); box.appendChild(f);
+  box.appendChild(el("div", "grupo-titulo", `Turnos del agente · ${turnos.length}`));
+  const tl = el("div", "linea-tiempo");
+  for (const t of turnos) {
+    const d = el("div", "turno" + (t.undone ? " deshecho" : ""));
+    d.append(el("div", "t", t.label || `Turno ${t.turn}`), el("div", "meta", `${hace(t.time * 1000)} · ${t.changes.length} archivos${t.undone ? " · deshecho" : ""}`));
+    for (const c of t.changes) d.appendChild(filaCambio(c, "cambio"));
+    tl.appendChild(d);
+  }
+  if (!turnos.length) tl.appendChild(el("div", "vacio", "Cuando el agente cambie archivos, cada turno aparecerá aquí y podrás deshacerlo."));
+  box.appendChild(tl);
+  box.appendChild(el("div", "grupo-titulo", `Acciones (auditoría) · ${act.items.length}`));
+  if (act.items.length) box.appendChild(el("div", "integridad" + (act.intact ? "" : " rota"), act.intact ? "✓ Auditoría íntegra: la cadena de hashes está intacta" : "✗ La auditoría no cuadra: alguien la ha modificado"));
+  for (const it of act.items) {
+    const e = el("div", "evento"); e.title = `${new Date(it.ts_ms).toLocaleString()} · ${it.actor} · ${it.decision}`;
+    e.append(el("span", "d " + it.decision, ICONO_DECISION[it.decision] || "·"), el("span", "a", it.action), el("span", "o", it.target));
+    box.appendChild(e);
+  }
+  if (!act.items.length) box.appendChild(el("div", "vacio", "Aún no hay acciones del agente en este proyecto."));
+}
+$("b-actividad").onclick = pintaActividad;
+$("e-rama").onclick = () => panel("git");
+$("e-agente").onclick = () => agente(true);
 
 /* ───────── Vistas, atajos y eventos ───────── */
 function panel(nombre) {
-  for (const p of ["archivos", "buscar", "problemas", "git"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
+  for (const p of ["archivos", "buscar", "problemas", "git", "esquema", "actividad"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
+  if (nombre === "esquema") pintaEsquema();
+  if (nombre === "actividad") pintaActividad();
   if (nombre === "problemas" && !$("problemas").children.length) pintaProblemas();
   document.querySelectorAll(".actividad button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.panel === nombre));
   if (nombre === "buscar") setTimeout(() => $("q").focus(), 0);
@@ -1217,6 +1784,10 @@ document.addEventListener("keydown", (e) => {
   else if ((k === "f" || k === "h") && !e.shiftKey && tabActiva()?.kind === "file") { e.preventDefault(); buscador(true); }
   else if (k === "g" && !e.shiftKey) { e.preventDefault(); irA(); }
   else if (k === "l") { e.preventDefault(); preguntaSeleccion(); }
+  else if (k === "t" && !e.shiftKey) { e.preventDefault(); abreSimbolos(true); }
+  else if (k === "o" && e.shiftKey) { e.preventDefault(); abreSimbolos(false); }
+  else if (k === "y" && e.shiftKey) { e.preventDefault(); panel("actividad"); }
+  else if (k === "z" && e.altKey) { e.preventDefault(); e.shiftKey ? rehacerTurno() : deshacerTurno(); }
 });
 window.addEventListener("beforeunload", (e) => { if (S.tabs.some((t) => t.dirty)) { e.preventDefault(); e.returnValue = ""; } });
 
@@ -1225,6 +1796,8 @@ async function alCambiarArchivos() {
   clearTimeout(tRefresco);
   tRefresco = setTimeout(async () => {
     S.todos = null; refrescaArbol(); refrescaGit();
+    const act = tabActiva(); if (act && act.kind === "file") cargaMarcas(act);
+    if (!$("p-actividad").classList.contains("oculto")) pintaActividad();
     for (const t of S.tabs) {
       if (t.kind === "file" && !t.dirty && !t.binary) {
         try { const f = await rpc("fs.read", { path: t.path }); if (f.content !== t.saved) { t.content = t.saved = f.content; if (t.id === S.activa) muestra(); lspSync(t, true); } } catch { /* borrado */ }
@@ -1253,11 +1826,22 @@ function conecta() {
         if (e.session === S.sesion) pintaConversacion(); break;
       case "approvalRequested": S.aprob.push(e.approval); pintaConversacion(); agente(true); if (innerWidth <= 900) vista("agente"); break;
       case "approvalResolved": S.aprob = S.aprob.filter((a) => a.id !== e.id); pintaConversacion(); break;
-      case "terminalOutput": if (e.id === S.terminal) escribeSalida(document.createTextNode(e.text)); break;
+      case "terminalOutput": if (e.id === S.terminal) { escribeSalida(document.createTextNode(e.text)); S.salidaOrden = (S.salidaOrden + e.text).slice(-60000); } break;
       case "terminalExit":
-        if (e.id === S.terminal) { escribeSalida(el("span", e.code === 0 ? "fin-ok" : "fin-mal", (e.code === 0 ? "✓ terminado" : `✗ salió con ${e.code ?? "señal"}`) + "\n")); $("t-estado").textContent = ""; S.terminal = null; }
+        if (e.id === S.terminal) {
+          escribeSalida(el("span", e.code === 0 ? "fin-ok" : "fin-mal", (e.code === 0 ? "✓ terminado" : `✗ salió con ${e.code ?? "señal"}`) + "\n")); $("t-estado").textContent = ""; S.terminal = null;
+          if (e.code !== 0 && e.code !== null) {
+            const cmd = S.ultimaOrden, out = S.salidaOrden, code = e.code, f = el("div", "fallo-terminal"), b = el("button", "chispa mini", "✦ Arreglar con el agente");
+            b.onclick = async () => { try { await alAgente(await rpc("assist.prompt", { kind: "orden", command: cmd, code, output: out })); } catch (er) { fallo(er); } };
+            f.appendChild(b); escribeSalida(f);
+          }
+        }
         break;
       case "filesChanged": alCambiarArchivos(); break;
+      case "turnFinished":
+        if (e.changes.length) { (S.trans[e.session] ||= []).push({ tipo: "cambios", changes: e.changes }); if (e.session === S.sesion) pintaConversacion(); }
+        if (!$("p-actividad").classList.contains("oculto")) pintaActividad();
+        break;
       case "diagnostics": S.diags[e.path] = e.items; pintaProblemas(); if (tabActiva()?.path === e.path) pintaDiags(); break;
     }
   };
@@ -1269,6 +1853,7 @@ async function cargaTareas() {
   } catch { /* sin tareas */ }
 }
 async function inicio() {
+  aplicaTema(temaGuardado()); aplicaLayout(layout());
   try { const i = await rpc("server.info"); const r = String(i.repo || ""); $("proyecto").textContent = r.split(/[\\/]/).filter(Boolean).pop() || r; $("ini-proyecto").textContent = $("proyecto").textContent; document.title = ($("proyecto").textContent || "") + " · PublicCode"; } catch { /* sin info */ }
   refrescaArbol(); refrescaGit(); cargaTareas();
   try { S.sesiones = await rpc("session.list"); } catch { S.sesiones = []; }

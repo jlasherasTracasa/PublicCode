@@ -217,6 +217,31 @@ pub fn fix_prompt(root: &Path, rel: &str, diags: &[Diag]) -> WsResult<String> {
     Ok(s)
 }
 
+/// Prompt para que el agente arregle lo que hizo fallar una orden del terminal: la orden, su código
+/// de salida y el final de la salida (donde suelen estar los errores).
+pub fn command_prompt(command: &str, code: Option<i32>, output: &str) -> WsResult<String> {
+    if command.trim().is_empty() {
+        return Err("falta la orden".into());
+    }
+    let lines: Vec<&str> = output.lines().collect();
+    let tail = lines[lines.len().saturating_sub(80)..].join("\n");
+    let tail: String = tail
+        .chars()
+        .rev()
+        .take(12_000)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    Ok(format!(
+        "La orden `{command}` falló ({}). Final de la salida:\n```text\n{tail}\n```\n\
+         Encuentra la causa (lee el código que señala el error antes de tocar nada), arréglala con la \
+         edición mínima y vuelve a ejecutar `{command}` para comprobar que ya pasa.",
+        code.map(|c| format!("código {c}"))
+            .unwrap_or_else(|| "sin código de salida".into())
+    ))
+}
+
 /// Palabras útiles para buscar en el proyecto: identificadores y palabras de 4 o más letras que
 /// no sean de uso común.
 fn keywords(text: &str) -> Vec<String> {
@@ -543,6 +568,18 @@ mod tests {
         assert!(!p.contains("a + b"), "solo la selección");
         let t = file_prompt(d.path(), "lib.rs", "tests", None).unwrap();
         assert!(t.starts_with("Escribe tests para `lib.rs`"));
+    }
+
+    #[test]
+    fn prompt_orden_fallida_lleva_el_final_de_la_salida() {
+        let out: String = (0..200).map(|i| format!("línea {i}\n")).collect();
+        let p = command_prompt("cargo test", Some(101), &out).unwrap();
+        assert!(p.contains("`cargo test` falló (código 101)"));
+        assert!(
+            p.contains("línea 199") && !p.contains("línea 100\n"),
+            "solo el final"
+        );
+        assert!(command_prompt(" ", None, "").is_err());
     }
 
     #[cfg(unix)]
