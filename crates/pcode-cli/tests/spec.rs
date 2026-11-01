@@ -1,5 +1,7 @@
 //! `pcode spec`: el ciclo completo con un modelo simulado (borrador, plan con una reparación,
 //! implementación tarea a tarea, verificación, cambio en la especificación y replanificación).
+// El ciclo completo usa órdenes de `sh` y solo corre en Unix: en Windows sus auxiliares no se usan.
+#![cfg_attr(not(unix), allow(dead_code))]
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::json;
