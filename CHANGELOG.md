@@ -2,7 +2,7 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado semántico.
 
-## [1.1.0] — sin publicar
+## [1.1.0] — 2026-11-01
 
 El agente trabaja mejor: localiza antes de leer, pregunta cuando hace falta, recuerda las decisiones del proyecto y
 comprueba antes de terminar. Cada función sale de un paper de ACL/EMNLP 2026 ([docs/papers.md §12](docs/papers.md#12-lo-que-entra-en-la-11)).
