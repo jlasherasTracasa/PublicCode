@@ -224,6 +224,7 @@
   .entrada-agente .nota { font-size: 11.5px; color: var(--texto-2); margin-right: auto; }
   details.opciones summary { font-size: 12px; color: var(--primario); cursor: pointer; }
   details.opciones input { width: 100%; margin-top: 4px; border: 1.5px solid var(--linea); border-radius: 10px; padding: 5px 8px; background: var(--superficie); }
+  details.opciones select { width: 100%; margin-top: 6px; border: 1.5px solid var(--linea); border-radius: 10px; padding: 6px 8px; background: var(--superficie); color: var(--texto); font: inherit; }
 
   /* Pulido visual */
   .ico.badge { width: 18px; height: 16px; border-radius: 5px; display: inline-grid; place-items: center; font: 700 8.5px/1 var(--mono);
@@ -457,6 +458,68 @@
   .card.asistente { background: linear-gradient(160deg, color-mix(in srgb, #6f5cff 10%, var(--superficie)), var(--superficie) 60%); }
   .card .nota-papers { font-size: 11.5px; color: var(--texto-2); margin-top: 10px; }
 
+  /* ───────── Ajustes de modelos ───────── */
+  .ajustes { position: absolute; inset: 0; overflow: auto; background: var(--fondo); padding: 24px 20px 60px; }
+  .ajustes .contenedor { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .aj-heroe { border-radius: 26px; padding: 24px 28px; color: #fff; display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+              background: radial-gradient(110% 160% at 100% 0%, #7c6cff 0%, transparent 55%), linear-gradient(135deg, var(--barra-a), var(--barra-b)); box-shadow: var(--sombra-2); }
+  .aj-heroe .ic { width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; background: rgba(255,255,255,.18); font-size: 28px; flex: none; }
+  .aj-heroe h2 { margin: 0 0 4px; font-size: 22px; } .aj-heroe p { margin: 0; opacity: .88; font-size: 13.5px; max-width: 620px; }
+  .aj-heroe .actual { margin-left: auto; background: rgba(255,255,255,.16); border-radius: 16px; padding: 10px 14px; font-size: 12.5px; min-width: 210px; }
+  .aj-heroe .actual b { display: block; font-size: 15px; margin-top: 2px; font-family: var(--mono); }
+  .aj-seccion h3 { margin: 4px 2px 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--texto-2); display: flex; align-items: center; gap: 8px; }
+  .aj-rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .prov { background: var(--superficie); border-radius: 20px; padding: 16px; box-shadow: var(--sombra); display: flex; flex-direction: column; gap: 10px; border: 2px solid transparent; transition: border-color .15s, transform .1s; }
+  .prov.pred { border-color: var(--primario); }
+  .prov .cab { display: flex; align-items: center; gap: 12px; }
+  .logo-prov { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; color: #fff; font: 700 14px/1 var(--mono); flex: none; box-shadow: var(--sombra); }
+  .prov .nom { font-weight: 600; font-size: 15px; } .prov .tipo { font-size: 12px; color: var(--texto-2); }
+  .prov .chips { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip-s { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--superficie-3); color: var(--texto-2); white-space: nowrap; }
+  .chip-s.pred { background: var(--primario); color: var(--sobre-primario); font-weight: 600; }
+  .prov dl { margin: 0; display: grid; grid-template-columns: 70px 1fr; gap: 4px 10px; font-size: 12.5px; }
+  .prov dt { color: var(--texto-2); } .prov dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+  .clave-ok { color: var(--ok); } .clave-no { color: var(--error); } .clave-aviso { color: var(--aviso); }
+  .prov .acciones { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+  .prov .acciones button { padding: 5px 11px; border-radius: 999px; font-size: 12.5px; background: var(--superficie-3); }
+  .prov .acciones button:hover { background: var(--contenedor); color: var(--sobre-contenedor); }
+  .prov .acciones .rojo { color: var(--error); margin-left: auto; }
+  .prov .resultado { font-size: 12px; border-radius: 10px; padding: 6px 9px; background: var(--superficie-2); }
+  .prov .resultado.ok { background: var(--ok-fondo); color: var(--ok); } .prov .resultado.mal { background: var(--error-fondo); color: var(--error); }
+  .plantillas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .plantilla { display: flex; align-items: center; gap: 10px; text-align: left; padding: 12px; border-radius: 16px; background: var(--superficie); box-shadow: var(--sombra); }
+  .plantilla:hover { transform: translateY(-2px); box-shadow: var(--sombra-2); }
+  .plantilla b { display: block; font-size: 13.5px; } .plantilla small { color: var(--texto-2); font-size: 11.5px; line-height: 1.3; display: block; }
+  .plantilla .local { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: var(--ok-fondo); color: var(--ok); margin-left: 4px; font-weight: 600; }
+  .detectado { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--ok-fondo); color: var(--ok); font-size: 13px; }
+  .detectado b { color: var(--texto); } .detectado .relleno { margin-left: auto; padding: 6px 14px; }
+  .buscando { color: var(--texto-2); font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+  .buscando .giro { width: 14px; height: 14px; border: 2px solid var(--contenedor); border-top-color: var(--primario); border-radius: 50%; animation: gira .8s linear infinite; }
+  .velo-form { position: fixed; inset: 0; background: rgba(4,20,46,.42); display: grid; place-items: center; z-index: 75; padding: 16px; }
+  .form-prov { width: min(620px, 100%); max-height: 92vh; overflow: auto; background: var(--superficie); border-radius: 24px; box-shadow: var(--sombra-2); padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .form-prov h3 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+  .campo { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--texto-2); }
+  .campo input { border: 1.5px solid var(--linea); border-radius: 12px; padding: 9px 11px; background: var(--superficie-2); color: var(--texto); font: 13.5px var(--mono); outline: none; }
+  .campo input:focus { border-color: var(--primario); background: var(--superficie); }
+  .campo .ayuda { font-size: 11.5px; } .campo .ayuda code { font: 11px var(--mono); }
+  .segmentado { display: inline-flex; background: var(--superficie-3); border-radius: 12px; padding: 3px; gap: 2px; flex-wrap: nowrap; max-width: 100%; }
+  .segmentado button { padding: 6px 10px; border-radius: 9px; font-size: 12.5px; color: var(--texto-2); white-space: nowrap; }
+  .segmentado button[aria-pressed="true"] { background: var(--superficie); color: var(--primario); font-weight: 600; box-shadow: var(--sombra); }
+  .fila-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fila-campos.tipo { grid-template-columns: minmax(0, 1fr) auto; }
+  .modelos-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow: auto; }
+  .modelos-chips button { font: 11.5px var(--mono); padding: 3px 9px; border-radius: 999px; background: var(--contenedor); color: var(--sobre-contenedor); }
+  .modelos-chips button:hover { background: var(--primario); color: var(--sobre-primario); }
+  .form-prov .pie { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+  .form-prov .pie label { margin-right: auto; display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  .estado-prueba { font-size: 12.5px; border-radius: 12px; padding: 8px 11px; }
+  .estado-prueba.ok { background: var(--ok-fondo); color: var(--ok); } .estado-prueba.mal { background: var(--error-fondo); color: var(--error); }
+  .aj-ayuda { background: var(--superficie); border-radius: 20px; padding: 16px 18px; box-shadow: var(--sombra); font-size: 13px; }
+  .aj-ayuda pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--codigo); color: var(--sobre-codigo); font: 12px/1.5 var(--mono); overflow: auto; }
+  .aj-ayuda .dos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .aj-rutas { font: 12px var(--mono); color: var(--texto-2); display: grid; gap: 4px; }
+  @media (max-width: 700px) { .fila-campos, .aj-ayuda .dos { grid-template-columns: 1fr; } .aj-heroe .actual { margin-left: 0; } }
+  .actividad .abajo { margin-top: auto; }
   /* Navegación inferior (móvil) */
   .nav-movil { display: none; }
   @media (max-width: 900px) {
@@ -503,6 +566,7 @@
     <button data-panel="esquema" aria-pressed="false" title="Esquema del archivo (Ctrl+Shift+O)"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h4M4 12h4M4 19h4M11 5h9M13 12h7M13 19h7M8 5v14"/></svg></button>
     <button data-panel="git" aria-pressed="false" title="Git (Ctrl+Shift+G)"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="8.5" r="2.5"/><path d="M6 8v8M18 11c0 4-6 3.5-11 6"/></svg><span id="n-git" class="insignia oculto"></span></button>
     <button data-panel="actividad" aria-pressed="false" title="Actividad del agente y deshacer (Ctrl+Shift+Y)"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
+    <button id="b-ajustes" class="abajo" title="Ajustes: modelos y proveedores (Ctrl+,)"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </nav>
 
   <aside class="lateral" aria-label="Panel lateral">
@@ -615,6 +679,7 @@
       <div id="vista-diff" class="diff oculto" aria-label="Diferencias"></div>
       <div id="binario" class="binario oculto">Archivo binario: no se puede editar aquí.</div>
       <div id="documento" class="documento oculto"></div>
+      <div id="ajustes" class="ajustes oculto" aria-label="Ajustes"></div>
     </div>
     <section id="terminal" class="terminal" aria-label="Terminal">
       <div class="asa-h" data-asa="terminal" title="Arrastra para cambiar el alto"></div>
@@ -635,7 +700,8 @@
     <div id="conversacion" class="conversacion" aria-live="polite"></div>
     <div class="entrada-agente">
       <textarea id="mensaje" placeholder="Pide algo: «arregla el test que falla», «explica este módulo»… · /recuerda guarda una decisión" aria-label="Mensaje al agente"></textarea>
-      <details class="opciones"><summary>Opciones (agente externo, aceptación)</summary>
+      <details class="opciones"><summary>Opciones (modelo, agente externo, aceptación)</summary>
+        <select id="proveedor" aria-label="Modelo de esta conversación" title="Proveedor y modelo de la conversación nueva"></select>
         <input id="backend" placeholder="Agente: claude-code, gemini, copilot… (vacío = el propio)">
         <input id="acepta" placeholder="Criterio de aceptación: cargo test">
       </details>
@@ -648,6 +714,7 @@
   <button id="e-rama" class="seg" title="Git (Ctrl+Shift+G)">⑂</button>
   <span id="e-diag" class="cuenta-diag seg" title="Problemas (Ctrl+Shift+M)"></span>
   <span id="e-agente" class="seg" title="Agente (Ctrl+I)"></span>
+  <button id="e-modelo" class="seg" title="Modelo por defecto (clic: Ajustes)">◆ Modelo</button>
   <span id="e-archivo">Sin archivo</span>
   <div class="derecha"><button id="b-preguntar" class="oculto" title="Preguntar al agente sobre la selección (Ctrl+L)">✦ Preguntar al agente</button><span id="e-pos"></span><span id="e-lang"></span><span id="e-lsp" title="Servidor de lenguaje"></span><span>UTF-8</span><button id="e-tema" title="Cambiar de tema">Tema</button></div>
 </footer>
@@ -748,7 +815,7 @@ function pintaPestanas() {
     const b = el("div", "pestana" + (t.id === S.activa ? " activa" : "") + (t.dirty ? " sucia" : ""));
     b.setAttribute("role", "tab"); b.tabIndex = 0; b.title = t.path;
     if (t.kind === "file") { const dot = insignia(base(t.path)); dot.className = "punto"; dot.textContent = ""; b.append(dot); }
-    b.append(el("span", "", t.kind === "doc" ? "✦ " + t.path : (t.kind === "diff" ? "± " : "") + base(t.path)));
+    b.append(el("span", "", t.kind === "ajustes" ? "⚙ Ajustes" : t.kind === "doc" ? "✦ " + t.path : (t.kind === "diff" ? "± " : "") + base(t.path)));
     const x = el("button", "cerrar"); x.title = "Cerrar (Ctrl+W)"; x.append(el("span", "", "×"));
     x.onclick = (e) => { e.stopPropagation(); cierra(t.id); };
     b.append(x);
@@ -765,6 +832,8 @@ function muestra() {
   $("binario").classList.toggle("oculto", !t || !t.binary);
   $("vista-diff").classList.toggle("oculto", !t || t.kind !== "diff");
   $("documento").classList.toggle("oculto", !t || t.kind !== "doc");
+  $("ajustes").classList.toggle("oculto", !t || t.kind !== "ajustes");
+  if (t && t.kind === "ajustes") pintaAjustes();
   if (t && t.kind === "doc") pintaDocumento(t);
   pintaMigas(); pintaEsquema();
   $("e-archivo").textContent = t ? t.path + (t.dirty ? " ●" : "") : "Sin archivo";
@@ -1329,7 +1398,8 @@ async function enviar() {
   try {
     if (s) { await rpc("session.send", { session: s.id, text }); }
     else {
-      const info = await rpc("session.create", { task: text, backend: $("backend").value || null, accept: $("acepta").value || null });
+      const prov = $("proveedor").value || null, pm = prov && S.ajustes ? (S.ajustes.providers.find((x) => x.name === prov) || {}).model : null;
+      const info = await rpc("session.create", { task: text, backend: $("backend").value || null, accept: $("acepta").value || null, provider: prov, model: pm || null });
       if (!S.sesiones.some((x) => x.id === info.id)) S.sesiones.unshift(info);
       S.sesion = info.id; S.trans[info.id] ||= [];
     }
@@ -1416,6 +1486,8 @@ const ORDENES = [
   ["Agente: rehacer el turno", "Ctrl Alt Mayús Z", () => rehacerTurno()],
   ["Actividad del agente", "Ctrl Mayús Y", () => panel("actividad")],
   ["Memoria del proyecto: ver y editar", "", () => abreMemoria()],
+  ["Ajustes: modelos y proveedores", "Ctrl ,", () => abreAjustes()],
+  ["Ajustes: buscar modelos locales (Ollama, LM Studio)", "", () => abreAjustes()],
   ["Tema: cambiar", "", () => cambiaTema()],
   ["Tema: automático", "", () => cambiaTema("auto")],
   ["Tema: claro", "", () => cambiaTema("claro")],
@@ -1774,6 +1846,157 @@ async function abreMemoria() {
 $("e-rama").onclick = () => panel("git");
 $("e-agente").onclick = () => agente(true);
 
+/* ───────── Ajustes de modelos ───────── */
+const LOGO_PROV = {
+  anthropic: ["A", "linear-gradient(135deg,#d97757,#b4553a)"], gemini: ["G", "linear-gradient(135deg,#4285f4,#9b72cb)"],
+  openai: ["O", "linear-gradient(135deg,#10a37f,#0b7a5f)"], openrouter: ["R", "linear-gradient(135deg,#6467f2,#4338ca)"],
+  ollama: ["Ol", "linear-gradient(135deg,#334155,#0f172a)"], lmstudio: ["LM", "linear-gradient(135deg,#6366f1,#3730a3)"],
+  vllm: ["v", "linear-gradient(135deg,#f59e0b,#b45309)"], litellm: ["Li", "linear-gradient(135deg,#0ea5e9,#0369a1)"],
+};
+function logoProv(name, kind) {
+  const [t, bg] = LOGO_PROV[name] || LOGO_PROV[kind] || [(name || "?").slice(0, 2).toUpperCase(), "linear-gradient(135deg,#64748b,#334155)"];
+  const d = el("div", "logo-prov", t); d.style.background = bg; d.setAttribute("aria-hidden", "true"); return d;
+}
+const NOMBRE_TIPO = { anthropic: "Anthropic", gemini: "Gemini", "openai-compatible": "OpenAI-compatible" };
+S.ajustes = null; S.detectados = null; S.pruebas = {};
+async function abreAjustes() {
+  const ya = S.tabs.find((t) => t.kind === "ajustes");
+  if (ya) activa(ya.id); else { S.tabs.push({ id: "ajustes", kind: "ajustes", path: "Ajustes" }); activa("ajustes"); }
+  await cargaAjustes(true);
+}
+async function cargaAjustes(detectar) {
+  try { S.ajustes = await rpc("settings.get"); } catch (e) { fallo(e); return; }
+  pintaModeloActual(); if (tabActiva()?.kind === "ajustes") pintaAjustes();
+  if (detectar) { S.detectados = null; if (tabActiva()?.kind === "ajustes") pintaAjustes();
+    try { S.detectados = await rpc("settings.detect"); } catch { S.detectados = []; }
+    if (tabActiva()?.kind === "ajustes") pintaAjustes(); }
+}
+function pintaModeloActual() {
+  const a = S.ajustes, e = $("e-modelo"); if (!e || !a) return;
+  e.textContent = a.defaultProvider ? `◆ ${a.defaultProvider}${a.defaultModel ? " · " + a.defaultModel : ""}` : a.fallback ? `◆ ${a.fallback}` : "◆ Elegir modelo";
+  const sel = $("proveedor"); if (!sel) return;
+  const prev = sel.value; sel.replaceChildren(new Option(a.defaultProvider ? `Predeterminado (${a.defaultProvider}${a.defaultModel ? " · " + a.defaultModel : ""})` : "Predeterminado", ""));
+  for (const p of a.providers) if (!(p.scope === "global" && a.providers.some((x) => x.scope === "proyecto" && x.name === p.name)))
+    sel.appendChild(new Option(`${p.name}${p.model ? " · " + p.model : ""}${p.keySet || p.kind === "openai-compatible" ? "" : " (sin clave)"}`, p.name));
+  sel.value = prev;
+}
+function pintaAjustes() {
+  const box = $("ajustes"), a = S.ajustes; box.replaceChildren(); if (!a) return;
+  const c = el("div", "contenedor"); box.appendChild(c);
+  const h = el("section", "aj-heroe"), txt = el("div");
+  txt.append(el("h2", "", "Modelos"), el("p", "", "Elige con qué modelos trabaja el agente: en la nube (Anthropic, Gemini, OpenAI, OpenRouter) o en tu equipo (Ollama, LM Studio, vLLM, LiteLLM). Las claves nunca se guardan en archivos: cada proveedor lee la suya de una variable de entorno."));
+  const act = el("div", "actual"); act.append(document.createTextNode("Predeterminado"), el("b", "", a.defaultProvider ? `${a.defaultProvider}${a.defaultModel ? " · " + a.defaultModel : ""}` : a.fallback ? `clave de ${a.fallback}` : "sin configurar"));
+  h.append(el("div", "ic", "◆"), txt, act); c.appendChild(h);
+  // Servidores locales detectados
+  const det = el("section", "aj-seccion");
+  if (S.detectados === null) { const b = el("div", "buscando"); b.append(el("span", "giro"), el("span", "", "Buscando Ollama, LM Studio y vLLM en este equipo…")); det.appendChild(b); }
+  else for (const s of S.detectados) {
+    if (a.providers.some((p) => p.url.replace(/\/$/, "") === s.url)) continue;
+    const d = el("div", "detectado"), t = el("div"); t.append(el("b", "", `${s.label} está funcionando en este equipo`), el("div", "", `${s.url} · ${s.models.length} modelos${s.models.length ? ": " + s.models.slice(0, 4).join(", ") + (s.models.length > 4 ? "…" : "") : ""}`));
+    const b = el("button", "relleno", "Añadir"); b.onclick = () => formProveedor({ name: s.name, kind: "openai-compatible", url: s.url, keyEnv: "", model: s.models[0] || "" }, s.models);
+    d.append(logoProv(s.name, ""), t, b); det.appendChild(d);
+  }
+  c.appendChild(det);
+  // Proveedores
+  const sp = el("section", "aj-seccion"); sp.appendChild(el("h3", "", `Tus proveedores · ${a.providers.length}`));
+  const g = el("div", "aj-rejilla");
+  for (const p of a.providers) g.appendChild(tarjetaProveedor(p));
+  if (!a.providers.length) g.appendChild(el("div", "vacio", a.fallback ? `Ahora se usa la clave de ${a.fallback} del entorno. Añade un proveedor para elegir modelo o usar otros.` : "Todavía no hay proveedores: añade uno abajo."));
+  sp.appendChild(g); c.appendChild(sp);
+  // Plantillas
+  const st = el("section", "aj-seccion"); st.appendChild(el("h3", "", "Añadir un proveedor"));
+  const pl = el("div", "plantillas");
+  for (const t of a.presets) {
+    const b = el("button", "plantilla"), tx = el("span"); const nb = el("b", "", t.label); if (t.local) nb.appendChild(el("span", "local", "LOCAL"));
+    tx.append(nb, el("small", "", t.hint)); b.append(logoProv(t.name, t.kind), tx);
+    b.onclick = () => formProveedor({ name: t.name, kind: t.kind, url: t.url, keyEnv: t.keyEnv, model: t.model }); pl.appendChild(b);
+  }
+  const otro = el("button", "plantilla"), ot = el("span"); ot.append(el("b", "", "Otro (URL propia)"), el("small", "", "cualquier API compatible con OpenAI"));
+  otro.append(logoProv("", ""), ot); otro.onclick = () => formProveedor({ name: "", kind: "openai-compatible", url: "", keyEnv: "", model: "" }); pl.appendChild(otro);
+  st.appendChild(pl); c.appendChild(st);
+  // Ayuda
+  const ay = el("section", "aj-ayuda");
+  ay.append(el("b", "", "Las claves, en variables de entorno"), el("div", "", "Define la variable antes de abrir Studio (o reinícialo después). Ejemplo con OpenRouter:"));
+  const dos = el("div", "dos"), l = el("div"), w = el("div");
+  l.append(el("small", "", "Linux (~/.bashrc)"), el("pre", "", 'export OPENROUTER_API_KEY="…"'));
+  w.append(el("small", "", "Windows (PowerShell, una vez)"), el("pre", "", '[Environment]::SetEnvironmentVariable(\n  "OPENROUTER_API_KEY", "…", "User")'));
+  dos.append(l, w); ay.appendChild(dos);
+  if (a.envKeys.length) ay.appendChild(el("div", "", "Definidas ahora: " + a.envKeys.join(", ")));
+  const rutas = el("div", "aj-rutas"); rutas.append(el("div", "", "Este equipo: " + (a.globalPath || "—")), el("div", "", "Este proyecto: " + a.projectPath));
+  ay.appendChild(rutas); c.appendChild(ay);
+}
+function tarjetaProveedor(p) {
+  const d = el("article", "prov" + (p.default ? " pred" : "")), cab = el("div", "cab"), nt = el("div"), chips = el("div", "chips");
+  nt.append(el("div", "nom", p.name), el("div", "tipo", NOMBRE_TIPO[p.kind] || p.kind));
+  if (p.default) chips.appendChild(el("span", "chip-s pred", "★ Predeterminado"));
+  chips.appendChild(el("span", "chip-s", p.scope === "proyecto" ? "Este proyecto" : "Este equipo"));
+  cab.append(logoProv(p.name, p.kind), nt, chips); d.appendChild(cab);
+  const dl = el("dl"), fila = (k, v, cls) => { const dd = el("dd", cls || "", v); dd.title = v; dl.append(el("dt", "", k), dd); };
+  fila("URL", p.url || "oficial"); fila("Modelo", p.model || "el del proveedor");
+  if (p.keyInline) fila("Clave", "⚠ escrita en el archivo", "clave-aviso");
+  else if (p.keyEnv) fila("Clave", (p.keySet ? "✓ " : "✗ ") + p.keyEnv + (p.keySet ? "" : " sin definir"), p.keySet ? "clave-ok" : "clave-no");
+  else fila("Clave", p.kind === "openai-compatible" ? "no hace falta" : p.keySet ? "✓ la del entorno" : "✗ falta", p.kind === "openai-compatible" || p.keySet ? "clave-ok" : "clave-no");
+  d.appendChild(dl);
+  const r = S.pruebas[p.scope + ":" + p.name];
+  if (r) { const x = el("div", "resultado " + (r.ok ? "ok" : "mal"), r.ok ? `✓ Responde · ${r.models.length} modelos` : "✗ " + r.error); d.appendChild(x); }
+  const ac = el("div", "acciones");
+  const pr = el("button", "", "Probar"); pr.onclick = async () => { pr.disabled = true; pr.textContent = "Probando…"; S.pruebas[p.scope + ":" + p.name] = await rpc("settings.test", { kind: p.kind, url: p.url, keyEnv: p.keyEnv || "" }).catch((e) => ({ ok: false, models: [], error: e.message })); pintaAjustes(); };
+  const ed = el("button", "", "Editar"); ed.onclick = () => formProveedor({ name: p.name, kind: p.kind, url: p.url, keyEnv: p.keyEnv || "", model: p.model || "", scope: p.scope, editando: true });
+  ac.append(pr, ed);
+  if (!p.default) { const pd = el("button", "", "★ Usar por defecto"); pd.onclick = () => ajusteRpc("settings.setDefault", { scope: p.scope, provider: p.name, model: p.model || "" }, `${p.name} es ahora el predeterminado`); ac.appendChild(pd); }
+  const bo = el("button", "rojo", "Quitar"); bo.onclick = () => { if (confirm(`¿Quitar el proveedor ${p.name}?`)) ajusteRpc("settings.deleteProvider", { scope: p.scope, name: p.name }, `${p.name} quitado`); };
+  ac.appendChild(bo); d.appendChild(ac);
+  return d;
+}
+async function ajusteRpc(metodo, params, okTxt) {
+  try { S.ajustes = await rpc(metodo, params); pintaModeloActual(); pintaAjustes(); aviso(okTxt, "ok"); return true; } catch (e) { fallo(e); return false; }
+}
+function formProveedor(v, modelos) {
+  document.querySelectorAll(".velo-form").forEach((x) => x.remove());
+  const velo = el("div", "velo-form"), f = el("form", "form-prov"); velo.setAttribute("role", "dialog"); velo.setAttribute("aria-modal", "true");
+  const titulo = el("h3"); titulo.append(logoProv(v.name, v.kind), document.createTextNode(v.editando ? `Editar ${v.name}` : "Añadir un proveedor"));
+  const campo = (etq, id, val, ph, ayuda) => { const c = el("label", "campo"); c.append(document.createTextNode(etq)); const i = el("input"); i.id = id; i.value = val || ""; i.placeholder = ph || ""; i.autocomplete = "off"; i.spellcheck = false; c.appendChild(i); if (ayuda) { const s = el("span", "ayuda"); s.innerHTML = ayuda; c.appendChild(s); } return c; };
+  let tipo = v.kind || "openai-compatible", ambito = v.scope || "global";
+  const seg = (opciones, actual, al) => { const s = el("div", "segmentado"); for (const [val, txt] of opciones) { const b = el("button", "", txt); b.type = "button"; b.setAttribute("aria-pressed", val === actual); b.onclick = () => { s.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); al(val); }; s.appendChild(b); } return s; };
+  const nombre = campo("Nombre", "f-nombre", v.name, "ollama, openrouter, empresa…", "minúsculas, números, - y _");
+  if (v.editando) nombre.querySelector("input").readOnly = true;
+  const tipoC = el("div", "campo"); tipoC.append(document.createTextNode("Tipo de API"), seg([["anthropic", "Anthropic"], ["gemini", "Gemini"], ["openai-compatible", "OpenAI-compatible"]], tipo, (x) => { tipo = x; }));
+  const url = campo("URL base", "f-url", v.url, "http://127.0.0.1:11434/v1", "vacía = la oficial (Anthropic, Gemini). Suele acabar en <code>/v1</code>");
+  const clave = campo("Variable de entorno con la clave", "f-clave", v.keyEnv, "OPENROUTER_API_KEY", "la clave no se guarda: solo el nombre de la variable. Vacía si no hace falta (Ollama, LM Studio)");
+  const modelo = campo("Modelo", "f-modelo", v.model, "claude-sonnet-5-5, qwen3, …", "pulsa «Probar conexión» para ver los modelos disponibles");
+  const dosA = el("div", "fila-campos tipo"); dosA.append(nombre, tipoC);
+  const dosB = el("div", "fila-campos"); dosB.append(clave, modelo);
+  const chips = el("div", "modelos-chips"), estado = el("div", "estado-prueba oculto");
+  const ponModelos = (ms) => { chips.replaceChildren(); for (const m of ms.slice(0, 120)) { const b = el("button", "", m); b.type = "button"; b.onclick = () => { $("f-modelo").value = m; }; chips.appendChild(b); } };
+  if (modelos) ponModelos(modelos);
+  const probar = el("button", "tonal", "⚡ Probar conexión"); probar.type = "button";
+  probar.onclick = async () => {
+    probar.disabled = true; probar.textContent = "Probando…";
+    const r = await rpc("settings.test", { kind: tipo, url: $("f-url").value.trim(), keyEnv: $("f-clave").value.trim() }).catch((e) => ({ ok: false, models: [], error: e.message }));
+    estado.className = "estado-prueba " + (r.ok ? "ok" : "mal"); estado.textContent = r.ok ? `✓ Conectado · ${r.models.length} modelos${r.keyMissing ? " (sin clave)" : ""}` : "✗ " + r.error;
+    ponModelos(r.models); if (r.ok && !$("f-modelo").value && r.models[0]) $("f-modelo").value = r.models[0];
+    probar.disabled = false; probar.textContent = "⚡ Probar conexión";
+  };
+  const ambC = el("div", "campo"); ambC.append(document.createTextNode("Guardar en"), seg([["global", "Este equipo (todos los proyectos)"], ["proyecto", "Solo este proyecto (pcode.toml)"]], ambito, (x) => { ambito = x; }));
+  if (v.editando) ambC.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  const pie = el("div", "pie"), lab = el("label"), chk = el("input"); chk.type = "checkbox"; chk.id = "f-pred"; chk.checked = !v.editando && !(S.ajustes?.providers.length);
+  lab.append(chk, document.createTextNode("Usar por defecto"));
+  const cancelar = el("button", "tonal", "Cancelar"); cancelar.type = "button"; cancelar.onclick = () => velo.remove();
+  const guardar = el("button", "relleno", "Guardar"); guardar.type = "submit";
+  pie.append(lab, probar, cancelar, guardar);
+  f.append(titulo, dosA, url, dosB, estado, chips, ambC, pie);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const ok = await ajusteRpc("settings.saveProvider", { scope: ambito, makeDefault: chk.checked, provider: { name: $("f-nombre").value.trim(), kind: tipo, url: $("f-url").value.trim(), keyEnv: $("f-clave").value.trim(), model: $("f-modelo").value.trim() } }, "Proveedor guardado");
+    if (ok) velo.remove();
+  };
+  velo.appendChild(f); velo.onclick = (e) => { if (e.target === velo) velo.remove(); };
+  velo.addEventListener("keydown", (e) => { if (e.key === "Escape") velo.remove(); });
+  document.body.appendChild(velo); (v.editando ? $("f-modelo") : $("f-nombre")).focus();
+}
+$("b-ajustes").onclick = abreAjustes;
+$("e-modelo").onclick = abreAjustes;
+
 /* ───────── Vistas, atajos y eventos ───────── */
 function panel(nombre) {
   for (const p of ["archivos", "buscar", "problemas", "git", "esquema", "actividad"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
@@ -1811,6 +2034,7 @@ document.addEventListener("keydown", (e) => {
   else if (k === "o" && e.shiftKey) { e.preventDefault(); abreSimbolos(false); }
   else if (k === "y" && e.shiftKey) { e.preventDefault(); panel("actividad"); }
   else if (k === "z" && e.altKey) { e.preventDefault(); e.shiftKey ? rehacerTurno() : deshacerTurno(); }
+  else if (k === ",") { e.preventDefault(); abreAjustes(); }
 });
 window.addEventListener("beforeunload", (e) => { if (S.tabs.some((t) => t.dirty)) { e.preventDefault(); e.returnValue = ""; } });
 
@@ -1881,7 +2105,7 @@ async function inicio() {
   refrescaArbol(); refrescaGit(); cargaTareas();
   try { S.sesiones = await rpc("session.list"); } catch { S.sesiones = []; }
   try { S.aprob = await rpc("approvals.list"); } catch { S.aprob = []; }
-  pintaSesiones(); pintaConversacion(); pintaPestanas(); muestra(); conecta(); estadoLspInicio();
+  pintaSesiones(); pintaConversacion(); pintaPestanas(); muestra(); conecta(); estadoLspInicio(); cargaAjustes(false);
   if (innerWidth <= 900) vista("agente");
 }
 inicio();

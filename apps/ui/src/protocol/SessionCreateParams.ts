@@ -19,4 +19,8 @@ model: string | null,
 /**
  * Orden de aceptación.
  */
-accept: string | null, };
+accept: string | null, 
+/**
+ * Proveedor de `[proveedores]` (si falta, el predeterminado).
+ */
+provider?: string, };

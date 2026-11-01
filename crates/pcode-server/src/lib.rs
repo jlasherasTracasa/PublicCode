@@ -3,6 +3,7 @@ pub mod approvals;
 pub mod assist;
 pub use pcode_tools::outline;
 mod server;
+pub mod settings;
 pub mod workspace;
 
 pub use approvals::ApprovalBroker;

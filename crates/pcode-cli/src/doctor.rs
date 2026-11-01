@@ -268,15 +268,218 @@ pub enum ConfigCmd {
         #[arg(long = "config", default_value = "pcode.toml")]
         config: PathBuf,
     },
+    /// Proveedores de modelos (global y del proyecto), con el estado de su clave; `--probar` lista
+    /// sus modelos y `--detectar` busca Ollama, LM Studio y vLLM en este equipo.
+    Proveedores {
+        /// Prueba cada proveedor (lista sus modelos).
+        #[arg(long = "probar")]
+        test: bool,
+        /// Busca servidores de modelos locales.
+        #[arg(long = "detectar")]
+        detect: bool,
+    },
+    /// Añade o cambia un proveedor (la clave no se guarda: se indica su variable de entorno).
+    Proveedor {
+        /// Nombre (`ollama`, `openrouter`, `empresa`…). Si coincide con una plantilla conocida, rellena
+        /// el resto.
+        nombre: String,
+        /// `anthropic`, `gemini` u `openai-compatible`.
+        #[arg(long = "tipo")]
+        kind: Option<String>,
+        /// URL base (p. ej. `http://127.0.0.1:11434/v1`).
+        #[arg(long = "url")]
+        url: Option<String>,
+        /// Variable de entorno con la clave (p. ej. `OPENROUTER_API_KEY`).
+        #[arg(long = "clave-env")]
+        key_env: Option<String>,
+        /// Modelo por defecto de este proveedor.
+        #[arg(long = "modelo")]
+        model: Option<String>,
+        /// Dejarlo como proveedor por defecto.
+        #[arg(long = "predeterminado")]
+        default: bool,
+        /// Guardarlo en el `pcode.toml` del proyecto en lugar de en la configuración global.
+        #[arg(long = "proyecto")]
+        project: bool,
+    },
+    /// Quita un proveedor.
+    Quitar {
+        /// Nombre.
+        nombre: String,
+        /// Del `pcode.toml` del proyecto.
+        #[arg(long = "proyecto")]
+        project: bool,
+    },
+}
+
+fn settings_paths(global: &Path) -> pcode_server::settings::ConfigPaths {
+    pcode_server::settings::ConfigPaths {
+        global: Some(global.to_path_buf()),
+        project: PathBuf::from("pcode.toml"),
+    }
+}
+
+fn print_providers(v: &pcode_server::settings::SettingsView) {
+    if v.providers.is_empty() {
+        println!(
+            "No hay proveedores configurados{}.",
+            v.fallback
+                .as_ref()
+                .map(|e| format!(" (se usará la clave de {e})"))
+                .unwrap_or_default()
+        );
+        println!(
+            "Añade uno: pcode config proveedor ollama  ·  pcode config proveedor anthropic --predeterminado"
+        );
+        return;
+    }
+    for p in &v.providers {
+        let clave = match (&p.key_env, p.key_set, p.key_inline) {
+            (_, _, true) => "⚠ clave escrita en el archivo".to_string(),
+            (Some(e), true, _) => format!("✓ {e}"),
+            (Some(e), false, _) => format!("✗ {e} sin definir"),
+            (None, _, _) if p.kind == "openai-compatible" => "sin clave".to_string(),
+            (None, true, _) => "✓ clave del entorno".to_string(),
+            (None, false, _) => "✗ sin clave".to_string(),
+        };
+        println!(
+            "{} {:<12} {:<18} {:<34} {:<22} {}{}",
+            if p.default { "★" } else { " " },
+            p.name,
+            p.kind,
+            if p.url.is_empty() {
+                "(URL oficial)"
+            } else {
+                &p.url
+            },
+            p.model.as_deref().unwrap_or("-"),
+            clave,
+            if p.scope == "proyecto" {
+                "  [proyecto]"
+            } else {
+                ""
+            }
+        );
+    }
 }
 
 /// Ejecuta `pcode config …`.
-pub fn config_cmd(c: ConfigCmd) -> anyhow::Result<i32> {
+pub async fn config_cmd(c: ConfigCmd) -> anyhow::Result<i32> {
     let path = user_config_path().ok_or_else(|| {
         anyhow::anyhow!("no se encuentra el directorio de configuración del usuario")
     })?;
     match c {
         ConfigCmd::Ruta => println!("{}", path.display()),
+        ConfigCmd::Proveedores { test, detect } => {
+            let v = pcode_server::settings::get(&settings_paths(&path));
+            print_providers(&v);
+            if test {
+                for p in &v.providers {
+                    let r = pcode_server::settings::test_provider(
+                        &p.kind,
+                        &p.url,
+                        p.key_env.as_deref().unwrap_or(""),
+                    )
+                    .await;
+                    match r.error {
+                        None => println!(
+                            "  {}: ✓ {} modelos{}",
+                            p.name,
+                            r.models.len(),
+                            if r.models.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    " ({}{})",
+                                    r.models
+                                        .iter()
+                                        .take(6)
+                                        .cloned()
+                                        .collect::<Vec<_>>()
+                                        .join(", "),
+                                    if r.models.len() > 6 { ", …" } else { "" }
+                                )
+                            }
+                        ),
+                        Some(e) => println!("  {}: ✗ {e}", p.name),
+                    }
+                }
+            }
+            if detect {
+                let found = pcode_models::discover::detect_local(
+                    pcode_models::discover::LOCAL_CANDIDATES,
+                    std::time::Duration::from_millis(900),
+                )
+                .await;
+                if found.is_empty() {
+                    println!("No hay Ollama, LM Studio ni vLLM escuchando en este equipo.");
+                }
+                for s in found {
+                    println!(
+                        "● {} en {} con {} modelos → pcode config proveedor {} --url {}",
+                        s.label,
+                        s.url,
+                        s.models.len(),
+                        s.name,
+                        s.url
+                    );
+                }
+            }
+        }
+        ConfigCmd::Proveedor {
+            nombre,
+            kind,
+            url,
+            key_env,
+            model,
+            default,
+            project,
+        } => {
+            let preset = pcode_server::settings::PRESETS
+                .iter()
+                .find(|p| p.name == nombre);
+            let input = pcode_config::edit::ProviderInput {
+                kind: kind
+                    .or_else(|| preset.map(|p| p.kind.to_string()))
+                    .unwrap_or_else(|| "openai-compatible".into()),
+                url: url
+                    .or_else(|| preset.map(|p| p.url.to_string()))
+                    .unwrap_or_default(),
+                key_env: key_env
+                    .or_else(|| preset.map(|p| p.key_env.to_string()))
+                    .unwrap_or_default(),
+                model: model
+                    .or_else(|| preset.map(|p| p.model.to_string()))
+                    .unwrap_or_default(),
+                name: nombre,
+            };
+            let v = pcode_server::settings::save_provider(
+                &settings_paths(&path),
+                if project { "proyecto" } else { "global" },
+                &input,
+                default,
+            )
+            .map_err(anyhow::Error::msg)?;
+            println!(
+                "Guardado en {}",
+                if project {
+                    "pcode.toml (proyecto)".to_string()
+                } else {
+                    path.display().to_string()
+                }
+            );
+            print_providers(&v);
+        }
+        ConfigCmd::Quitar { nombre, project } => {
+            let v = pcode_server::settings::delete_provider(
+                &settings_paths(&path),
+                if project { "proyecto" } else { "global" },
+                &nombre,
+            )
+            .map_err(anyhow::Error::msg)?;
+            println!("Quitado {nombre}.");
+            print_providers(&v);
+        }
         ConfigCmd::Init => {
             if path.exists() {
                 println!("Ya existe: {}", path.display());

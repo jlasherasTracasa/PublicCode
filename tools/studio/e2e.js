@@ -28,6 +28,18 @@ const CAPTURAS = arg('--capturas', null);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pcode-e2e-'));
 const D = path.join(TMP, 'demo');
 const MOCK = path.join(TMP, 'mock.json');
+const GLOBAL = path.join(TMP, 'config', 'pcode.toml');
+const http = require('http');
+/** Servidor OpenAI-compatible falso en 127.0.0.1 que solo responde a GET /v1/models. */
+function servidorModelos() {
+  return new Promise((ok) => {
+    const s = http.createServer((req, res) => {
+      if (req.url === '/v1/models') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data: [{ id: 'qwen3-coder' }, { id: 'llama3.3' }] })); }
+      else { res.writeHead(404); res.end('{}'); }
+    });
+    s.listen(0, '127.0.0.1', () => ok({ s, url: `http://127.0.0.1:${s.address().port}/v1` }));
+  });
+}
 const enPath = (b) => (process.env.PATH || '').split(path.delimiter).some((d) => fs.existsSync(path.join(d, b)));
 const PYRIGHT = enPath('pyright-langserver');
 
@@ -54,7 +66,8 @@ function proyecto() {
 
 function arranca() {
   return new Promise((ok, mal) => {
-    const p = spawn(PCODE, ['studio', '--no-abrir', '--puerto', '0'], { cwd: D, env: { ...process.env, PCODE_MOCK_SCRIPT: MOCK, NO_COLOR: '1' } });
+    // PCODE_CONFIG: la configuración global de la prueba, para no tocar la del usuario.
+    const p = spawn(PCODE, ['studio', '--no-abrir', '--puerto', '0'], { cwd: D, env: { ...process.env, PCODE_MOCK_SCRIPT: MOCK, NO_COLOR: '1', PCODE_CONFIG: GLOBAL } });
     let err = '';
     const t = setTimeout(() => mal(new Error('Studio no arrancó en 20 s: ' + err)), 20000);
     p.stderr.on('data', (b) => { err += b; const m = err.match(/http:\/\/\S+/); if (m) { clearTimeout(t); ok({ proc: p, url: m[0] }); } });
@@ -211,6 +224,40 @@ function arranca() {
     await p.keyboard.press('Control+Shift+p'); await p.keyboard.type('memoria del proyecto'); await p.waitForTimeout(150);
     await p.keyboard.press('Enter'); await p.waitForTimeout(500);
     ok((await p.textContent('#e-archivo')).startsWith('.pcode/memoria.md'), 'paleta: Memoria del proyecto abre el archivo en el editor');
+
+    // ── Ajustes de modelos: proveedor por URL, probar conexión, predeterminado ──
+    const falso = await servidorModelos();
+    await p.keyboard.press('Control+Comma'); await p.waitForSelector('#ajustes:not(.oculto) .aj-heroe', { timeout: 8000 });
+    ok(await p.locator('.pestana', { hasText: 'Ajustes' }).count() === 1, 'Ctrl+, abre la pestaña Ajustes');
+    ok(await p.locator('.plantilla').count() >= 9, 'plantillas de proveedores (Anthropic, Gemini, OpenAI, OpenRouter, Ollama…)');
+    await p.waitForFunction(() => !document.querySelector('.buscando'), null, { timeout: 8000 }).catch(() => {});
+    await p.locator('.plantilla', { hasText: 'Otro (URL propia)' }).click();
+    await p.fill('#f-nombre', 'equipo'); await p.fill('#f-url', falso.url);
+    await p.locator('.form-prov button', { hasText: 'Probar conexión' }).click();
+    await p.waitForSelector('.estado-prueba.ok', { timeout: 10000 }).catch(() => {});
+    ok((await p.textContent('.estado-prueba')).includes('2 modelos'), 'probar conexión lista los modelos: ' + await p.textContent('.estado-prueba'));
+    await p.locator('.modelos-chips button', { hasText: 'llama3.3' }).click();
+    ok((await p.inputValue('#f-modelo')) === 'llama3.3', 'elegir un modelo de la lista');
+    await p.check('#f-pred');
+    await captura(p, 'studio-ajustes-form.png');
+    await p.locator('.form-prov button', { hasText: 'Guardar' }).click(); await p.waitForTimeout(500);
+    ok(await p.locator('.prov.pred', { has: p.locator('.nom', { hasText: /^equipo$/ }) }).count() === 1, 'el proveedor queda como predeterminado');
+    ok((await p.textContent('#e-modelo')).includes('equipo · llama3.3'), 'la barra de estado muestra el modelo: ' + await p.textContent('#e-modelo'));
+    const glob = fs.readFileSync(GLOBAL, 'utf8');
+    ok(glob.includes('[proveedores.equipo]') && glob.includes('proveedor = "equipo"'), 'guardado en la configuración global');
+    await p.locator('.plantilla', { hasText: 'Otro (URL propia)' }).click();
+    await p.fill('#f-nombre', 'nube'); await p.fill('#f-url', 'https://modelos.example/v1'); await p.fill('#f-clave', 'PCODE_E2E_SIN_DEFINIR');
+    await p.locator('.form-prov button', { hasText: 'Guardar' }).click(); await p.waitForTimeout(500);
+    ok((await p.locator('.prov', { has: p.locator('.nom', { hasText: /^nube$/ }) }).textContent()).includes('✗ PCODE_E2E_SIN_DEFINIR sin definir'), 'avisa de la variable de la clave sin definir');
+    ok(!fs.readFileSync(GLOBAL, 'utf8').includes('sk-'), 'no hay claves en el archivo');
+    await p.locator('.prov', { has: p.locator('.nom', { hasText: /^equipo$/ }) }).locator('button', { hasText: 'Probar' }).click();
+    await p.waitForSelector('.prov .resultado.ok', { timeout: 10000 }).catch(() => {});
+    ok(await p.locator('.prov .resultado.ok').count() === 1, 'probar desde la tarjeta');
+    await captura(p, 'studio-ajustes.png');
+    await p.locator('details.opciones summary').click();
+    ok((await p.locator('#proveedor option').allTextContents()).some((t) => t.startsWith('equipo · llama3.3')), 'el agente puede elegir proveedor y modelo por conversación');
+    await p.locator('details.opciones summary').click();
+    falso.s.close();
 
     // ── Paleta ──
     await p.keyboard.press('Control+Shift+p'); await p.keyboard.type('medianoche'); await p.waitForTimeout(150);

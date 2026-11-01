@@ -154,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Mcp { config }) => std::process::exit(doctor::mcp_cmd(&config).await?),
         Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
-        Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c)?),
+        Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c).await?),
         Some(Cmd::Actualizar { check }) => std::process::exit(update::update(check).await?),
         Some(Cmd::Flow(c)) => std::process::exit(flow_cmd::flow_cmd(c).await?),
         Some(Cmd::Sandbox(c)) => std::process::exit(backend_run::sandbox_cmd(c).await?),

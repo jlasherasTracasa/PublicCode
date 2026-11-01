@@ -279,6 +279,10 @@ pub struct SessionCreateParams {
     pub model: Option<String>,
     /// Orden de aceptación.
     pub accept: Option<String>,
+    /// Proveedor de `[proveedores]` (si falta, el predeterminado).
+    #[serde(default)]
+    #[ts(optional)]
+    pub provider: Option<String>,
 }
 
 /// Petición JSON-RPC.
@@ -395,6 +399,18 @@ pub mod methods {
     pub const ASSIST_PROMPT: &str = "assist.prompt";
     /// Respuesta directa del modelo (sin tools): mismos parámetros → `{text}`.
     pub const ASSIST_RUN: &str = "assist.run";
+    /// Ajustes de modelos: `{}` → proveedores, predeterminado, plantillas y variables definidas.
+    pub const SETTINGS_GET: &str = "settings.get";
+    /// Crea o cambia un proveedor: `{scope, provider: {name, kind, url, keyEnv, model}, makeDefault?}`.
+    pub const SETTINGS_SAVE_PROVIDER: &str = "settings.saveProvider";
+    /// Borra un proveedor: `{scope, name}`.
+    pub const SETTINGS_DELETE_PROVIDER: &str = "settings.deleteProvider";
+    /// Proveedor y modelo por defecto: `{scope, provider?, model?, contextMax?}`.
+    pub const SETTINGS_SET_DEFAULT: &str = "settings.setDefault";
+    /// Prueba un proveedor y lista sus modelos: `{kind, url, keyEnv}` → `{ok, models, error?, keyMissing}`.
+    pub const SETTINGS_TEST: &str = "settings.test";
+    /// Busca servidores de modelos en este equipo (Ollama, LM Studio, vLLM): `{}` → `{name, label, url, models}[]`.
+    pub const SETTINGS_DETECT: &str = "settings.detect";
     /// Lanza una orden en la terminal integrada: `{command}` → `{id}`.
     pub const TERMINAL_RUN: &str = "terminal.run";
     /// Detiene una orden: `{id}`.

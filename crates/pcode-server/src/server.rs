@@ -37,6 +37,8 @@ pub struct AppState {
     inputs: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<tokio::process::ChildStdin>>>>,
     /// Servidores de lenguaje del proyecto.
     pub lsp: pcode_lsp::LspManager,
+    /// Archivo de configuración global (se puede cambiar en las pruebas).
+    global_config: Mutex<Option<PathBuf>>,
 }
 
 impl AppState {
@@ -64,6 +66,7 @@ impl AppState {
             }),
         );
         Arc::new(AppState {
+            global_config: Mutex::new(pcode_config::user_config_path()),
             lsp,
             repo,
             pcode_bin,
@@ -99,6 +102,19 @@ impl AppState {
             .or_default()
             .push(entry.clone());
         self.emit(Event::Transcript { session: id, entry });
+    }
+
+    /// Archivos de configuración (global y del proyecto) que editan los Ajustes.
+    pub fn config_paths(&self) -> crate::settings::ConfigPaths {
+        crate::settings::ConfigPaths {
+            global: self.global_config.lock().unwrap().clone(),
+            project: self.repo.join("pcode.toml"),
+        }
+    }
+
+    /// Cambia el archivo de configuración global (para las pruebas).
+    pub fn set_global_config(&self, p: Option<PathBuf>) {
+        *self.global_config.lock().unwrap() = p;
     }
 
     fn create_session(self: &Arc<Self>, p: SessionCreateParams) -> SessionInfo {
@@ -201,8 +217,11 @@ impl AppState {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
-        if let Some(m) = &p.model {
+        if let Some(m) = p.model.as_deref().filter(|m| !m.is_empty()) {
             cmd.args(["--modelo", m]);
+        }
+        if let Some(pr) = p.provider.as_deref().filter(|p| !p.is_empty()) {
+            cmd.args(["--proveedor", pr]);
         }
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -403,8 +422,11 @@ impl AppState {
         if let Some(b) = &p.backend {
             cmd.args(["--backend", b]);
         }
-        if let Some(m) = &p.model {
+        if let Some(m) = p.model.as_deref().filter(|m| !m.is_empty()) {
             cmd.args(["--modelo", m]);
+        }
+        if let Some(pr) = p.provider.as_deref().filter(|p| !p.is_empty()) {
+            cmd.args(["--proveedor", pr]);
         }
         if let Some(a) = &p.accept {
             cmd.args(["--acepta", a]);
@@ -1008,6 +1030,86 @@ async fn rpc(
                 ),
             }
         }
+        methods::SETTINGS_GET => rpc_ok(
+            id,
+            serde_json::to_value(crate::settings::get(&st.config_paths())).unwrap_or_default(),
+        ),
+        methods::SETTINGS_SAVE_PROVIDER => {
+            let paths = st.config_paths();
+            let scope = str_param(&p, "scope");
+            let make_default = p
+                .get("makeDefault")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let input = p.get("provider").cloned().unwrap_or_default();
+            let input = pcode_config::edit::ProviderInput {
+                name: str_param(&input, "name"),
+                kind: str_param(&input, "kind"),
+                url: str_param(&input, "url"),
+                key_env: str_param(&input, "keyEnv"),
+                model: str_param(&input, "model"),
+            };
+            ws_reply(
+                id,
+                blocking(move || {
+                    crate::settings::save_provider(&paths, &scope, &input, make_default)
+                })
+                .await,
+            )
+        }
+        methods::SETTINGS_DELETE_PROVIDER => {
+            let (paths, scope, name) = (
+                st.config_paths(),
+                str_param(&p, "scope"),
+                str_param(&p, "name"),
+            );
+            ws_reply(
+                id,
+                blocking(move || crate::settings::delete_provider(&paths, &scope, &name)).await,
+            )
+        }
+        methods::SETTINGS_SET_DEFAULT => {
+            let (paths, scope) = (st.config_paths(), str_param(&p, "scope"));
+            let provider = p.get("provider").and_then(|v| v.as_str()).map(String::from);
+            let model = p.get("model").and_then(|v| v.as_str()).map(String::from);
+            let ctx = p.get("contextMax").and_then(|v| v.as_u64());
+            ws_reply(
+                id,
+                blocking(move || {
+                    crate::settings::set_default(
+                        &paths,
+                        &scope,
+                        provider.as_deref(),
+                        model.as_deref(),
+                        ctx,
+                    )
+                })
+                .await,
+            )
+        }
+        methods::SETTINGS_TEST => rpc_ok(
+            id,
+            serde_json::to_value(
+                crate::settings::test_provider(
+                    &str_param(&p, "kind"),
+                    &str_param(&p, "url"),
+                    &str_param(&p, "keyEnv"),
+                )
+                .await,
+            )
+            .unwrap_or_default(),
+        ),
+        methods::SETTINGS_DETECT => rpc_ok(
+            id,
+            serde_json::to_value(
+                pcode_models::discover::detect_local(
+                    pcode_models::discover::LOCAL_CANDIDATES,
+                    Duration::from_millis(900),
+                )
+                .await,
+            )
+            .unwrap_or_default(),
+        ),
         methods::TERMINAL_RUN => ws_reply(
             id,
             st.run_terminal(str_param(&p, "command"))
@@ -1625,5 +1727,65 @@ echo '{"tipo":"fin","problema":null}'
                 .unwrap_or(false);
             assert!(!alive, "el proceso {p} sigue vivo");
         }
+    }
+
+    #[tokio::test]
+    async fn rpc_ajustes_de_modelos() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("proyecto");
+        std::fs::create_dir_all(&root).unwrap();
+        let st = AppState::new(root.clone(), "/bin/true".into(), None);
+        st.set_global_config(Some(d.path().join("usuario/pcode.toml")));
+        let a = router(st);
+        let (_, v) = call(&a, "settings.get", serde_json::json!({}), None).await;
+        assert!(v["result"]["presets"].as_array().unwrap().len() >= 6, "{v}");
+        let (_, v) = call(
+            &a,
+            "settings.saveProvider",
+            serde_json::json!({"scope": "global", "makeDefault": true,
+                "provider": {"name": "ollama", "kind": "openai-compatible",
+                    "url": "http://127.0.0.1:11434/v1", "keyEnv": "", "model": "qwen3"}}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"]["defaultProvider"], "ollama", "{v}");
+        assert_eq!(v["result"]["providers"][0]["model"], "qwen3");
+        let (_, v) = call(
+            &a,
+            "settings.saveProvider",
+            serde_json::json!({"scope": "global", "provider": {"name": "x", "kind": "anthropic", "keyEnv": "sk-ant-123"}}),
+            None,
+        )
+        .await;
+        assert!(
+            v["error"]["message"].as_str().unwrap().contains("variable"),
+            "{v}"
+        );
+        let (_, v) = call(
+            &a,
+            "settings.setDefault",
+            serde_json::json!({"scope": "proyecto", "provider": "ollama", "model": "llama3.3"}),
+            None,
+        )
+        .await;
+        assert_eq!(
+            v["result"]["defaultModel"], "llama3.3",
+            "el proyecto manda: {v}"
+        );
+        assert!(
+            std::fs::read_to_string(root.join("pcode.toml"))
+                .unwrap()
+                .contains("llama3.3")
+        );
+        let (_, v) = call(
+            &a,
+            "settings.deleteProvider",
+            serde_json::json!({"scope": "global", "name": "ollama"}),
+            None,
+        )
+        .await;
+        assert_eq!(v["result"]["providers"].as_array().unwrap().len(), 0, "{v}");
+        let (_, v) = call(&a, "settings.detect", serde_json::json!({}), None).await;
+        assert!(v["result"].is_array(), "{v}");
     }
 }

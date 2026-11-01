@@ -65,6 +65,32 @@ preguntar_ordenes = ["docker *"]
 denegar_ordenes = ["git push --force*"]
 ```
 
+### 3.1 Modelos desde la pantalla de Ajustes o desde la terminal
+
+No hace falta editar el TOML a mano. En Studio, **Ajustes** (el engranaje de la barra lateral, Ctrl+, o el modelo de la
+barra de estado):
+
+| Qué | Cómo |
+|---|---|
+| Añadir un proveedor | una plantilla (Anthropic, Gemini, OpenAI, OpenRouter, Ollama, LM Studio, vLLM, LiteLLM) u «Otro (URL propia)» para cualquier API compatible con OpenAI |
+| Probar la conexión | «⚡ Probar conexión» lista los modelos de esa URL; un clic en uno lo elige |
+| La clave | se indica la **variable de entorno** que la contiene (p. ej. `OPENROUTER_API_KEY`); la tarjeta dice si está definida (✓) o no (✗). La clave no se escribe en ningún archivo |
+| Modelos locales | Ajustes busca solo Ollama, LM Studio y vLLM en este equipo y ofrece añadirlos |
+| Predeterminado | «★ Usar por defecto»; para una conversación concreta, Opciones → modelo en el panel del agente |
+| Dónde se guarda | «Este equipo» (configuración global, todos los proyectos) o «Solo este proyecto» (`pcode.toml`) |
+
+Desde la terminal, lo mismo:
+
+```bash
+pcode config proveedor ollama --modelo qwen3 --predeterminado   # una plantilla conocida rellena URL y variable
+pcode config proveedor empresa --url https://llm.empresa.es/v1 --clave-env EMPRESA_API_KEY
+pcode config proveedores --probar --detectar                     # estado, modelos y servidores locales
+pcode config quitar empresa
+```
+
+Ambos editan el archivo conservando tus comentarios. Un proveedor cuya variable no esté definida no estropea el
+resto: solo falla si lo eliges, y dice qué variable falta.
+
 `pcode config mostrar` enseña la configuración que se usaría (sin claves) y `pcode mcp` las tools que aporta
 cada servidor MCP, con los **tokens que ocupan sus esquemas** en cada petición al modelo (y el total, frente al de
 las tools nativas). Los esquemas viajan en todas las peticiones, así que un servidor con muchas tools encarece toda

@@ -1,4 +1,7 @@
-//! Lectura de `pcode.toml` con sustitución `{env:VAR}`.
+//! Lectura de `pcode.toml` con sustitución `{env:VAR}`, y edición de proveedores y preferencias
+//! (módulo [`edit`]) para la pantalla de Ajustes de Studio y `pcode config proveedor`.
+pub mod edit;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -14,6 +17,9 @@ pub enum ConfigError {
     /// Falta una variable de entorno referenciada.
     #[error("falta la variable de entorno {0}")]
     MissingEnv(String),
+    /// Un valor no es válido (nombre, URL, variable…).
+    #[error("{0}")]
+    Invalid(String),
 }
 
 /// Configuración completa del proyecto.
@@ -131,6 +137,13 @@ pub struct ProviderCfg {
     /// Clave de API.
     #[serde(rename = "clave")]
     pub api_key: Option<String>,
+    /// Modelo por defecto de este proveedor (si no se pide otro).
+    #[serde(rename = "modelo")]
+    pub model: Option<String>,
+    /// Variable de entorno de la clave que no estaba definida al cargar (`clave = "{env:X}"`): el
+    /// proveedor solo falla si se elige, no estropea el resto de la configuración.
+    #[serde(skip)]
+    pub missing_key_env: Option<String>,
 }
 
 /// Un backend de agente.
@@ -205,7 +218,17 @@ impl Config {
         for p in c.providers.values_mut() {
             p.url = expand_env(&p.url)?;
             if let Some(k) = &p.api_key {
-                p.api_key = Some(expand_env(k)?);
+                match expand_env(k) {
+                    Ok(v) => p.api_key = Some(v),
+                    Err(ConfigError::MissingEnv(name)) => {
+                        p.api_key = None;
+                        p.missing_key_env = Some(name);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            if let Some(m) = &p.model {
+                p.model = Some(expand_env(m)?);
             }
         }
         Ok(c)
@@ -283,6 +306,21 @@ mod tests {
         assert_eq!(m.command, vec!["npx", "-y", "srv"]);
         assert_eq!(m.env["TOKEN"], "secreto");
         assert!(m.ask && !m.disabled);
+    }
+
+    #[test]
+    fn clave_sin_variable_no_rompe_la_configuracion() {
+        let c = Config::from_str(
+            "[proveedores.raro]\ntipo = \"openai-compatible\"\nurl = \"http://x/v1\"\nclave = \"{env:PCODE_TEST_NO_EXISTE_JAMAS}\"\nmodelo = \"m1\"\n",
+        )
+        .unwrap();
+        let p = &c.providers["raro"];
+        assert!(p.api_key.is_none());
+        assert_eq!(
+            p.missing_key_env.as_deref(),
+            Some("PCODE_TEST_NO_EXISTE_JAMAS")
+        );
+        assert_eq!(p.model.as_deref(), Some("m1"));
     }
 
     #[test]

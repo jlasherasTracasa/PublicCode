@@ -1617,6 +1617,7 @@ name = "pcode-models"
 version = "1.1.0"
 dependencies = [
  "async-trait",
+ "futures",
  "reqwest",
  "serde",
  "serde_json",
@@ -1672,8 +1673,10 @@ dependencies = [
  "axum",
  "futures",
  "http-body-util",
+ "pcode-config",
  "pcode-core",
  "pcode-lsp",
+ "pcode-models",
  "pcode-policy",
  "pcode-protocol",
  "pcode-tools",

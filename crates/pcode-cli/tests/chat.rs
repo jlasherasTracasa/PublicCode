@@ -423,3 +423,57 @@ fn chat_recuerda_y_olvida_en_modo_linea() {
             "La memoria del proyecto está vacía",
         ));
 }
+
+#[test]
+fn config_proveedor_añade_predeterminado_lista_y_quita() {
+    let d = tempfile::tempdir().unwrap();
+    let global = d.path().join("cfg/pcode.toml");
+    let pc = |args: &[&str]| {
+        let mut c = Command::cargo_bin("pcode").unwrap();
+        c.current_dir(d.path())
+            .env("PCODE_CONFIG", &global)
+            .args(args);
+        c
+    };
+    pc(&[
+        "config",
+        "proveedor",
+        "ollama",
+        "--modelo",
+        "qwen3",
+        "--predeterminado",
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("★ ollama"))
+    .stdout(predicate::str::contains("http://127.0.0.1:11434/v1"));
+    pc(&[
+        "config",
+        "proveedor",
+        "nube",
+        "--url",
+        "https://x.example/v1",
+        "--clave-env",
+        "PCODE_TEST_NO_EXISTE_JAMAS",
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "✗ PCODE_TEST_NO_EXISTE_JAMAS sin definir",
+    ));
+    let t = std::fs::read_to_string(&global).unwrap();
+    assert!(
+        t.contains("clave = \"{env:PCODE_TEST_NO_EXISTE_JAMAS}\"")
+            && t.contains("proveedor = \"ollama\"")
+    );
+    pc(&["config", "proveedor", "MAL"]).assert().failure();
+    pc(&["config", "quitar", "nube"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Quitado nube"));
+    pc(&["config", "proveedores"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("★ ollama"))
+        .stdout(predicate::str::contains("nube").not());
+}

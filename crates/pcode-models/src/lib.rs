@@ -1,5 +1,6 @@
 //! Modelos: tipos neutros, proveedores y conversión de formatos.
 pub mod anthropic;
+pub mod discover;
 pub mod gemini;
 pub mod mock;
 pub mod openai;

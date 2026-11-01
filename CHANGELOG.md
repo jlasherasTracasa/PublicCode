@@ -8,6 +8,11 @@ El agente trabaja mejor: localiza antes de leer, pregunta cuando hace falta, rec
 comprueba antes de terminar. Cada función sale de un paper de ACL/EMNLP 2026 ([docs/papers.md §12](docs/papers.md#12-lo-que-entra-en-la-11)).
 
 ### Añadido
+- **Ajustes de modelos en Studio** (engranaje, Ctrl+,): proveedores por URL con plantillas (Anthropic, Gemini, OpenAI,
+  OpenRouter, Ollama, LM Studio, vLLM, LiteLLM u otra URL), «Probar conexión» con la lista de modelos, detección de
+  servidores locales, predeterminado, global o por proyecto y estado de la variable de cada clave. Modelo por
+  conversación en el panel del agente y modelo actual en la barra de estado.
+- `pcode config proveedores [--probar] [--detectar]`, `pcode config proveedor <nombre> …` y `pcode config quitar`.
 - **Tool `esquema`** para el agente: símbolos de un archivo, archivos de una carpeta con sus símbolos principales y
   dónde se define un símbolo; el prompt pide localizar antes de leer (RepoNav, SHERLOC).
 - **Preguntas de aclaración** (tool `preguntar`): en la TUI, el chat y Studio el turno termina con la pregunta y sus
@@ -21,6 +26,8 @@ comprueba antes de terminar. Cada función sale de un paper de ACL/EMNLP 2026 ([
   arrancar (ProMCP).
 
 ### Cambiado
+- Un proveedor con la variable de su clave sin definir ya no impide cargar la configuración: falla solo si se elige.
+- El modelo preferido solo se aplica a su proveedor; cada proveedor puede tener su `modelo`.
 - La compactación conserva literalmente restricciones, decisiones, rutas, órdenes y errores pendientes.
 - Studio: la conversación ya no se reanima entera en cada trozo del streaming.
 - `/recuerda`, `/memoria`, `/olvida`, `/deshacer` y `/rehacer` funcionan también desde el panel del agente de Studio.

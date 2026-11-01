@@ -9,6 +9,8 @@ use std::time::Duration;
 
 /// Proveedor elegido y el modelo que se usa si el usuario no indica otro.
 pub struct Selected {
+    /// Nombre del proveedor elegido (`anthropic`, `ollama`…).
+    pub name: String,
     /// El proveedor.
     pub provider: Arc<dyn Provider>,
     /// Modelo por defecto del proveedor.
@@ -21,6 +23,7 @@ impl Selected {
     fn new(p: Arc<dyn Provider>, model: Option<&str>, context_limit: u64) -> Selected {
         // Reintentos ante 429, 5xx y cortes de red: 4 intentos, esperando 2, 4 y 8 s.
         Selected {
+            name: p.name().to_string(),
             provider: Arc::new(RetryProvider::new(p, 4, Duration::from_secs(2))),
             default_model: model.map(String::from),
             context_limit,
@@ -38,6 +41,20 @@ fn env(name: &str) -> Option<String> {
 }
 
 fn from_cfg(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
+    if let Some(v) = &p.missing_key_env {
+        bail!(
+            "el proveedor {name} usa la clave {{env:{v}}}, pero la variable {v} no está definida: \
+             defínela y vuelve a abrir PublicCode (o elige otro proveedor en Ajustes o con --proveedor)"
+        );
+    }
+    let mut sel = from_cfg_inner(name, p)?;
+    if let Some(m) = p.model.as_deref().filter(|m| !m.is_empty()) {
+        sel.default_model = Some(m.to_string());
+    }
+    Ok(sel)
+}
+
+fn from_cfg_inner(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
     let url = |d: &str| {
         if p.url.is_empty() {
             d.to_string()
@@ -96,6 +113,7 @@ fn from_cfg(name: &str, p: &ProviderCfg) -> anyhow::Result<Selected> {
 pub fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Selected> {
     if let Ok(script) = std::env::var("PCODE_MOCK_SCRIPT") {
         return Ok(Selected {
+            name: "mock".into(),
             provider: Arc::new(MockProvider::from_script_file(std::path::Path::new(
                 &script,
             ))?),
@@ -139,6 +157,7 @@ pub fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Select
                 kind: "openai-compatible".into(),
                 url: env("OPENAI_BASE_URL").unwrap_or_else(|| "https://api.openai.com/v1".into()),
                 api_key: Some(k),
+                ..Default::default()
             },
         );
     }
@@ -148,12 +167,18 @@ pub fn build_provider(cfg: &Config, name: Option<&str>) -> anyhow::Result<Select
     )
 }
 
-/// Modelo a usar: `--modelo`, `PCODE_MODEL`, `[preferencias] modelo`, el del proveedor o
-/// `default` (LiteLLM lo resuelve).
+/// Modelo a usar: `--modelo`, `PCODE_MODEL`, `[preferencias] modelo` (solo si el proveedor elegido
+/// es el preferido: el modelo de otro proveedor no le sirve), el `modelo` del proveedor, el suyo por
+/// defecto o `default` (LiteLLM lo resuelve).
 pub fn pick_model(flag: Option<&str>, cfg: &Config, sel: &Selected) -> String {
+    let preferred = cfg
+        .preferences
+        .provider
+        .as_deref()
+        .is_none_or(|p| p == sel.name);
     flag.map(String::from)
         .or_else(|| env("PCODE_MODEL"))
-        .or_else(|| cfg.preferences.model.clone())
+        .or_else(|| preferred.then(|| cfg.preferences.model.clone()).flatten())
         .or_else(|| sel.default_model.clone())
         .unwrap_or_else(|| "default".into())
 }
@@ -248,6 +273,34 @@ mod tests {
         let mut cfg = Config::default();
         cfg.preferences.model = Some("pref".into());
         assert_eq!(pick_model(None, &cfg, &s), "pref");
+    }
+
+    #[test]
+    fn modelo_del_proveedor_y_clave_sin_variable() {
+        let cfg = Config::from_str(
+            "[preferencias]\nproveedor = \"anthropic\"\nmodelo = \"claude-opus-5-5\"\n\
+             [proveedores.anthropic]\ntipo = \"anthropic\"\nclave = \"k\"\n\
+             [proveedores.ollama]\ntipo = \"openai-compatible\"\nurl = \"http://127.0.0.1:11434/v1\"\nmodelo = \"qwen3\"\n\
+             [proveedores.roto]\ntipo = \"openai-compatible\"\nurl = \"http://x/v1\"\nclave = \"{env:PCODE_TEST_NO_EXISTE_JAMAS}\"\n",
+        )
+        .unwrap();
+        let a = build_provider(&cfg, None).unwrap();
+        assert_eq!(pick_model(None, &cfg, &a), "claude-opus-5-5");
+        let o = build_provider(&cfg, Some("ollama")).unwrap();
+        assert_eq!(o.name, "ollama");
+        assert_eq!(
+            pick_model(None, &cfg, &o),
+            "qwen3",
+            "el modelo preferido es de otro proveedor"
+        );
+        let e = build_provider(&cfg, Some("roto"))
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            e.contains("PCODE_TEST_NO_EXISTE_JAMAS no está definida"),
+            "{e}"
+        );
     }
 
     #[test]
