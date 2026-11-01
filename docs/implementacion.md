@@ -216,7 +216,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F4.08-parada-temprana](../tareas/F4.08-parada-temprana.md) | Parada temprana guiada por experiencia y puerta de incertidumbre antes de acciones caras | haiku | F4.07, F1.21 | pendiente |
 | [F4.09-memoria-episodica](../tareas/F4.09-memoria-episodica.md) | Memoria episódica verificada: experiencia de tareas anteriores solo si pasó `acepta` | haiku | F4.05, F3.03 | pendiente |
 | [F4.10-busqueda-tools](../tareas/F4.10-busqueda-tools.md) | Búsqueda y deduplicación de tools: anunciar solo las relevantes | haiku | F2.16 | pendiente |
-| [F4.11-preguntar](../tareas/F4.11-preguntar.md) | Tool `preguntar` con presupuesto (interactivo, flujo y banco) | haiku | F3.10 | pendiente |
+| [F4.11-preguntar](../tareas/F4.11-preguntar.md) | Tool `preguntar` con presupuesto (interactivo, flujo y banco) | haiku | F3.10 | hecha |
 | [F4.12-guion](../tareas/F4.12-guion.md) | Tool `guion`: secuencia determinista de órdenes en una sola llamada | haiku | F1.17 | pendiente |
 
 ### F5
@@ -299,7 +299,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F8.16-ordenes-propias](../tareas/F8.16-ordenes-propias.md) | Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre` | haiku | F5.34 | pendiente |
 | [F8.17-agentes-propios](../tareas/F8.17-agentes-propios.md) | Agentes propios y subagentes: `.pcode/agentes/*.md` invocables con `@agente` | coordinador | F8.16, F2.22 | pendiente |
 | [F8.18-coste](../tareas/F8.18-coste.md) | Coste por sesión y presupuesto en euros | haiku | F1.26 | pendiente |
-| [F8.19-memoria-proyecto](../tareas/F8.19-memoria-proyecto.md) | Memoria del proyecto: `/recuerda` y `.pcode/memoria.md` en el prompt | haiku | F5.34 | pendiente |
+| [F8.19-memoria-proyecto](../tareas/F8.19-memoria-proyecto.md) | Memoria del proyecto: `/recuerda` y `.pcode/memoria.md` en el prompt | haiku | F5.34 | hecha |
 | [F8.20-web-fetch](../tareas/F8.20-web-fetch.md) | Tool `web`: leer una URL como texto con dominios permitidos | haiku | F1.13 | pendiente |
 | [F8.21-imagenes](../tareas/F8.21-imagenes.md) | Imágenes en el chat: pegar una captura para modelos con visión | haiku | F1.25 | pendiente |
 | [F8.22-modelos-locales](../tareas/F8.22-modelos-locales.md) | Modelos locales: detectar Ollama y LM Studio y elegir con `/modelos` | haiku | F1.26 | pendiente |
@@ -325,4 +325,7 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F8.42-acciones-rapidas](../tareas/F8.42-acciones-rapidas.md) | Acciones rápidas: revisar cambios, tests, explicar y estilo (OmniCode, taxonomía de preguntas) | coordinador | F8.37 | hecha |
 | [F8.43-actividad](../tareas/F8.43-actividad.md) | Actividad: línea de tiempo de las acciones del agente enlazada con los turnos (RECAP) | coordinador | F8.15 | hecha |
 | [F8.44-preguntar-repo](../tareas/F8.44-preguntar-repo.md) | `pcode preguntar` con contexto del repositorio (SWE-QA) | coordinador | F8.37, F8.39 | hecha |
+| [F8.45-esquema-agente](../tareas/F8.45-esquema-agente.md) | Tool `esquema` para el agente: localizar sin leer archivos enteros (RepoNav, SHERLOC) | coordinador | F8.39 | hecha |
+| [F8.46-verificar-antes-de-terminar](../tareas/F8.46-verificar-antes-de-terminar.md) | Verificar antes de terminar: recordatorio si el turno cambió archivos sin comprobar nada (Polished but Unresolved) | coordinador | F8.15 | hecha |
+| [F8.47-coste-esquemas-mcp](../tareas/F8.47-coste-esquemas-mcp.md) | Coste de los esquemas de tools MCP en `pcode mcp` y en el arranque del chat (ProMCP) | coordinador | — | hecha |
 <!-- tabla:fin -->

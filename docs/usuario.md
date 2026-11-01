@@ -1,4 +1,4 @@
-# Guía de usuario de PublicCode 1.0
+# Guía de usuario de PublicCode 1.1
 
 PublicCode (`pcode`) es tu herramienta de programación con agentes: una TUI en la terminal, un editor en
 el navegador (**PublicCode Studio**), una app Android para aprobar desde el móvil y un motor que impone
@@ -66,7 +66,9 @@ denegar_ordenes = ["git push --force*"]
 ```
 
 `pcode config mostrar` enseña la configuración que se usaría (sin claves) y `pcode mcp` las tools que aporta
-cada servidor MCP.
+cada servidor MCP, con los **tokens que ocupan sus esquemas** en cada petición al modelo (y el total, frente al de
+las tools nativas). Los esquemas viajan en todas las peticiones, así que un servidor con muchas tools encarece toda
+la conversación: por encima de 4 000 tokens, `pcode mcp` lo avisa; desactiva lo que no uses con `desactivado = true`.
 
 ## 4. La TUI
 
@@ -81,11 +83,27 @@ cada servidor MCP.
 | Ctrl+O | despliega la salida completa de las tools |
 | ↑ ↓ · PgUp PgDn | historial · desplazar |
 | `/deshacer`, `/rehacer` | deja los archivos como estaban antes del último turno del agente, o lo vuelve a aplicar |
+| `/recuerda <texto>`, `/memoria`, `/olvida <n>` | guarda una decisión en la memoria del proyecto, la muestra numerada o borra la nota `n` |
 | `/modelo`, `/nuevo`, `/compactar`, `/uso`, `/ayuda`, `/salir` | cambiar de modelo, empezar de nuevo, resumir, tokens y contexto, ayuda y salir |
 
 Al terminar cada turno, la TUI resume lo que cambió (`✎ 2 archivos · src/a.rs +3 −1 · /deshacer lo revierte`) y la
 barra de estado lleva un **medidor de contexto** (`▰▰▱▱▱▱▱▱ contexto 25 %`, en amarillo desde el 75 %): al 100 %
 la conversación se compacta sola. `/deshacer` y `/rehacer` también funcionan en `pcode chat`.
+
+### 4.1 Cómo trabaja el agente (novedades de la 1.1)
+
+| Qué | Cómo se ve | Por qué |
+|---|---|---|
+| **Localiza antes de leer** | llama a `esquema` (símbolos de un archivo, archivos de una carpeta con sus funciones y tipos, o dónde se define un símbolo) antes de abrir archivos enteros | gasta menos contexto y acierta antes con el sitio (RepoNav, SHERLOC) |
+| **Pregunta si hace falta** | si tu petición es ambigua y la respuesta cambia lo que haría, termina el turno con `❓ pregunta` y sus opciones; contesta en el siguiente mensaje. Como mucho 2 preguntas por petición | preguntar en lugar de suponer (Ask or Assume?, AgentAsk) |
+| **Recuerda decisiones** | lee la memoria del proyecto en cada turno; puede **proponer** guardar algo («recordar …») y te pide aprobación | las decisiones de la sesión no se pierden al compactar (SLUMP); la aprobación evita que un texto malicioso se cuele en la memoria (AMIA) |
+| **Comprueba antes de terminar** | si cambió archivos sin ejecutar nada, PublicCode le pide una vez que pase los tests o la compilación (o que diga por qué no hace falta) | evita entregar algo pulido sin verificar (Polished but Unresolved) |
+
+**La memoria del proyecto** es `.pcode/memoria.md`: una nota por línea, con fecha, la más reciente primero en el
+prompt (hasta 8 KB). Úsala para lo que debe durar más que una conversación: «los commits, en inglés», «no añadir
+dependencias», «la API v1 no se toca». Se gestiona con `/recuerda`, `/memoria` y `/olvida` (TUI, `pcode chat` y el
+panel del agente de Studio) o editándola a mano (Studio: menú ✦ → «Memoria del proyecto»). No guardes secretos: entra
+en el prompt que se envía al proveedor del modelo.
 
 ## 5. PublicCode Studio
 
@@ -137,6 +155,7 @@ Los servidores de lenguaje que usa: `rust-analyzer`, `typescript-language-server
 | tu `[politica]` | se suma a lo anterior y solo puede endurecerlo |
 | cualquier acción | queda en `.pcode/audit.jsonl`, con hash encadenado |
 | cada archivo que escribe el agente | se guarda antes en un punto de control del turno: `/deshacer` o «Deshacer el turno» lo restaura |
+| la memoria del proyecto | el agente solo propone notas; se guardan si las apruebas y quedan marcadas «· agente» |
 
 `--aprobar-todo` evita las preguntas (lo denegado sigue denegado). El modo plan no deja tocar nada. La eval
 de seguridad que acompaña a cada versión está en [evaluacion.md](evaluacion.md#51-resultados-de-la-eval-de-seguridad-10).
@@ -168,6 +187,7 @@ podrás aprobar o denegar. Sin TLS todavía: úsalo en tu red o tras un túnel (
 | conversaciones | `.pcode/pcode.db` del proyecto (SQLite) |
 | auditoría | `.pcode/audit.jsonl` |
 | puntos de control (últimos 50 turnos) | `.pcode/checkpoints/` |
+| memoria del proyecto | `.pcode/memoria.md` (entra en el prompt de cada turno) |
 | configuración | archivo global y `pcode.toml` |
 | claves | solo en variables de entorno; nunca en archivos |
 

@@ -10,7 +10,7 @@ auditoría encadenada y **deshacer** a un clic. Un solo binario para **Linux** y
 
 [![versión](https://img.shields.io/badge/versi%C3%B3n-1.0.0-0b57d0?style=for-the-badge)](CHANGELOG.md)
 [![plataformas](https://img.shields.io/badge/Linux%20%C2%B7%20Windows-✓-0b57d0?style=for-the-badge)](docs/instalacion.md)
-[![tests](https://img.shields.io/badge/tests-380%20%2B%2039%20e2e-146c2e?style=for-the-badge)](#calidad-cómo-se-prueba)
+[![tests](https://img.shields.io/badge/tests-404%20%2B%2044%20e2e-146c2e?style=for-the-badge)](#calidad-cómo-se-prueba)
 [![Rust](https://img.shields.io/badge/Rust-2024-b7410e?style=for-the-badge)](rust-toolchain.toml)
 [![licencia](https://img.shields.io/badge/licencia-Apache--2.0-475a75?style=for-the-badge)](Cargo.toml)
 
@@ -89,6 +89,20 @@ pcode studio     # el editor en el navegador
 </table>
 
 ---
+
+## Novedades de la 1.1: un agente que localiza, pregunta, recuerda y comprueba
+
+| | Qué hace | Basado en |
+|---|---|---|
+| 🧭 **Localiza antes de leer** | tool `esquema`: símbolos de un archivo, archivos de una carpeta con sus funciones y tipos, y dónde se define un símbolo, sin gastar contexto en archivos enteros | RepoNav (EMNLP), SHERLOC (EMNLP) |
+| ❓ **Pregunta si hace falta** | ante una petición ambigua termina el turno con la pregunta y sus opciones; contestas en el siguiente mensaje (como mucho 2 por petición) | Ask or Assume? (Findings EMNLP), AgentAsk (ACL) |
+| 🧠 **Memoria del proyecto** | `/recuerda los commits, en inglés`: `.pcode/memoria.md` entra en el prompt de cada turno y sobrevive a la compactación; el agente propone notas y tú las apruebas | SLUMP (Findings EMNLP), AMIA (Findings EMNLP) |
+| ✔ **Comprueba antes de terminar** | si cambió archivos sin ejecutar nada, se le pide una vez que pase los tests o la compilación | Polished but Unresolved (EMNLP) |
+| 💸 **Coste de MCP a la vista** | `pcode mcp` dice cuántos tokens cuestan los esquemas de cada servidor en cada petición | ProMCP (Findings ACL) |
+
+<img src="docs/img/studio-pregunta.png" alt="Studio: el agente pregunta la capacidad de la caché con dos opciones, /recuerda guarda la decisión y el agente sigue con la respuesta" width="100%">
+
+Detalle en [docs/papers.md §12](docs/papers.md#12-lo-que-entra-en-la-11) y en la [guía de usuario](docs/usuario.md#41-cómo-trabaja-el-agente-novedades-de-la-11).
 
 ## Más que un editor, más que un chat
 
@@ -183,6 +197,7 @@ git diff --cached | pcode preguntar "escribe el mensaje de commit"
 | `!orden` | ejecuta en el proyecto y la salida va como contexto del siguiente mensaje |
 | Mayús+Tab · `/plan` · `/construir` | modo plan (solo lee y propone) · modo normal |
 | `/deshacer` · `/rehacer` | revierte o vuelve a aplicar los archivos del último turno del agente |
+| `/recuerda <texto>` · `/memoria` · `/olvida <n>` | memoria del proyecto: decisiones que el agente lee en cada turno |
 | `/compactar` · `/uso` | resume la conversación · tokens y contexto usado |
 | `/modelo [m]` · `/nuevo` · `/ayuda` · `/salir` | cambiar de modelo · empezar de nuevo · ayuda · salir |
 | Esc · Ctrl+O · PgUp/PgDn | interrumpir · desplegar salidas de tools · desplazar |
@@ -317,9 +332,9 @@ experiencia del desarrollador (editor, git y revisión). Nada se cita si no sale
 
 | Qué | Cuánto | Dónde |
 |---|---|---|
-| Tests de Rust (unitarios e integración) | **380**, en Linux; un subconjunto también en Windows | `cargo test --workspace` |
+| Tests de Rust (unitarios e integración) | **404**, en Linux; un subconjunto también en Windows | `cargo test --workspace` |
 | Lint | `clippy -D warnings` limpio en todo el workspace | CI |
-| End to end de Studio con Chromium | **39** comprobaciones (editor, esquema, git, ✦, deshacer, LSP, temas, móvil) | [`tools/studio/e2e.js`](tools/studio/e2e.js) |
+| End to end de Studio con Chromium | **44** comprobaciones (editor, esquema, git, ✦, deshacer, preguntas, memoria, LSP, temas, móvil) | [`tools/studio/e2e.js`](tools/studio/e2e.js) |
 | TUI | render a 80×24 y 120×40 con `TestBackend` y vista previa HTML | `cargo test -p pcode-tui` |
 | Eval de seguridad | 20 casos de inyección y órdenes destructivas | `cargo test -p pcode-core --test seguridad` |
 | Eval de reglas y mini sandbox (Python) | 15 tests | `tools/bench`, `tools/minisandbox` |
@@ -339,9 +354,10 @@ cargo build -p pcode-cli && node tools/studio/e2e.js       # necesita Playwright
 | F0–F3 | ✓ | núcleo, proveedores, tools, política, sandboxes, backends externos y flujos |
 | F5 | ✓ (lo esencial) | demonio, TUI, chat, Studio, LSP, APK |
 | F7 | ✓ (1.0) | evals de seguridad, release con sumas y procedencia |
-| **F8** (1.x) | en marcha | ✓ deshacer, ✓ esquema y símbolos, ✓ asistente ✦; siguen plegado y minimapa, multicursor, vista dividida, formato y completado del LSP, blame y ramas, conflictos, depurador, explorador de tests, órdenes y agentes propios, coste, memoria, imágenes, modelos locales, instaladores nativos, ARM64, extensiones y GitHub |
+| **F4** | en marcha | ✓ preguntas con presupuesto (1.1); siguen la tool de contexto, memoria por facetas y router por histórico |
+| **F8** (1.x) | en marcha | ✓ deshacer, ✓ esquema y símbolos, ✓ asistente ✦ (1.0); ✓ `esquema` para el agente, ✓ memoria del proyecto, ✓ verificar antes de terminar, ✓ coste de MCP (1.1); siguen plegado y minimapa, multicursor, vista dividida, formato y completado del LSP, blame y ramas, conflictos, depurador, explorador de tests, órdenes y agentes propios, coste, memoria, imágenes, modelos locales, instaladores nativos, ARM64, extensiones y GitHub |
 
-44 tareas de F8 con firmas, tests y criterio de aceptación en [docs/implementacion.md](docs/implementacion.md); el
+47 tareas de F8 con firmas, tests y criterio de aceptación en [docs/implementacion.md](docs/implementacion.md); el
 plan completo en [docs/PLAN.md](docs/PLAN.md). PublicCode se desarrolla con agentes: cada tarea de
 [`tareas/`](tareas/) la puede ejecutar un modelo pequeño (Claude Haiku 5.5) siguiendo [AGENTS.md](AGENTS.md).
 

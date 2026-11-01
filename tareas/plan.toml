@@ -4319,3 +4319,55 @@ objetivo = '''
 `--formato json` para scripts. Lee de stdin si no hay argumento.
 '''
 tests = ["preguntar_responde_sin_tools", "preguntar_lee_stdin"]
+
+# ── F8.45–F8.47: funciones del agente para la 1.1 (docs/papers.md §12) ──
+
+[[tarea]]
+id = "F8.45"
+nombre = "esquema-agente"
+titulo = "Tool `esquema` para el agente: localizar sin leer archivos enteros (RepoNav, SHERLOC)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.39"]
+toca = ["crates/pcode-tools/src/outline.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-server/src/lib.rs", "crates/pcode-cli/src/provider.rs"]
+acepta = "cargo test -p pcode-tools outline"
+contexto = ["docs/papers.md §12 (2026.emnlp-main.1474, 2026.emnlp-main.711)"]
+objetivo = '''
+El esquema pasa de `pcode-server` a `pcode-tools` (Studio lo reexporta). Tool nativa `esquema` de solo lectura:
+`{path}` de un archivo → símbolos con línea y anidamiento; `{path}` de una carpeta → cada archivo con sus símbolos
+de primer nivel; `{query}` → dónde se define en el proyecto. El prompt de sistema pide localizar antes de leer.
+'''
+tests = ["tool_esquema_archivo_carpeta_y_consulta"]
+
+[[tarea]]
+id = "F8.46"
+nombre = "verificar-antes-de-terminar"
+titulo = "Verificar antes de terminar: recordatorio si el turno cambió archivos sin comprobar nada (Polished but Unresolved)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.15"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-core/tests/preguntas_memoria.rs"]
+acepta = "cargo test -p pcode-core --test preguntas_memoria verific"
+contexto = ["docs/papers.md §12 (2026.emnlp-main.1143)"]
+objetivo = '''
+`Agent::with_verify_reminder()`: si el modelo termina un turno en el que escribió archivos sin ejecutar ninguna orden,
+y hay una tool que ejecuta, se le manda una vez `VERIFY_NOTE` (comprobar o decir por qué no hace falta). Solo en uso
+interactivo y sin hook de parada (con hook, ya decide la aceptación).
+'''
+tests = ["verifica_antes_de_terminar_una_vez", "sin_recordatorio_si_ya_comprobo_o_no_cambio_nada"]
+
+[[tarea]]
+id = "F8.47"
+nombre = "coste-esquemas-mcp"
+titulo = "Coste de los esquemas de tools MCP en `pcode mcp` y en el arranque del chat (ProMCP)"
+fase = "F8"
+ejecutor = "coordinador"
+depende = []
+toca = ["crates/pcode-tools/src/registry.rs", "crates/pcode-cli/src/doctor.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-cli/tests/chat.rs"]
+acepta = "cargo test -p pcode-tools tokens_de_un_esquema && cargo test -p pcode-cli --test chat mcp"
+contexto = ["docs/papers.md §12 (2026.findings-acl.1967)"]
+objetivo = '''
+`schema_tokens(&ToolSpec)` (≈ 4 caracteres por token); `pcode mcp` lo muestra por tool, por servidor y en total
+(frente al de las nativas) y avisa por encima de 4 000; el chat lo resume al arrancar.
+'''
+tests = ["tokens_de_un_esquema", "mcp_tools_de_un_servidor_real_en_chat_y_en_pcode_mcp"]

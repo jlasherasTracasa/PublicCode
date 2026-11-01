@@ -105,6 +105,22 @@ todos los días, probado y documentado. Lo demás va a la 1.x (F8) sin bloquearl
 | Memoria, router y contexto avanzados (F4), aprendizaje de skills (F6) | mejoran resultados, no habilitan el uso |
 | El resto de F8 | crecimiento continuo |
 
+## 5.2 La 1.1: un agente que localiza, pregunta, recuerda y comprueba
+
+La 1.1 mejora el agente propio con funciones sacadas de papers de ACL/EMNLP 2026 ([papers.md §12](papers.md#12-lo-que-entra-en-la-11)).
+Todo vive en el núcleo, así que llega a la vez a la TUI, el chat, Studio y el APK.
+
+| Entra en la 1.1 | Tarea | Estado |
+|---|---|---|
+| Tool `esquema` para el agente (RepoNav, SHERLOC) | F8.45 | hecho |
+| Preguntas de aclaración con presupuesto (Ask or Assume?, AgentAsk) | F4.11 | hecho |
+| Memoria del proyecto y compactación que conserva restricciones (SLUMP, AMIA) | F8.19 | hecho |
+| Verificar antes de terminar (Polished but Unresolved) | F8.46 | hecho |
+| Coste de los esquemas MCP (ProMCP) | F8.47 | hecho |
+
+Siguientes candidatos, por orden: la tool `contexto` (F4.01), las tools del LSP para el agente (F8.09), la búsqueda de
+tools cuando hay muchas (F4.10) y la revisión por archivo en la TUI (F8.25).
+
 ## 6. Métricas de éxito
 
 Ver [evaluacion.md](evaluacion.md). La línea base se mide en F0 con opencode y el mismo modelo; los
