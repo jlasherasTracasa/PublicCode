@@ -469,7 +469,7 @@ mod tests {
         assert!(!r.ok && r.key_missing);
         let e = r.error.unwrap();
         assert!(
-            e.contains("no se pudo conectar") && e.contains("PCODE_TEST_NO_EXISTE_JAMAS"),
+            e.contains("¿está arrancado el servidor") && e.contains("PCODE_TEST_NO_EXISTE_JAMAS"),
             "{e}"
         );
     }

@@ -86,8 +86,13 @@ pub async fn list_models(
         };
     }
     let resp = req.send().await.map_err(|e| {
+        // En Windows, un puerto local cerrado no se rechaza al momento: se reintenta y acaba en
+        // tiempo agotado. Los dos casos llevan la misma pista.
         if e.is_timeout() {
-            format!("no responde en {} s", timeout.as_secs())
+            format!(
+                "no responde en {} s: ¿está arrancado el servidor y es correcta la URL?",
+                timeout.as_secs()
+            )
         } else if e.is_connect() {
             "no se pudo conectar: ¿está arrancado el servidor y es correcta la URL?".to_string()
         } else {
@@ -238,7 +243,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(e.contains("no se pudo conectar"), "{e}");
+        assert!(e.contains("¿está arrancado el servidor"), "{e}");
         assert!(
             list_models("openai-compatible", "", None, Duration::from_secs(1))
                 .await
