@@ -164,8 +164,10 @@ pub fn system_prompt(cfg: &Config, root: &std::path::Path) -> String {
     let mut s = format!(
         "Eres PublicCode, un agente de programación que trabaja en la terminal del usuario.\n\
          Directorio de trabajo: {}\nSistema: {} (la tool bash usa {})\n\
-         Usa las tools (leer, buscar, listar, editar, escribir, bash) para investigar y cambiar el código; \
-         lee antes de editar y comprueba con los tests cuando existan.\n\
+         Usa las tools (esquema, leer, buscar, listar, editar, escribir, bash) para investigar y cambiar el código. \
+         Localiza antes de leer: `esquema` da los símbolos de un archivo o de una carpeta y dónde se define un \
+         símbolo, sin gastar contexto en archivos enteros; después lee solo lo necesario, edita y comprueba con \
+         los tests cuando existan.\n\
          Ediciones mínimas: cambia solo lo que hace falta para lo que se pide; conserva el estilo, los nombres, \
          los comentarios y la estructura del código que no tienes que tocar; no reformatees ni reescribas \
          funciones enteras para un arreglo pequeño; edita con `editar` (no reescribas archivos completos) \
@@ -253,6 +255,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let s = system_prompt(&Config::default(), d.path());
         assert!(s.contains("Ediciones mínimas") && s.contains("conserva el estilo"));
+        assert!(s.contains("Localiza antes de leer: `esquema`"));
     }
 
     #[test]

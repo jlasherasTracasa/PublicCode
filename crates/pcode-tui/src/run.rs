@@ -114,6 +114,42 @@ pub fn changes_summary(lang: Lang, changes: &[pcode_core::FileChange]) -> Option
     Some(parts.join(" · "))
 }
 
+/// `recuerda <texto>`, `memoria` y `olvida <n>` (sin la barra): ejecuta la orden sobre la memoria del
+/// proyecto y devuelve el texto para mostrar; `None` si no es una orden de memoria.
+pub fn memory_command(root: &std::path::Path, cmd: &str, lang: Lang) -> Option<String> {
+    use pcode_core::memory;
+    let (name, arg) = cmd.trim().split_once(' ').unwrap_or((cmd.trim(), ""));
+    let arg = arg.trim();
+    Some(match name {
+        "recuerda" | "remember" if arg.is_empty() => t(lang, "memory_usage").into(),
+        "recuerda" | "remember" => match memory::remember(root, arg, false) {
+            Ok(n) => format!("{} {n}", t(lang, "remembered")),
+            Err(e) => format!("✗ {e}"),
+        },
+        "memoria" | "memory" => {
+            let notes = memory::notes(root);
+            if notes.is_empty() {
+                t(lang, "memory_empty").into()
+            } else {
+                let mut s = format!("{} ({}):", t(lang, "memory_title"), memory::MEMORY_FILE);
+                for (i, n) in notes.iter().enumerate() {
+                    s.push_str(&format!("\n  {}. {n}", i + 1));
+                }
+                s
+            }
+        }
+        "olvida" | "forget" => match arg.parse::<usize>() {
+            Ok(n) if n > 0 => match memory::forget(root, n) {
+                Ok(Some(old)) => format!("{} {old}", t(lang, "forgotten")),
+                Ok(None) => t(lang, "memory_usage").into(),
+                Err(e) => format!("✗ {e}"),
+            },
+            _ => t(lang, "memory_usage").into(),
+        },
+        _ => return None,
+    })
+}
+
 /// Deshace (o rehace) el último turno del agente en `root` y devuelve el texto para mostrar.
 pub fn undo_redo(root: &std::path::Path, redo: bool, lang: Lang) -> String {
     let mut cp = pcode_core::Checkpoints::open(root);
@@ -421,6 +457,10 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                         history.clear();
                         on_turn(None);
                     }
+                    Command::Memory(cmd) => {
+                        let text = memory_command(&root, &cmd, lang).unwrap_or_default();
+                        app.entries.push(crate::Entry::Info(text));
+                    }
                     Command::Undo { redo } => {
                         app.entries
                             .push(crate::Entry::Info(undo_redo(&root, redo, lang)));
@@ -449,6 +489,40 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memoria_recuerda_lista_y_olvida() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        assert_eq!(
+            memory_command(r, "memoria", Lang::Es).unwrap(),
+            "La memoria del proyecto está vacía. Añade notas con /recuerda <texto>."
+        );
+        let g = memory_command(r, "recuerda los commits en inglés", Lang::Es).unwrap();
+        assert!(
+            g.starts_with("🧠 Guardado en la memoria del proyecto: [")
+                && g.ends_with("] los commits en inglés"),
+            "{g}"
+        );
+        memory_command(r, "recuerda usa tabs", Lang::Es);
+        let l = memory_command(r, "memoria", Lang::Es).unwrap();
+        assert!(
+            l.contains("  1. [") && l.contains("  2. [") && l.contains("usa tabs"),
+            "{l}"
+        );
+        assert!(
+            memory_command(r, "olvida 1", Lang::Es)
+                .unwrap()
+                .starts_with("Olvidado:")
+        );
+        assert_eq!(pcode_core::memory::notes(r).len(), 1);
+        assert!(
+            memory_command(r, "olvida x", Lang::Es)
+                .unwrap()
+                .starts_with("Uso:")
+        );
+        assert!(memory_command(r, "otra cosa", Lang::Es).is_none());
+    }
 
     #[test]
     fn resumen_de_cambios_y_deshacer() {

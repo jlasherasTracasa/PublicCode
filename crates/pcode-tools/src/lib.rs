@@ -2,6 +2,7 @@
 pub mod bash;
 pub mod edit;
 pub mod mcp;
+pub mod outline;
 pub mod read;
 pub mod registry;
 pub mod search;
@@ -9,6 +10,7 @@ pub mod write;
 
 pub use bash::{Bash, head_tail, shell_argv, shell_command};
 pub use edit::EditFile;
+pub use outline::Outline;
 pub use read::ReadFile;
 pub use registry::*;
 pub use search::{Glob, Grep};
@@ -23,6 +25,7 @@ pub fn native_registry() -> ToolRegistry {
         std::sync::Arc::new(EditFile),
         std::sync::Arc::new(Grep),
         std::sync::Arc::new(Glob),
+        std::sync::Arc::new(Outline),
         std::sync::Arc::new(Bash),
     ];
     for t in tools {

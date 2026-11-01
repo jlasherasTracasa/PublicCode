@@ -197,7 +197,7 @@ impl Approver for TerminalApprover {
     }
 }
 
-const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /deshacer       revierte los archivos del último turno del agente (/rehacer lo reaplica)\n  /plan           modo plan: solo lee y propone (/construir vuelve)\n  @archivo        adjunta un archivo al mensaje\n  !orden          ejecuta una orden y adjunta su salida al próximo mensaje\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
+const AYUDA: &str = "Comandos:\n  /ayuda          esta ayuda\n  /nuevo          empieza otra conversación (olvida el historial)\n  /modelo [m]     muestra o cambia el modelo\n  /uso            tokens gastados en esta sesión\n  /compactar      resume la conversación para liberar contexto\n  /deshacer       revierte los archivos del último turno del agente (/rehacer lo reaplica)\n  /recuerda <t>   guarda una decisión en la memoria del proyecto (/memoria la muestra, /olvida <n> borra)\n  /plan           modo plan: solo lee y propone (/construir vuelve)\n  @archivo        adjunta un archivo al mensaje\n  !orden          ejecuta una orden y adjunta su salida al próximo mensaje\n  /salir          termina (también Ctrl-D)\nUna línea que acaba en \\ continúa en la siguiente. Ctrl-C interrumpe al agente.";
 
 /// Persiste en SQLite los mensajes nuevos de cada vuelta.
 struct Persist {
@@ -323,7 +323,10 @@ async fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
             timeout: Duration::from_secs(600),
         },
     )
-    .with_checkpoints();
+    .with_checkpoints()
+    .with_questions(pcode_core::AskMode::Interactive)
+    .with_memory()
+    .with_verify_reminder();
     Ok(Prepared {
         agent,
         model,
@@ -513,6 +516,29 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
     }
     let root = std::env::current_dir()?;
     while let Some(msg) = rx.recv().await {
+        if let Some(cmd) = msg.trim().strip_prefix('/') {
+            let local = pcode_tui::run::memory_command(&root, cmd, pcode_tui::i18n::Lang::Es)
+                .or_else(|| match cmd.trim() {
+                    "deshacer" | "undo" => Some(pcode_tui::run::undo_redo(
+                        &root,
+                        false,
+                        pcode_tui::i18n::Lang::Es,
+                    )),
+                    "rehacer" | "redo" => Some(pcode_tui::run::undo_redo(
+                        &root,
+                        true,
+                        pcode_tui::i18n::Lang::Es,
+                    )),
+                    _ => None,
+                });
+            if let Some(text) = local {
+                emit_json(serde_json::json!({"tipo": "texto", "texto": text}));
+                emit_json(
+                    serde_json::json!({"tipo": "fin", "problema": null, "entrada": 0, "salida": 0, "cambios": []}),
+                );
+                continue;
+            }
+        }
         let full = pcode_tui::run::expand_message(&root, &msg, &[]);
         let r = agent.run_turn(history.clone(), &full).await;
         history = finish_json_turn(&msg, r, &agent, &mut persist);
@@ -719,6 +745,11 @@ pub async fn chat(a: ChatArgs) -> anyhow::Result<i32> {
                 "uso" | "usage" => println!(
                     "{} tokens de entrada ({} de caché) · {} de salida",
                     total.input_tokens, total.cached_input_tokens, total.output_tokens
+                ),
+                "recuerda" | "remember" | "memoria" | "memory" | "olvida" | "forget" => println!(
+                    "{}",
+                    pcode_tui::run::memory_command(&root, cmd, pcode_tui::i18n::Lang::Es)
+                        .unwrap_or_default()
                 ),
                 "deshacer" | "undo" => println!(
                     "{}",

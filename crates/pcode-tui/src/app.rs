@@ -109,6 +109,8 @@ pub enum Command {
     SetPlan(bool),
     /// Ejecutar una orden de shell (`!orden`).
     Shell(String),
+    /// Orden de la memoria del proyecto (`recuerda …`, `memoria`, `olvida n`), sin la barra.
+    Memory(String),
     /// Deshacer el último turno del agente (o rehacerlo con `redo`).
     Undo {
         /// Rehacer en lugar de deshacer.
@@ -619,6 +621,9 @@ impl App {
                     vec![]
                 }
                 "deshacer" | "undo" => vec![Command::Undo { redo: false }],
+                "recuerda" | "remember" | "memoria" | "memory" | "olvida" | "forget" => {
+                    vec![Command::Memory(cmd.to_string())]
+                }
                 "rehacer" | "redo" => vec![Command::Undo { redo: true }],
                 "compactar" | "compact" if !self.busy => {
                     self.busy = true;
@@ -808,6 +813,21 @@ mod tests {
         a.update(key(KeyCode::Enter));
         assert!(
             matches!(a.entries.last(), Some(Entry::Info(t)) if t.contains("40k / 160k (25 %)"))
+        );
+    }
+
+    #[test]
+    fn ordenes_de_memoria() {
+        let mut a = app();
+        typed(&mut a, "/recuerda los commits en inglés");
+        assert_eq!(
+            a.update(key(KeyCode::Enter)),
+            vec![Command::Memory("recuerda los commits en inglés".into())]
+        );
+        typed(&mut a, "/memoria");
+        assert_eq!(
+            a.update(key(KeyCode::Enter)),
+            vec![Command::Memory("memoria".into())]
         );
     }
 

@@ -73,6 +73,17 @@ const ES: &[(&str, &str)] = &[
     ("stuck", "✗ atascado: prueba a darle otra pista"),
     ("welcome", "Escribe lo que quieres hacer en este proyecto."),
     ("context", "contexto"),
+    ("remembered", "🧠 Guardado en la memoria del proyecto:"),
+    ("forgotten", "Olvidado:"),
+    ("memory_title", "Memoria del proyecto"),
+    (
+        "memory_empty",
+        "La memoria del proyecto está vacía. Añade notas con /recuerda <texto>.",
+    ),
+    (
+        "memory_usage",
+        "Uso: /recuerda <texto> · /memoria · /olvida <número>",
+    ),
     ("hint_short", "/ayuda · Ctrl+C sale"),
     ("undo_none", "No hay ningún turno del agente que deshacer."),
     ("redo_none", "No hay nada que rehacer."),
@@ -84,7 +95,7 @@ const ES: &[(&str, &str)] = &[
     ("undo_hint", "/deshacer lo revierte"),
     (
         "help",
-        "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/compactar  resume la conversación para liberar contexto\n/deshacer · /rehacer  revierte o vuelve a aplicar el último turno del agente\n/plan · /construir  modo plan (solo lectura) o normal (Mayús+Tab)\n@archivo  adjunta un archivo (Tab completa) · !orden  ejecuta y adjunta la salida\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
+        "/ayuda  esta ayuda\n/nuevo  olvida el historial\n/modelo [m]  muestra o cambia el modelo\n/uso  tokens gastados\n/compactar  resume la conversación para liberar contexto\n/deshacer · /rehacer  revierte o vuelve a aplicar el último turno del agente\n/recuerda <texto> · /memoria · /olvida <n>  memoria del proyecto (el agente la lee en cada turno)\n/plan · /construir  modo plan (solo lectura) o normal (Mayús+Tab)\n@archivo  adjunta un archivo (Tab completa) · !orden  ejecuta y adjunta la salida\n/salir  termina\nIntro envía · Alt+Intro o \\ al final: nueva línea · ↑/↓ historial\nEsc interrumpe al agente · PgUp/PgDn desplaza · Ctrl+O despliega las salidas de las tools",
     ),
 ];
 
@@ -135,6 +146,17 @@ const EN: &[(&str, &str)] = &[
     ("stuck", "✗ stuck: try giving it another hint"),
     ("welcome", "Type what you want to do in this project."),
     ("context", "context"),
+    ("remembered", "🧠 Saved to the project memory:"),
+    ("forgotten", "Forgotten:"),
+    ("memory_title", "Project memory"),
+    (
+        "memory_empty",
+        "The project memory is empty. Add notes with /remember <text>.",
+    ),
+    (
+        "memory_usage",
+        "Usage: /remember <text> · /memory · /forget <number>",
+    ),
     ("hint_short", "/help · Ctrl+C quits"),
     ("undo_none", "There is no agent turn to undo."),
     ("redo_none", "Nothing to redo."),
@@ -146,7 +168,7 @@ const EN: &[(&str, &str)] = &[
     ("undo_hint", "/undo reverts it"),
     (
         "help",
-        "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/compact  summarise the conversation to free context\n/undo · /redo  revert or reapply the agent's last turn\n/plan · /build  plan (read-only) or normal mode (Shift+Tab)\n@file  attach a file (Tab completes) · !command  run it and attach the output\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",
+        "/help  this help\n/new  forget the history\n/model [m]  show or change the model\n/usage  tokens spent\n/compact  summarise the conversation to free context\n/undo · /redo  revert or reapply the agent's last turn\n/remember <text> · /memory · /forget <n>  project memory (read by the agent every turn)\n/plan · /build  plan (read-only) or normal mode (Shift+Tab)\n@file  attach a file (Tab completes) · !command  run it and attach the output\n/quit  exit\nEnter sends · Alt+Enter or a trailing \\: new line · ↑/↓ history\nEsc interrupts the agent · PgUp/PgDn scroll · Ctrl+O expands tool outputs",
     ),
 ];
 

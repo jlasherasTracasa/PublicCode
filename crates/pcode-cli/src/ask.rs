@@ -79,7 +79,13 @@ pub async fn ask(a: AskArgs) -> anyhow::Result<i32> {
     let req = ChatRequest {
         model,
         messages: vec![
-            Message::system(format!("{}\n\n{ASK_NOTE}", system_prompt(&cfg, &root))),
+            Message::system(format!(
+                "{}{}\n\n{ASK_NOTE}",
+                system_prompt(&cfg, &root),
+                pcode_core::memory::prompt_section(&root)
+                    .map(|m| format!("\n\n{m}"))
+                    .unwrap_or_default()
+            )),
             Message::user(question),
         ],
         tools: vec![],

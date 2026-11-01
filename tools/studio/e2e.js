@@ -151,7 +151,9 @@ function arranca() {
 
     // ── Agente: tarjeta de cambios, deshacer y rehacer ──
     mock(resp('Voy a añadir un test para `doble`.', [{ id: '1', name: 'escribir', arguments: { path: 'tests/doble.rs', content: '#[test]\nfn doble_funciona() {\n    assert_eq!(demo::doble(21), 42);\n}\n' } }]),
-      resp('Listo: he creado `tests/doble.rs` con un test para **doble**. Ejecútalo con `cargo test`.'));
+      resp('Listo: he creado `tests/doble.rs` con un test para **doble**. Ejecútalo con `cargo test`.'),
+      // Escribió sin comprobar nada: PublicCode le recuerda que verifique (una vez por turno).
+      resp('No ejecuto `cargo test` aquí: la demo no tiene el toolchain; el test es trivial.'));
     await p.fill('#mensaje', 'Añade un test para doble'); await p.click('#b-enviar');
     await p.waitForSelector('.tarjeta-turno', { timeout: 15000 });
     ok(await p.locator('.burbuja.assistant', { hasText: 'Listo' }).count() === 1, 'el agente responde');

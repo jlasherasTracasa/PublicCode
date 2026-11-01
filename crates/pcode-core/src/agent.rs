@@ -1,6 +1,8 @@
 //! Bucle del agente.
+use crate::ask::{ASK_TOOL, AskMode, AskOutcome, AskState, SENT_NOTE};
 use crate::checkpoint::{Checkpoints, FileChange};
 use crate::compress::compress_tool_output;
+use crate::memory::REMEMBER_TOOL;
 use crate::stop_hook::{StopHook, run_acceptance};
 use crate::stuck::{StuckDetector, StuckSignal, hint_for};
 use pcode_models::{ChatRequest, Message, Provider, Role, ToolCall, Usage};
@@ -129,7 +131,19 @@ pub struct Agent {
     last_input_tokens: u64,
     read_only: bool,
     checkpoints: Option<Checkpoints>,
+    ask: Option<AskState>,
+    memory: bool,
+    verify_reminder: bool,
 }
+
+/// Instrucción para resumir la conversación al compactar. Recoge los modos de fallo de la compresión
+/// del contexto (2026.emnlp-main.2396: se pierden restricciones, rutas y errores) y de SLUMP
+/// (2026.findings-emnlp.76: se pierden los compromisos de diseño revelados durante la sesión).
+pub const COMPACT_PROMPT: &str = "Resume esta conversación entre un usuario y un agente de programación \
+para que el agente pueda seguir sin ella. Conserva LITERALMENTE las restricciones, preferencias y decisiones de \
+diseño que haya dado el usuario (aunque aparecieran de pasada), las rutas exactas de archivos y símbolos, las \
+órdenes que funcionaron y los errores que siguen pendientes. Después: objetivo, estado de cada archivo tocado y \
+próximos pasos. Sé concreto y breve; no inventes nada.";
 
 /// Instrucción que se añade en modo plan.
 pub const PLAN_NOTE: &str = "Estás en MODO PLAN: solo puedes leer y buscar. No intentes cambiar archivos ni \
@@ -167,6 +181,41 @@ impl Agent {
             last_input_tokens: 0,
             read_only: false,
             checkpoints: None,
+            ask: None,
+            memory: false,
+            verify_reminder: false,
+        }
+    }
+    /// Ofrece la tool `preguntar` (F4.11) con este modo y el presupuesto por defecto.
+    pub fn with_questions(mut self, mode: AskMode) -> Self {
+        self.ask = Some(AskState::new(mode));
+        self
+    }
+    /// Preguntas que ha hecho el agente (todas las tareas).
+    pub fn questions_asked(&self) -> &[String] {
+        self.ask.as_ref().map(|a| a.asked.as_slice()).unwrap_or(&[])
+    }
+    /// Memoria del proyecto (F8.19): la añade al prompt de sistema en cada turno y ofrece la tool
+    /// `recordar` (solo con aprobador: lo que propone el agente lo aprueba el usuario).
+    pub fn with_memory(mut self) -> Self {
+        self.memory = true;
+        self
+    }
+    /// Si el turno cambió archivos y no ejecutó ninguna comprobación, antes de terminar se le pide al
+    /// agente una vez que verifique (o diga por qué no hace falta).
+    pub fn with_verify_reminder(mut self) -> Self {
+        self.verify_reminder = true;
+        self
+    }
+    /// Prompt de sistema del turno: el configurado y, si hay, la memoria del proyecto.
+    pub fn system_content(&self) -> String {
+        match self
+            .memory
+            .then(|| crate::memory::prompt_section(&self.ctx.root))
+            .flatten()
+        {
+            Some(m) => format!("{}\n\n{m}", self.cfg.system_prompt),
+            None => self.cfg.system_prompt.clone(),
         }
     }
     /// Guarda un punto de control por turno antes de cada escritura (para `/deshacer`).
@@ -360,14 +409,7 @@ impl Agent {
         }
         let req = ChatRequest {
             model: self.cfg.model.clone(),
-            messages: vec![
-                Message::system(
-                    "Resume esta conversación entre un usuario y un agente de programación para que el \
-                     agente pueda seguir sin ella: objetivo, decisiones, archivos tocados y su estado, \
-                     órdenes útiles, errores pendientes y próximos pasos. Sé concreto y breve.",
-                ),
-                Message::user(text),
-            ],
+            messages: vec![Message::system(COMPACT_PROMPT), Message::user(text)],
             tools: vec![],
             max_tokens: Some(2000),
             ..Default::default()
@@ -407,7 +449,13 @@ impl Agent {
     /// Cada vuelta cuenta con su propio presupuesto.
     pub async fn run_turn(&mut self, mut history: Vec<Message>, user: &str) -> RunReport {
         if history.first().is_none_or(|m| m.role != Role::System) {
-            history.insert(0, Message::system(self.cfg.system_prompt.clone()));
+            history.insert(0, Message::system(self.system_content()));
+        } else if self.memory {
+            // La memoria puede haber cambiado (`/recuerda`): el sistema siempre la lleva al día.
+            history[0] = Message::system(self.system_content());
+        }
+        if let Some(a) = self.ask.as_mut() {
+            a.reset();
         }
         history.push(Message::user(user));
         if let Some(c) = self.checkpoints.as_mut() {
@@ -423,6 +471,7 @@ impl Agent {
         let mut acceptance_output = None;
         let mut stuck = StuckDetector::new(3, 15);
         let mut stuck_signals = 0;
+        let (mut wrote_files, mut ran_check, mut reminded) = (false, false, false);
         macro_rules! finish {
             ($o:expr) => {
                 return RunReport {
@@ -446,9 +495,19 @@ impl Agent {
                 finish!(Outcome::BudgetExhausted);
             }
             let ro = self.read_only;
-            let specs = self
+            let mut specs = self
                 .tools
                 .specs_filtered(|n, e| self.policy.tool_visible(n, e) && !(ro && writes(e)));
+            if self.ask.is_some() && self.policy.tool_visible(ASK_TOOL, &[]) {
+                specs.push(AskState::spec());
+            }
+            if self.memory
+                && self.approver.is_some()
+                && !ro
+                && self.policy.tool_visible(REMEMBER_TOOL, &[])
+            {
+                specs.push(crate::memory::remember_spec());
+            }
             let mut msgs = messages.clone();
             if ro {
                 msgs.push(Message::system(PLAN_NOTE));
@@ -479,6 +538,20 @@ impl Agent {
             }
             messages.push(msg.clone());
             if calls.is_empty() {
+                if self.verify_reminder
+                    && wrote_files
+                    && !ran_check
+                    && !reminded
+                    && self.cfg.stop_hook.is_none()
+                    && self.can_exec()
+                {
+                    reminded = true;
+                    self.emit(AgentEvent::Info(
+                        "ha cambiado archivos sin comprobar nada: le pido que verifique".into(),
+                    ));
+                    messages.push(Message::user(VERIFY_NOTE));
+                    continue;
+                }
                 let Some(hook) = self.cfg.stop_hook.clone() else {
                     finish!(Outcome::Done {
                         final_message: msg.content
@@ -517,12 +590,61 @@ impl Agent {
                 )));
                 continue;
             }
+            let mut question: Option<String> = None;
             for call in calls {
+                if question.is_some() {
+                    messages.push(Message::tool_result(
+                        call.id.clone(),
+                        "no ejecutada: el turno terminó con una pregunta al usuario",
+                    ));
+                    continue;
+                }
                 self.emit(AgentEvent::ToolCall {
                     name: call.name.clone(),
                     arguments: call.arguments.clone(),
                 });
+                if call.name == ASK_TOOL
+                    && let Some(outcome) = self.ask.as_mut().map(|a| a.handle(&call.arguments))
+                {
+                    self.audit(&call, "ask");
+                    let content = match outcome {
+                        AskOutcome::Answer(a) => a,
+                        AskOutcome::EndTurn(q) => {
+                            question = Some(q);
+                            SENT_NOTE.to_string()
+                        }
+                        AskOutcome::Stop(reason) => {
+                            messages.push(Message::tool_result(call.id.clone(), reason.clone()));
+                            finish!(Outcome::Failed(reason));
+                        }
+                    };
+                    self.emit(AgentEvent::ToolResult {
+                        name: call.name.clone(),
+                        is_error: false,
+                        content: content.clone(),
+                    });
+                    messages.push(Message::tool_result(call.id.clone(), content));
+                    continue;
+                }
+                if call.name == REMEMBER_TOOL && self.memory {
+                    let content = self.remember_call(&call).await;
+                    self.emit(AgentEvent::ToolResult {
+                        name: call.name.clone(),
+                        is_error: false,
+                        content: content.clone(),
+                    });
+                    messages.push(Message::tool_result(call.id.clone(), content));
+                    continue;
+                }
+                if self
+                    .tools
+                    .get(&call.name)
+                    .is_some_and(|t| t.effects().contains(&Effect::Exec))
+                {
+                    ran_check = true;
+                }
                 let (mut out, wrote) = self.run_call(&call).await;
+                wrote_files |= wrote && !out.is_error;
                 if call.name == "bash"
                     && let Some(c) = call.arguments.get("command").and_then(|v| v.as_str())
                 {
@@ -551,10 +673,64 @@ impl Agent {
                 });
                 messages.push(Message::tool_result(call.id.clone(), out.content));
             }
+            if let Some(q) = question {
+                self.emit(AgentEvent::Text(q.clone()));
+                messages.push(Message::assistant(q.clone()));
+                finish!(Outcome::Done { final_message: q });
+            }
             let _ = Role::Tool;
         }
     }
+
+    /// Si hay una tool visible que ejecuta órdenes (para verificar).
+    fn can_exec(&self) -> bool {
+        !self.read_only
+            && !self
+                .tools
+                .specs_filtered(|n, e| e.contains(&Effect::Exec) && self.policy.tool_visible(n, e))
+                .is_empty()
+    }
+
+    /// `recordar`: guarda la nota en la memoria del proyecto solo si el usuario lo aprueba.
+    async fn remember_call(&mut self, call: &ToolCall) -> String {
+        let text = call
+            .arguments
+            .get("texto")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            return "falta `texto`".into();
+        }
+        let allowed = match &self.approver {
+            Some(a) => {
+                a.ask(
+                    &format!("recordar «{text}»"),
+                    "la memoria del proyecto entra en el prompt de todas las conversaciones",
+                )
+                .await
+            }
+            None => false,
+        };
+        if !allowed {
+            self.audit(call, "ask-denied");
+            return "el usuario no quiso guardarlo en la memoria".into();
+        }
+        self.audit(call, "ask-allowed");
+        match crate::memory::remember(&self.ctx.root, &text, true) {
+            Ok(n) => format!("guardado en la memoria del proyecto: {n}"),
+            Err(e) => format!("no se pudo guardar: {e}"),
+        }
+    }
 }
+
+/// Recordatorio de verificación (una vez por turno). Inspirado en «Polished but Unresolved»
+/// (2026.emnlp-main.1143): cerca del final, los agentes tienden a entregar algo pulido con
+/// restricciones sin resolver.
+pub const VERIFY_NOTE: &str = "Antes de terminar: has cambiado archivos pero no has ejecutado ninguna \
+comprobación. Si el proyecto tiene tests, compilación o linter, ejecuta lo que corresponda y corrige lo que \
+falle; si no hace falta, di en una línea por qué. (Recordatorio automático de PublicCode.)";
 
 #[cfg(test)]
 mod tests {

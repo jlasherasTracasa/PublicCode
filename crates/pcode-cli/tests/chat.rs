@@ -27,6 +27,8 @@ fn chat_dos_mensajes_por_stdin_con_tool_y_comandos() {
                 json!([{"id":"1","name":"escribir","arguments":{"path":"a.txt","content":"x"}}])
             ),
             resp("creado a.txt", json!([])),
+            // Escribió sin comprobar nada: el agente recibe el recordatorio de verificar.
+            resp("No hay tests que ejecutar en este directorio.", json!([])),
             resp("segunda respuesta", json!([])),
         ]),
     )
@@ -36,6 +38,7 @@ fn chat_dos_mensajes_por_stdin_con_tool_y_comandos() {
     .success()
     .stdout(predicate::str::contains("⏺ escribir"))
     .stdout(predicate::str::contains("creado a.txt"))
+    .stdout(predicate::str::contains("le pido que verifique"))
     .stdout(predicate::str::contains("segunda respuesta"))
     .stdout(predicate::str::contains("tokens de entrada"))
     .get_output()
@@ -276,6 +279,7 @@ fn jsonl_fin_lleva_los_cambios_del_turno_y_deshacer_los_revierte() {
                 json!([{"id":"1","name":"escribir","arguments":{"path":"a.txt","content":"uno\ndos\n"}}])
             ),
             resp("listo", json!([])),
+            resp("no hay tests", json!([])),
         ]),
     )
     .args(["chat", "--formato", "jsonl"])
@@ -315,4 +319,81 @@ fn continuar_sin_orden_se_acepta_y_sin_terminal_muestra_la_ayuda() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Usage: pcode"));
+}
+
+#[test]
+fn jsonl_pregunta_del_agente_y_memoria_desde_studio() {
+    let d = tempfile::tempdir().unwrap();
+    let out = pcode(
+        d.path(),
+        json!([
+            resp(
+                "",
+                json!([{"id":"1","name":"preguntar","arguments":{"pregunta":"¿Tests en pytest o unittest?"}}])
+            ),
+            resp("Uso pytest.", json!([])),
+        ]),
+    )
+    .args(["chat", "--formato", "jsonl"])
+    .write_stdin(
+        "{\"mensaje\":\"añade tests\"}\n{\"mensaje\":\"/recuerda los tests, con pytest\"}\n{\"mensaje\":\"/memoria\"}\n{\"mensaje\":\"pytest\"}\n",
+    )
+    .assert()
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    let ev: Vec<serde_json::Value> = String::from_utf8_lossy(&out)
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    let textos: Vec<&str> = ev
+        .iter()
+        .filter(|v| v["tipo"] == "texto")
+        .filter_map(|v| v["texto"].as_str())
+        .collect();
+    assert!(
+        textos.contains(&"❓ ¿Tests en pytest o unittest?"),
+        "{textos:?}"
+    );
+    assert!(
+        textos
+            .iter()
+            .any(|t| t.starts_with("🧠 Guardado en la memoria del proyecto")),
+        "{textos:?}"
+    );
+    assert!(
+        textos
+            .iter()
+            .any(|t| t.contains("1. [") && t.contains("los tests, con pytest"))
+    );
+    assert!(textos.contains(&"Uso pytest."));
+    assert_eq!(
+        ev.iter().filter(|v| v["tipo"] == "fin").count(),
+        4,
+        "un fin por mensaje"
+    );
+    assert!(
+        std::fs::read_to_string(d.path().join(".pcode/memoria.md"))
+            .unwrap()
+            .contains("los tests, con pytest")
+    );
+}
+
+#[test]
+fn chat_recuerda_y_olvida_en_modo_linea() {
+    let d = tempfile::tempdir().unwrap();
+    pcode(d.path(), json!([]))
+        .arg("chat")
+        .write_stdin("/recuerda usa tabs\n/memoria\n/olvida 1\n/memoria\n/salir\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Guardado en la memoria del proyecto",
+        ))
+        .stdout(predicate::str::contains("1. ["))
+        .stdout(predicate::str::contains("Olvidado:"))
+        .stdout(predicate::str::contains(
+            "La memoria del proyecto está vacía",
+        ));
 }

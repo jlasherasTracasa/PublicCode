@@ -1,11 +1,16 @@
 //! Esquema de un archivo y símbolos del proyecto (F8.39), sin servidor de lenguaje: expresiones
 //! regulares por lenguaje y profundidad por sangría. Es lo que usan el panel Esquema, las migas de
-//! pan y «ir a símbolo» de Studio, y el contexto de las acciones del asistente.
+//! pan y «ir a símbolo» de Studio, el contexto de las acciones del asistente y la tool `esquema`
+//! del agente (F8.45).
 //!
 //! Inspirado en RepoNav (2026.emnlp-main.1474): una vista centrada en archivos con los símbolos
-//! hermanos a la vista ayuda a elegir el sitio correcto.
+//! hermanos a la vista ayuda a elegir el sitio correcto; y en SHERLOC (2026.emnlp-main.711): los
+//! agentes gastan la mitad del presupuesto en localizar antes de editar.
+use crate::registry::*;
+use pcode_models::ToolSpec;
 use regex::Regex;
 use serde::Serialize;
+use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -367,6 +372,185 @@ pub fn workspace_symbols(
     hits
 }
 
+/// Archivos del proyecto: con git, los versionados y los nuevos no ignorados; si no, un recorrido
+/// que salta `.git`, `target`, `node_modules` y `.pcode`. Como mucho 20 000.
+pub fn project_files(root: &Path) -> Vec<String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "--cached", "--others", "--exclude-standard"])
+        .output();
+    if let Ok(o) = out
+        && o.status.success()
+    {
+        return String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .take(20_000)
+            .map(String::from)
+            .collect();
+    }
+    let mut v = vec![];
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let p = e.path();
+            if p.is_dir() {
+                if ![".git", "target", "node_modules", ".pcode"].contains(&name.as_str()) {
+                    stack.push(p);
+                }
+            } else if let Ok(r) = p.strip_prefix(root) {
+                v.push(r.to_string_lossy().replace('\\', "/"));
+                if v.len() >= 20_000 {
+                    return v;
+                }
+            }
+        }
+    }
+    v.sort();
+    v
+}
+
+fn render_outline(symbols: &[Symbol]) -> String {
+    symbols
+        .iter()
+        .map(|s| {
+            format!(
+                "{:>5}  {}{} {}",
+                s.line,
+                "  ".repeat(s.depth as usize),
+                s.kind,
+                s.name
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Tool `esquema`: la estructura del código sin leer los archivos enteros.
+///
+/// - `{"path": "src/lib.rs"}`: símbolos del archivo con su línea y anidamiento.
+/// - `{"path": "src"}`: vista centrada en archivos de una carpeta, con los símbolos de primer nivel.
+/// - `{"query": "parse"}`: dónde se definen los símbolos que contienen `parse` en todo el proyecto.
+pub struct Outline;
+
+#[async_trait::async_trait]
+impl Tool for Outline {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "esquema".into(),
+            description: "Estructura del código sin leer archivos enteros: `path` de un archivo (sus funciones, tipos y clases con línea), `path` de una carpeta (cada archivo con sus símbolos principales) o `query` para encontrar dónde se define un símbolo en el proyecto. Úsala para localizar antes de leer o editar.".into(),
+            parameters: json!({"type":"object","properties":{"path":{"type":"string"},"query":{"type":"string"}}}),
+        }
+    }
+    fn effects(&self) -> &'static [Effect] {
+        &[Effect::Read]
+    }
+    async fn call(&self, args: Value, ctx: &ToolContext) -> ToolOutput {
+        let root = ctx.root.clone();
+        let path = args.get("path").and_then(Value::as_str).map(String::from);
+        let query = args.get("query").and_then(Value::as_str).map(String::from);
+        let r = tokio::task::spawn_blocking(move || outline_tool(&root, path, query)).await;
+        match r {
+            Ok(Ok(s)) => ToolOutput::ok(s),
+            Ok(Err(e)) => ToolOutput::error(e),
+            Err(e) => ToolOutput::error(e.to_string()),
+        }
+    }
+}
+
+fn outline_tool(
+    root: &Path,
+    path: Option<String>,
+    query: Option<String>,
+) -> Result<String, String> {
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        let files = project_files(root);
+        let hits = workspace_symbols(root, &files, &q, 40);
+        if hits.is_empty() {
+            return Ok(format!("ningún símbolo contiene «{q}»"));
+        }
+        return Ok(hits
+            .iter()
+            .map(|h| format!("{}:{}  {} {}", h.path, h.line, h.kind, h.name))
+            .collect::<Vec<_>>()
+            .join("\n"));
+    }
+    let Some(p) = path.filter(|p| !p.trim().is_empty()) else {
+        return Err("falta `path` o `query`".into());
+    };
+    let full = resolve_in_root(root, &p)?;
+    if full.is_dir() {
+        let rel = full
+            .strip_prefix(root)
+            .map(|r| r.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        let prefix = if rel.is_empty() {
+            String::new()
+        } else {
+            format!("{rel}/")
+        };
+        let mut out = vec![];
+        let files: Vec<String> = project_files(root)
+            .into_iter()
+            .filter(|f| f.starts_with(&prefix))
+            .collect();
+        for f in files.iter().take(60) {
+            let lang = language_of(f);
+            let tops: Vec<String> = if lang.is_empty() {
+                vec![]
+            } else {
+                std::fs::read_to_string(root.join(f))
+                    .map(|t| {
+                        outline(&t, lang)
+                            .into_iter()
+                            .filter(|s| s.depth == 0)
+                            .take(12)
+                            .map(|s| format!("{} {}", s.kind, s.name))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            out.push(if tops.is_empty() {
+                f.clone()
+            } else {
+                format!("{f}: {}", tops.join(", "))
+            });
+        }
+        if files.len() > 60 {
+            out.push(format!("… y {} archivos más", files.len() - 60));
+        }
+        if out.is_empty() {
+            return Ok(format!("{p}: carpeta vacía o ignorada"));
+        }
+        return Ok(out.join("\n"));
+    }
+    let text = std::fs::read_to_string(&full).map_err(|e| format!("no se pudo leer {p}: {e}"))?;
+    let lang = language_of(&p);
+    if lang.is_empty() {
+        return Ok(format!(
+            "{p}: lenguaje sin esquema ({} líneas); usa `leer`",
+            text.lines().count()
+        ));
+    }
+    let syms = outline(&text, lang);
+    if syms.is_empty() {
+        return Ok(format!(
+            "{p}: sin símbolos ({} líneas)",
+            text.lines().count()
+        ));
+    }
+    Ok(format!(
+        "{p} ({} líneas)\n{}",
+        text.lines().count(),
+        render_outline(&syms)
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,5 +666,60 @@ mod tests {
         assert_eq!(h[0].path, "src/a.rs");
         assert_eq!(h[0].line, 2);
         assert_eq!(workspace_symbols(d.path(), &files, "carga", 2).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn tool_esquema_archivo_carpeta_y_consulta() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("src")).unwrap();
+        std::fs::write(
+            d.path().join("src/lib.rs"),
+            "pub struct Caja;\nimpl Caja {\n    pub fn abre(&self) {}\n}\npub fn parse() {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            d.path().join("src/util.py"),
+            "def parse_args():\n    pass\n",
+        )
+        .unwrap();
+        std::fs::write(d.path().join("notas.txt"), "x\n").unwrap();
+        let ctx = ToolContext {
+            root: d.path().to_path_buf(),
+            timeout: std::time::Duration::from_secs(5),
+        };
+        let o = Outline.call(json!({"path": "src/lib.rs"}), &ctx).await;
+        assert!(!o.is_error, "{}", o.content);
+        assert!(o.content.contains("    1  struct Caja"), "{}", o.content);
+        assert!(o.content.contains("    3    method abre"), "{}", o.content);
+        let o = Outline.call(json!({"path": "src"}), &ctx).await;
+        assert!(
+            o.content
+                .contains("src/lib.rs: struct Caja, impl Caja, fn parse"),
+            "{}",
+            o.content
+        );
+        assert!(
+            o.content.contains("src/util.py: fn parse_args"),
+            "{}",
+            o.content
+        );
+        let o = Outline.call(json!({"query": "parse"}), &ctx).await;
+        let lines: Vec<&str> = o.content.lines().collect();
+        assert_eq!(lines[0], "src/lib.rs:5  fn parse", "{}", o.content);
+        assert!(o.content.contains("src/util.py:1  fn parse_args"));
+        assert!(
+            Outline
+                .call(json!({"path": "../fuera"}), &ctx)
+                .await
+                .is_error
+        );
+        assert!(Outline.call(json!({}), &ctx).await.is_error);
+        assert!(
+            Outline
+                .call(json!({"path": "notas.txt"}), &ctx)
+                .await
+                .content
+                .contains("sin esquema")
+        );
     }
 }
