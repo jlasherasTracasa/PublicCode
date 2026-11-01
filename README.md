@@ -99,8 +99,11 @@ pcode studio     # el editor en el navegador
 | 🧠 **Memoria del proyecto** | `/recuerda los commits, en inglés`: `.pcode/memoria.md` entra en el prompt de cada turno y sobrevive a la compactación; el agente propone notas y tú las apruebas | SLUMP (Findings EMNLP), AMIA (Findings EMNLP) |
 | ✔ **Comprueba antes de terminar** | si cambió archivos sin ejecutar nada, se le pide una vez que pase los tests o la compilación | Polished but Unresolved (EMNLP) |
 | 💸 **Coste de MCP a la vista** | `pcode mcp` dice cuántos tokens cuestan los esquemas de cada servidor en cada petición | ProMCP (Findings ACL) |
+| ⚙ **Ajustes de modelos** | pantalla en Studio (Ctrl+,) para añadir proveedores por URL con plantillas, probar la conexión, elegir modelo y detectar Ollama, LM Studio o vLLM; también `pcode config proveedor` | — |
 
 <img src="docs/img/studio-pregunta.png" alt="Studio: el agente pregunta la capacidad de la caché con dos opciones, /recuerda guarda la decisión y el agente sigue con la respuesta" width="100%">
+
+<img src="docs/img/studio-ajustes.png" alt="Ajustes de modelos: proveedores con el estado de su clave, LM Studio detectado en el equipo y plantillas para añadir más" width="100%">
 
 Detalle en [docs/papers.md §12](docs/papers.md#12-lo-que-entra-en-la-11) y en la [guía de usuario](docs/usuario.md#41-cómo-trabaja-el-agente-novedades-de-la-11).
 
@@ -367,6 +370,7 @@ plan completo en [docs/PLAN.md](docs/PLAN.md). PublicCode se desarrolla con agen
 
 | Documento | Para |
 |---|---|
+| [Presentación (PPTX)](docs/presentacion/PublicCode.pptx) · [PDF](docs/presentacion/PublicCode.pdf) | qué es, frente a VS Code y opencode, funciones con diagramas e instalación, en 19 diapositivas |
 | [docs/instalacion.md](docs/instalacion.md) | instalar, configurar modelos y LSP, Android, proxies, actualizar y desinstalar |
 | [docs/usuario.md](docs/usuario.md) | usar la TUI, el chat, Studio, el asistente, los agentes externos y el móvil |
 | [docs/arquitectura.md](docs/arquitectura.md) · [docs/interfaces.md](docs/interfaces.md) | cómo está hecho por dentro y el sistema de diseño |

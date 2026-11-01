@@ -195,7 +195,11 @@ Modelos locales u on-premise con la API OpenAI-compatible:
 | vLLM | `http://127.0.0.1:8000/v1` |
 | LiteLLM (proxy de varios modelos) | la URL de tu proxy, p. ej. `http://127.0.0.1:4000/v1` |
 
-Para fijar proveedor y modelo, en `~/.config/pcode/pcode.toml` (Linux) o `%APPDATA%\pcode\pcode.toml` (Windows):
+La forma más cómoda es la pantalla **Ajustes** de Studio (`pcode studio`, después el engranaje o Ctrl+,): plantillas
+para cada proveedor, «Probar conexión» con la lista de modelos y detección de Ollama, LM Studio y vLLM. Desde la
+terminal: `pcode config proveedor ollama --predeterminado` y `pcode config proveedores --probar --detectar`.
+
+Si prefieres editar el archivo, en `~/.config/pcode/pcode.toml` (Linux) o `%APPDATA%\pcode\pcode.toml` (Windows):
 
 ```toml
 [preferencias]
