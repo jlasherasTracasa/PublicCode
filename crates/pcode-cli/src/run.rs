@@ -31,6 +31,10 @@ pub struct RunArgs {
     /// Aplica los cambios de la sandbox si `--acepta` pasa dentro de ella.
     #[arg(long = "aplicar-si-acepta")]
     pub apply_if_accepted: bool,
+    /// Con `--backend`: aplica al proyecto los cambios del agente si termina bien (y pasa
+    /// `--acepta`, si se da), con un punto de control para deshacerlos.
+    #[arg(long = "aplicar", conflicts_with = "apply_if_accepted")]
+    pub apply: bool,
     /// Archivo de configuración.
     #[arg(long = "config", default_value = "pcode.toml")]
     pub config: PathBuf,
@@ -86,7 +90,13 @@ pub async fn run(a: RunArgs) -> anyhow::Result<i32> {
             &a.task,
             a.accept.as_deref(),
             a.model.as_deref(),
-            a.apply_if_accepted,
+            if a.apply {
+                crate::backend_run::Apply::Always
+            } else if a.apply_if_accepted {
+                crate::backend_run::Apply::IfAccepted
+            } else {
+                crate::backend_run::Apply::Never
+            },
         )
         .await;
     }

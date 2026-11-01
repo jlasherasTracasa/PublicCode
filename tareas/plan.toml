@@ -4371,3 +4371,22 @@ objetivo = '''
 (frente al de las nativas) y avisa por encima de 4 000; el chat lo resume al arrancar.
 '''
 tests = ["tokens_de_un_esquema", "mcp_tools_de_un_servidor_real_en_chat_y_en_pcode_mcp"]
+
+[[tarea]]
+id = "F8.48"
+nombre = "agentes-con-tu-cuenta"
+titulo = "GitHub Copilot (y Claude Code, Gemini CLI, opencode) con la cuenta del usuario: Ajustes, conversación en Studio y `--aplicar`"
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.15"]
+toca = ["crates/pcode-config/src/lib.rs", "crates/pcode-tools/src/which.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-backends/src/copilot_cli.rs", "crates/pcode-cli/src/backend_run.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/doctor.rs", "crates/pcode-cli/tests/run.rs", "crates/pcode-server/src/settings.rs", "crates/pcode-server/src/server.rs", "crates/pcode-server/web/index.html", "tools/studio/e2e.js"]
+acepta = "cargo test -p pcode-config agentes_integrados && cargo test -p pcode-server agentes_instalados && cargo test -p pcode-cli --test run copilot"
+contexto = ["docs/usuario.md §3.1", "docs/instalacion.md §9"]
+objetivo = '''
+Los agentes conocidos (`claude-code`, `copilot`, `gemini`, `opencode`) funcionan sin declararlos (`Config::backend`).
+`settings.get` devuelve `agents` (instalado, ruta, orden de instalación por sistema, inicio de sesión, variable de token
+definida, modelo); Studio los enseña en Ajustes y deja elegirlos como modelo de una conversación. `pcode run --aplicar`
+aplica los cambios del agente si termina bien, con punto de control. Solo vías oficiales: GitHub Models se retiró el
+30 de julio de 2026, así que Copilot entra con su CLI y la suscripción del usuario.
+'''
+tests = ["agentes_integrados_sin_declararlos", "agentes_instalados_token_y_backends_propios", "copilot_integrado_aplica_con_punto_de_control"]

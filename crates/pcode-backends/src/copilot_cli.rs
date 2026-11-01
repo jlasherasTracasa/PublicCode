@@ -26,6 +26,8 @@ pub fn build_command(job: &Job, cfg: &CopilotCliCfg) -> Vec<String> {
         "-p".into(),
         job.prompt(),
         "--allow-all-tools".into(),
+        // Solo la respuesta del agente, sin estadísticas ni adornos.
+        "-s".into(),
     ];
     if let Some(m) = job.model.as_ref().or(cfg.model.as_ref()) {
         v.extend(["--model".into(), m.clone()]);
@@ -81,6 +83,11 @@ mod tests {
         let v = build_command(&Job::new("t", "haz X"), &c);
         assert_eq!(&v[..3], ["copilot", "-p", "haz X"]);
         assert!(v.contains(&"--allow-all-tools".to_string()));
+        assert!(v.contains(&"-s".to_string()));
+        let mut j = Job::new("t", "haz X");
+        j.model = Some("claude-haiku-4.5".into());
+        let v = build_command(&j, &c);
+        assert_eq!(&v[v.len() - 2..], ["--model", "claude-haiku-4.5"]);
     }
     #[test]
     fn copilot_parse_fixture() {

@@ -91,6 +91,23 @@ pcode config quitar empresa
 Ambos editan el archivo conservando tus comentarios. Un proveedor cuya variable no esté definida no estropea el
 resto: solo falla si lo eliges, y dice qué variable falta.
 
+**Agentes con tu cuenta: GitHub Copilot, Claude Code, Gemini CLI y opencode.** Ajustes los enseña aparte (también
+la plantilla «GitHub Copilot» lleva a su tarjeta). Son agentes completos que usan **tu** suscripción con su CLI
+oficial, no APIs por URL:
+
+| Qué | Cómo |
+|---|---|
+| ¿Está instalado? | la tarjeta dice ✓ Instalado (con la ruta) o ✗ Sin instalar, con la orden para instalarlo y «Copiar» |
+| Instalar Copilot | Linux: `npm install -g @github/copilot` (Node.js 22 o posterior) · Windows: `winget install GitHub.Copilot` |
+| Iniciar sesión en Copilot | abre `copilot` y escribe `/login`; o define `COPILOT_GITHUB_TOKEN` (o `GH_TOKEN`) con un token *fine-grained* de tu cuenta con el permiso «Copilot Requests». Necesita una suscripción de Copilot |
+| Usarlo | «Usar en una conversación», o Opciones → modelo → *Agentes con tu cuenta* en el panel del agente; el campo «Modelo del agente» es opcional (vacío = el suyo) |
+| Qué pasa al enviar | el agente trabaja en una sandbox; si termina bien, sus cambios se aplican al proyecto con un punto de control: «Deshacer» en Actividad (o `/deshacer`) los revierte |
+| Seguir la conversación | escribe otro mensaje: el agente se relanza con lo hablado hasta ahora como contexto |
+| Desde la terminal | `pcode run "…" --backend copilot --aplicar` (`--modelo` para elegir modelo) · `pcode config proveedores` lista los agentes y su estado |
+
+GitHub Models, la API oficial compatible con OpenAI para los modelos de Copilot, se retiró el 30 de julio de 2026;
+por eso Copilot no se añade como proveedor por URL. `pcode config proveedor copilot` explica esto mismo y cómo usarlo.
+
 `pcode config mostrar` enseña la configuración que se usaría (sin claves) y `pcode mcp` las tools que aporta
 cada servidor MCP, con los **tokens que ocupan sus esquemas** en cada petición al modelo (y el total, frente al de
 las tools nativas). Los esquemas viajan en todas las peticiones, así que un servidor con muchas tools encarece toda
@@ -191,6 +208,7 @@ de seguridad que acompaña a cada versión está en [evaluacion.md](evaluacion.m
 | Orden | Qué hace |
 |---|---|
 | `pcode run "…" --backend claude-code` | ejecuta Claude Code (o `gemini`, `copilot`, `opencode`, o un modelo) en una sandbox; los cambios no tocan tu repo |
+| `… --aplicar` | aplica los cambios si el agente termina bien (y pasa `--acepta`, si se da), con punto de control para `/deshacer` |
 | `… --acepta "cargo test" --aplicar-si-acepta` | solo aplica los cambios si la aceptación pasa |
 | `pcode flow run` | ejecuta un plan de tareas (`tareas/*.md`) con dependencias, reintentos e integración en commits |
 | `pcode sandbox …` | ejecutar, ver cambios, diff, aplicar o descartar a mano |

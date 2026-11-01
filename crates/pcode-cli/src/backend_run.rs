@@ -12,10 +12,12 @@ pub fn build_backend(
     cfg: &Config,
     model_override: Option<&str>,
 ) -> anyhow::Result<Box<dyn Backend>> {
-    let b: &BackendCfg = cfg
-        .backends
-        .get(name)
-        .with_context(|| format!("backend desconocido: {name}"))?;
+    let b: BackendCfg = cfg.backend(name).with_context(|| {
+        format!(
+            "backend desconocido: {name} (los integrados son {}; los demás se declaran en [backends.{name}])",
+            pcode_config::BUILTIN_AGENTS.join(", ")
+        )
+    })?;
     let model_name = model_override.map(String::from).or_else(|| b.model.clone());
     let bin = |d: &str| b.binary.clone().unwrap_or_else(|| d.to_string());
     Ok(match (b.kind.as_str(), name) {
@@ -66,6 +68,41 @@ fn network(cfg: &Config) -> Network {
     }
 }
 
+/// Qué hacer al terminar con los cambios que el agente dejó en la sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Apply {
+    /// Se quedan en la sandbox (se listan y se dice dónde están).
+    Never,
+    /// Se aplican si `acepta` pasa dentro de la sandbox.
+    IfAccepted,
+    /// Se aplican si el agente termina bien (con `acepta`, además, si pasa). Antes se guarda un
+    /// punto de control, así que `/deshacer` (o Studio) los revierte.
+    Always,
+}
+
+/// Directorios donde cada agente guarda su sesión y su configuración (en `home`): dentro de la
+/// sandbox tienen que poder escribirse o la CLI no arranca o no conserva el inicio de sesión. Solo
+/// los que existen.
+pub fn agent_state_dirs(home: &Path, backend: &str) -> Vec<PathBuf> {
+    let rel: &[&str] = match backend {
+        b if b.starts_with("copilot") => &[".copilot", ".config/github-copilot"],
+        b if b.starts_with("claude") => &[".claude"],
+        b if b.starts_with("gemini") => &[".gemini"],
+        b if b.starts_with("opencode") => &[".local/share/opencode", ".config/opencode"],
+        _ => &[],
+    };
+    rel.iter()
+        .map(|r| home.join(r))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Ejecuta una tarea con un backend dentro de una sandbox; devuelve el código de salida.
 pub async fn run_with_backend(
     cfg: &Config,
@@ -73,7 +110,7 @@ pub async fn run_with_backend(
     task: &str,
     accept: Option<&str>,
     model_name: Option<&str>,
-    apply_if_accepted: bool,
+    apply: Apply,
 ) -> anyhow::Result<i32> {
     let root = std::env::current_dir()?;
     let be = build_backend(backend, cfg, model_name)?;
@@ -90,7 +127,9 @@ pub async fn run_with_backend(
         root: root.clone(),
         state: Some(state.clone()),
         network: net,
-        writable: vec![],
+        writable: home_dir()
+            .map(|h| agent_state_dirs(&h, backend))
+            .unwrap_or_default(),
         timeout: Duration::from_secs(7200),
     })?;
     let mut job = Job::new("cli", task);
@@ -108,21 +147,45 @@ pub async fn run_with_backend(
     for c in &changes {
         eprintln!("  {:?} {}", c.kind, c.path);
     }
-    if apply_if_accepted {
-        if let Some(cmd) = accept {
-            let (st, out) = sb
-                .run_capture(&["sh".into(), "-c".into(), cmd.into()], &[])
-                .await?;
-            if st.code == 0 {
-                let n = sb.apply()?.len();
-                eprintln!("aceptación OK: {n} cambios aplicados");
-                return Ok(res.exit);
-            }
+    if apply == Apply::IfAccepted && accept.is_none() {
+        bail!("--aplicar-si-acepta necesita --acepta");
+    }
+    if apply == Apply::Never {
+        return Ok(res.exit);
+    }
+    if let Some(cmd) = accept {
+        let (st, out) = sb
+            .run_capture(&["sh".into(), "-c".into(), cmd.into()], &[])
+            .await?;
+        if st.code != 0 {
             eprintln!("aceptación FALLÓ (código {}):\n{out}", st.code);
             return Ok(2);
         }
-        bail!("--aplicar-si-acepta necesita --acepta");
+        eprintln!("aceptación OK");
+    } else if res.exit != 0 {
+        eprintln!(
+            "el agente terminó con código {}: no se aplica nada",
+            res.exit
+        );
+        return Ok(res.exit);
     }
+    if changes.is_empty() {
+        eprintln!("sin cambios que aplicar");
+        return Ok(res.exit);
+    }
+    // Punto de control antes de tocar el proyecto: se deshace como un turno del agente propio.
+    crate::run::ensure_state_dir(&root)?;
+    let mut cp = pcode_core::Checkpoints::open(&root);
+    let label: String = format!("{backend}: {}", task.lines().next().unwrap_or(""))
+        .chars()
+        .take(80)
+        .collect();
+    cp.begin_turn(&label);
+    for c in &changes {
+        cp.save(&c.path)?;
+    }
+    let n = sb.apply()?.len();
+    eprintln!("{n} cambios aplicados (se deshacen con /deshacer o desde Studio)");
     Ok(res.exit)
 }
 
@@ -218,3 +281,46 @@ pub async fn sandbox_cmd(c: SandboxCmd) -> anyhow::Result<i32> {
 
 #[allow(dead_code)]
 fn _assert_path(_: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agentes_integrados_sin_configuracion() {
+        let cfg = Config::default();
+        for b in ["copilot", "claude-code", "gemini", "opencode"] {
+            assert!(build_backend(b, &cfg, None).is_ok(), "{b}");
+        }
+        let e = build_backend("nadie", &cfg, None)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            e.contains("copilot") && e.contains("[backends.nadie]"),
+            "{e}"
+        );
+        assert_eq!(
+            build_backend("copilot", &cfg, None).unwrap().id(),
+            "copilot"
+        );
+    }
+
+    #[test]
+    fn directorios_de_estado_de_cada_agente() {
+        let h = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(h.path().join(".copilot")).unwrap();
+        std::fs::create_dir_all(h.path().join(".claude")).unwrap();
+        assert_eq!(
+            agent_state_dirs(h.path(), "copilot"),
+            vec![h.path().join(".copilot")]
+        );
+        assert_eq!(
+            agent_state_dirs(h.path(), "claude-code"),
+            vec![h.path().join(".claude")]
+        );
+        // Los que no existen no se piden (la sandbox no puede montar lo que falta).
+        assert!(agent_state_dirs(h.path(), "gemini").is_empty());
+        assert!(agent_state_dirs(h.path(), "glm").is_empty());
+    }
+}

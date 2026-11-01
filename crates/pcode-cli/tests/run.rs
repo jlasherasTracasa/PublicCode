@@ -179,6 +179,64 @@ fn backend_con_aceptacion_aplica_los_cambios() {
     );
 }
 
+/// Copilot (y los demás agentes integrados) funciona sin declararlo en `[backends]`; con
+/// `--aplicar` sus cambios llegan al proyecto con un punto de control, y si el agente falla no se
+/// aplica nada.
+#[cfg(unix)]
+#[test]
+fn copilot_integrado_aplica_con_punto_de_control() {
+    use std::os::unix::fs::PermissionsExt;
+    if !userns() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let fake = bin.path().join("copilot");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\necho \"$*\" > de_copilot.txt\necho hecho por copilot\nexit ${COPILOT_FALSO_SALIDA:-0}\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |salida: &str| {
+        let mut c = Command::cargo_bin("pcode").unwrap();
+        c.current_dir(d.path())
+            .env("PATH", &path)
+            .env("COPILOT_FALSO_SALIDA", salida)
+            .args([
+                "run",
+                "saluda",
+                "--backend",
+                "copilot",
+                "--modelo",
+                "m1",
+                "--aplicar",
+            ]);
+        c
+    };
+    // Si el agente falla, el proyecto no cambia.
+    run("3").assert().code(3);
+    assert!(!d.path().join("de_copilot.txt").exists());
+    run("0")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hecho por copilot"))
+        .stderr(predicate::str::contains("1 cambios aplicados"));
+    let args = std::fs::read_to_string(d.path().join("de_copilot.txt")).unwrap();
+    assert!(
+        args.contains("-p saluda") && args.contains("-s") && args.contains("--model m1"),
+        "{args}"
+    );
+    let manifest =
+        std::fs::read_to_string(d.path().join(".pcode/checkpoints/000001/manifest.json")).unwrap();
+    assert!(manifest.contains("copilot: saluda") && manifest.contains("de_copilot.txt"));
+}
+
 #[test]
 fn backend_desconocido_es_error() {
     let d = tempfile::tempdir().unwrap();

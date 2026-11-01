@@ -146,6 +146,10 @@ pub struct ProviderCfg {
     pub missing_key_env: Option<String>,
 }
 
+/// Agentes externos que funcionan sin declararlos en `[backends.*]` (con su CLI oficial y la cuenta
+/// del propio usuario): `pcode run --backend copilot` basta.
+pub const BUILTIN_AGENTS: &[&str] = &["claude-code", "copilot", "gemini", "opencode"];
+
 /// Un backend de agente.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default)]
@@ -232,6 +236,18 @@ impl Config {
             }
         }
         Ok(c)
+    }
+
+    /// El backend `name`: el de `[backends.<name>]` si está, o el integrado para los agentes
+    /// conocidos ([`BUILTIN_AGENTS`]), que no hace falta declarar.
+    pub fn backend(&self, name: &str) -> Option<BackendCfg> {
+        self.backends.get(name).cloned().or_else(|| {
+            BUILTIN_AGENTS.contains(&name).then(|| BackendCfg {
+                kind: "agente-cli".into(),
+                binary: None,
+                model: None,
+            })
+        })
     }
 
     /// Une la configuración global (`user`) y la del proyecto (`project`): el proyecto manda en
@@ -386,6 +402,23 @@ red = "denegar"
         let c = Config::from_str(EJEMPLO).unwrap();
         assert_eq!(c.providers.len(), 1);
         assert_eq!(c.backends.len(), 5);
+    }
+    #[test]
+    fn agentes_integrados_sin_declararlos() {
+        let c = Config::default();
+        let b = c.backend("copilot").unwrap();
+        assert_eq!(b.kind, "agente-cli");
+        assert!(b.binary.is_none());
+        assert!(c.backend("claude-code").is_some() && c.backend("opencode").is_some());
+        assert!(c.backend("glm").is_none());
+        // Lo declarado manda sobre lo integrado.
+        let c = Config::from_str(
+            "[backends.copilot]\ntipo = \"agente-cli\"\nbinario = \"/opt/copilot\"\nmodelo = \"m\"",
+        )
+        .unwrap();
+        let b = c.backend("copilot").unwrap();
+        assert_eq!(b.binary.as_deref(), Some("/opt/copilot"));
+        assert_eq!(b.model.as_deref(), Some("m"));
     }
     #[test]
     fn expand_env_sustituye() {

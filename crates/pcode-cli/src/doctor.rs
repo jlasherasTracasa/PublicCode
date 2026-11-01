@@ -3,25 +3,7 @@ use crate::provider::{build_provider, pick_model};
 use pcode_config::{Config, user_config_path};
 use std::path::{Path, PathBuf};
 
-/// Busca un ejecutable en el `PATH` (con las extensiones de `PATHEXT` en Windows).
-pub fn which(name: &str) -> Option<PathBuf> {
-    let exts: Vec<String> = if cfg!(windows) {
-        std::env::var("PATHEXT")
-            .unwrap_or_else(|_| ".EXE;.CMD;.BAT".into())
-            .split(';')
-            .map(|e| e.to_lowercase())
-            .chain([String::new()])
-            .collect()
-    } else {
-        vec![String::new()]
-    };
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).find_map(|dir| {
-        exts.iter()
-            .map(|e| dir.join(format!("{name}{e}")))
-            .find(|p| p.is_file())
-    })
-}
+pub use pcode_tools::which;
 
 fn line(ok: bool, what: &str, detail: &str) {
     let sym = if ok { "✓" } else { "✗" };
@@ -363,6 +345,35 @@ fn print_providers(v: &pcode_server::settings::SettingsView) {
     }
 }
 
+fn print_agents(v: &pcode_server::settings::SettingsView) {
+    println!();
+    println!("Agentes con tu cuenta (pcode run --backend <nombre>, o elígelos en Studio):");
+    for a in &v.agents {
+        let detalle = match (&a.path, a.binary.is_empty()) {
+            (_, true) => "listo".to_string(),
+            (Some(p), _) => format!(
+                "{p}{}{}",
+                a.token_env
+                    .as_ref()
+                    .map(|e| format!(" · {e} definida"))
+                    .unwrap_or_default(),
+                a.model
+                    .as_ref()
+                    .map(|m| format!(" · modelo {m}"))
+                    .unwrap_or_default()
+            ),
+            (None, _) if a.install.is_empty() => format!("no se encuentra «{}»", a.binary),
+            (None, _) => format!("instálalo: {}", a.install),
+        };
+        println!(
+            "{} {:<14} {:<16} {detalle}",
+            if a.installed { "✓" } else { "✗" },
+            a.name,
+            a.label
+        );
+    }
+}
+
 /// Ejecuta `pcode config …`.
 pub async fn config_cmd(c: ConfigCmd) -> anyhow::Result<i32> {
     let path = user_config_path().ok_or_else(|| {
@@ -373,6 +384,7 @@ pub async fn config_cmd(c: ConfigCmd) -> anyhow::Result<i32> {
         ConfigCmd::Proveedores { test, detect } => {
             let v = pcode_server::settings::get(&settings_paths(&path));
             print_providers(&v);
+            print_agents(&v);
             if test {
                 for p in &v.providers {
                     let r = pcode_server::settings::test_provider(
@@ -438,6 +450,28 @@ pub async fn config_cmd(c: ConfigCmd) -> anyhow::Result<i32> {
             let preset = pcode_server::settings::PRESETS
                 .iter()
                 .find(|p| p.name == nombre);
+            // Copilot, Claude Code y opencode no son APIs de modelos sino agentes con su propia
+            // cuenta: no se configuran como proveedor.
+            if preset.is_none()
+                && url.is_none()
+                && let Some(a) = pcode_server::settings::AGENTS
+                    .iter()
+                    .find(|a| a.name == nombre || a.binary == nombre)
+            {
+                println!(
+                    "{} no es una API de modelos: es un agente que usa tu cuenta con su CLI oficial.\n\
+                     · Instálalo: {}\n· Inicia sesión: {}\n· Úsalo: pcode run \"tarea\" --backend {} --aplicar, o elígelo en Studio (Opciones → Modelo).",
+                    a.label,
+                    if cfg!(windows) {
+                        a.install_windows
+                    } else {
+                        a.install_linux
+                    },
+                    a.login,
+                    a.name
+                );
+                return Ok(2);
+            }
             let input = pcode_config::edit::ProviderInput {
                 kind: kind
                     .or_else(|| preset.map(|p| p.kind.to_string()))

@@ -6,6 +6,7 @@ pub mod outline;
 pub mod read;
 pub mod registry;
 pub mod search;
+pub mod which;
 pub mod write;
 
 pub use bash::{Bash, head_tail, shell_argv, shell_command};
@@ -14,6 +15,7 @@ pub use outline::Outline;
 pub use read::ReadFile;
 pub use registry::*;
 pub use search::{Glob, Grep};
+pub use which::{which, which_in};
 pub use write::WriteFile;
 
 /// Registro con las tools nativas de la fase F1.

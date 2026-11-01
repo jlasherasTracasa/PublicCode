@@ -39,6 +39,8 @@ pub struct AppState {
     pub lsp: pcode_lsp::LspManager,
     /// Archivo de configuración global (se puede cambiar en las pruebas).
     global_config: Mutex<Option<PathBuf>>,
+    /// Con qué se lanzó cada conversación con un agente externo, para poder continuarla.
+    agent_params: Mutex<HashMap<i64, SessionCreateParams>>,
 }
 
 impl AppState {
@@ -67,6 +69,7 @@ impl AppState {
         );
         Arc::new(AppState {
             global_config: Mutex::new(pcode_config::user_config_path()),
+            agent_params: Mutex::new(HashMap::new()),
             lsp,
             repo,
             pcode_bin,
@@ -151,6 +154,9 @@ impl AppState {
         });
         let (ctx, crx) = oneshot::channel();
         self.cancels.lock().unwrap().insert(id, ctx);
+        if p.backend.is_some() {
+            self.agent_params.lock().unwrap().insert(id, p.clone());
+        }
         let me = self.clone();
         if p.backend.is_none() && p.accept.is_none() {
             tokio::spawn(async move { me.run_chat_session(id, p, crx).await });
@@ -181,7 +187,11 @@ impl AppState {
     /// Manda otro mensaje a una sesión de conversación.
     async fn send(self: &Arc<Self>, id: i64, text: String) -> Result<(), String> {
         if !self.inputs.lock().unwrap().contains_key(&id) {
-            return Err("esta sesión ya no admite mensajes".into());
+            let params = self.agent_params.lock().unwrap().get(&id).cloned();
+            return match params {
+                Some(p) => self.continue_agent(id, p, text),
+                None => Err("esta sesión ya no admite mensajes".into()),
+            };
         }
         if matches!(
             self.state_of(id),
@@ -200,6 +210,37 @@ impl AppState {
             self.set_state(id, SessionState::Failed);
             Err("no se pudo mandar el mensaje al agente".into())
         }
+    }
+
+    /// Sigue una conversación con un agente externo (Copilot, Claude Code…): cada mensaje es una
+    /// ejecución nueva del agente, con lo hablado hasta ahora como contexto.
+    fn continue_agent(
+        self: &Arc<Self>,
+        id: i64,
+        mut p: SessionCreateParams,
+        text: String,
+    ) -> Result<(), String> {
+        if matches!(
+            self.state_of(id),
+            Some(SessionState::Running | SessionState::WaitingApproval)
+        ) {
+            return Err("el agente sigue trabajando: espera a que termine".into());
+        }
+        let history = self
+            .transcripts
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .unwrap_or_default();
+        p.task = follow_up_task(&history, &text);
+        self.push(id, TranscriptEntry::User { text });
+        self.set_state(id, SessionState::Running);
+        let (ctx, crx) = oneshot::channel();
+        self.cancels.lock().unwrap().insert(id, ctx);
+        let me = self.clone();
+        tokio::spawn(async move { me.run_session(id, p, crx).await });
+        Ok(())
     }
 
     /// Sesión de conversación: `pcode chat --formato jsonl`, que admite más mensajes con
@@ -420,7 +461,9 @@ impl AppState {
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
         if let Some(b) = &p.backend {
-            cmd.args(["--backend", b]);
+            // Un agente externo trabaja en una sandbox: sus cambios se aplican al terminar (si
+            // pasa la aceptación, cuando la hay), con punto de control para deshacerlos.
+            cmd.args(["--backend", b, "--aplicar"]);
         }
         if let Some(m) = p.model.as_deref().filter(|m| !m.is_empty()) {
             cmd.args(["--modelo", m]);
@@ -1213,6 +1256,36 @@ pub async fn serve_listener(
     Ok(())
 }
 
+/// Contexto máximo (en caracteres) de lo hablado que se pasa al continuar con un agente externo.
+const FOLLOW_UP_CONTEXT: usize = 6000;
+
+/// La tarea de un mensaje de seguimiento a un agente externo: lo hablado (los mensajes del
+/// usuario y las respuestas del agente, los más recientes si no cabe todo) y lo que se pide ahora.
+pub fn follow_up_task(history: &[TranscriptEntry], text: &str) -> String {
+    let mut lines: Vec<String> = vec![];
+    let mut used = 0;
+    for e in history.iter().rev() {
+        let line = match e {
+            TranscriptEntry::User { text } => format!("Usuario: {text}"),
+            TranscriptEntry::Assistant { text } if !text.trim().is_empty() => {
+                format!("Agente: {text}")
+            }
+            _ => continue,
+        };
+        if used + line.len() > FOLLOW_UP_CONTEXT {
+            lines.push("(…)".into());
+            break;
+        }
+        used += line.len();
+        lines.push(line);
+    }
+    lines.reverse();
+    format!(
+        "Seguimos con la misma conversación. Lo hablado hasta ahora:\n\n{}\n\nLo que te pido ahora:\n{text}",
+        lines.join("\n")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1220,6 +1293,37 @@ mod tests {
     use axum::http::Request;
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+
+    #[test]
+    fn seguimiento_con_agente_lleva_lo_hablado() {
+        let h = vec![
+            TranscriptEntry::User {
+                text: "crea un saludo".into(),
+            },
+            TranscriptEntry::Assistant {
+                text: "He creado saludo.txt".into(),
+            },
+            TranscriptEntry::System {
+                text: "backend: copilot · código: 0".into(),
+            },
+        ];
+        let t = follow_up_task(&h, "ponlo en inglés");
+        assert!(t.contains("Usuario: crea un saludo\nAgente: He creado saludo.txt"));
+        assert!(t.ends_with("Lo que te pido ahora:\nponlo en inglés"));
+        assert!(
+            !t.contains("backend: copilot"),
+            "la salida del sistema no entra"
+        );
+        // Si no cabe todo, se quedan los mensajes más recientes.
+        let largo: Vec<TranscriptEntry> = (0..40)
+            .map(|i| TranscriptEntry::User {
+                text: format!("mensaje {i} {}", "x".repeat(300)),
+            })
+            .collect();
+        let t = follow_up_task(&largo, "y ahora");
+        assert!(t.contains("(…)") && t.contains("mensaje 39") && !t.contains("mensaje 0 "));
+        assert!(t.len() < FOLLOW_UP_CONTEXT + 400);
+    }
 
     fn app(token: Option<&str>, bin: &str) -> (Arc<AppState>, Router) {
         let st = AppState::new(std::env::temp_dir(), bin.into(), token.map(String::from));

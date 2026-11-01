@@ -162,6 +162,188 @@ pub const KNOWN_ENVS: &[&str] = &[
     "LITELLM_API_KEY",
 ];
 
+/// Un agente externo que se usa con su CLI oficial y la cuenta (o suscripción) del propio usuario.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AgentInfo {
+    /// Nombre del backend (`pcode run --backend <name>`).
+    pub name: &'static str,
+    /// Nombre para mostrar.
+    pub label: &'static str,
+    /// Descripción corta.
+    pub hint: &'static str,
+    /// Ejecutable de su CLI.
+    pub binary: &'static str,
+    /// Cómo instalarlo en Linux.
+    pub install_linux: &'static str,
+    /// Cómo instalarlo en Windows.
+    pub install_windows: &'static str,
+    /// Cómo iniciar sesión.
+    pub login: &'static str,
+    /// Variables de entorno con las que también se autentica (por orden de preferencia).
+    pub token_envs: &'static [&'static str],
+    /// Documentación oficial.
+    pub docs: &'static str,
+}
+
+/// Agentes externos conocidos, en el orden en que se enseñan.
+pub const AGENTS: &[AgentInfo] = &[
+    AgentInfo {
+        name: "copilot",
+        label: "GitHub Copilot",
+        hint: "tu suscripción de Copilot, con su CLI oficial",
+        binary: "copilot",
+        install_linux: "npm install -g @github/copilot",
+        install_windows: "winget install GitHub.Copilot",
+        login: "Abre `copilot` y escribe /login, o define COPILOT_GITHUB_TOKEN con un token fine-grained con el permiso «Copilot Requests». Necesita una suscripción de Copilot.",
+        token_envs: &["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
+        docs: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
+    },
+    AgentInfo {
+        name: "claude-code",
+        label: "Claude Code",
+        hint: "tu cuenta de Claude, con su CLI oficial",
+        binary: "claude",
+        install_linux: "npm install -g @anthropic-ai/claude-code",
+        install_windows: "npm install -g @anthropic-ai/claude-code",
+        login: "Abre `claude` e inicia sesión con tu cuenta, o define ANTHROPIC_API_KEY.",
+        token_envs: &["ANTHROPIC_API_KEY"],
+        docs: "https://code.claude.com/docs/en/setup",
+    },
+    AgentInfo {
+        name: "gemini",
+        label: "Gemini CLI",
+        hint: "tu cuenta de Google, con su CLI oficial",
+        binary: "gemini",
+        install_linux: "npm install -g @google/gemini-cli",
+        install_windows: "npm install -g @google/gemini-cli",
+        login: "Abre `gemini` e inicia sesión con Google, o define GEMINI_API_KEY.",
+        token_envs: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+        docs: "https://github.com/google-gemini/gemini-cli",
+    },
+    AgentInfo {
+        name: "opencode",
+        label: "opencode",
+        hint: "agente libre con sus propios proveedores",
+        binary: "opencode",
+        install_linux: "npm install -g opencode-ai",
+        install_windows: "npm install -g opencode-ai",
+        login: "Ejecuta `opencode auth login` y elige el proveedor.",
+        token_envs: &[],
+        docs: "https://opencode.ai/docs",
+    },
+];
+
+/// Un agente tal como lo enseña la pantalla de Ajustes.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentView {
+    /// Nombre del backend.
+    pub name: String,
+    /// Nombre para mostrar.
+    pub label: String,
+    /// Descripción corta.
+    pub hint: String,
+    /// Ejecutable que se busca.
+    pub binary: String,
+    /// Está instalado (su ejecutable está en el `PATH`, o no necesita ninguno).
+    pub installed: bool,
+    /// Dónde está el ejecutable.
+    pub path: Option<String>,
+    /// Orden de instalación para este sistema (vacía si no aplica).
+    pub install: String,
+    /// Cómo iniciar sesión.
+    pub login: String,
+    /// La primera variable de autenticación definida, si hay alguna.
+    pub token_env: Option<String>,
+    /// Modelo configurado en `[backends.<name>]` (vacío = el del agente).
+    pub model: Option<String>,
+    /// Documentación oficial.
+    pub docs: String,
+    /// Declarado en la configuración (`[backends.<name>]`) en vez de ser uno integrado.
+    pub custom: bool,
+}
+
+/// Los agentes externos: los conocidos ([`AGENTS`]) y los backends de la configuración que se
+/// pueden lanzar. `path` es la lista de directorios donde buscar (el `PATH`) y `env_set` dice si
+/// una variable está definida.
+pub fn agents(
+    cfg: &Config,
+    path: &std::ffi::OsStr,
+    env_set: &dyn Fn(&str) -> bool,
+) -> Vec<AgentView> {
+    let find = |bin: &str| pcode_tools::which_in(bin, path).map(|p| p.display().to_string());
+    let mut out: Vec<AgentView> = AGENTS
+        .iter()
+        .map(|a| {
+            let b = cfg.backends.get(a.name);
+            let binary = b
+                .and_then(|b| b.binary.clone())
+                .unwrap_or_else(|| a.binary.to_string());
+            let found = find(&binary);
+            AgentView {
+                name: a.name.into(),
+                label: a.label.into(),
+                hint: a.hint.into(),
+                installed: found.is_some(),
+                path: found,
+                binary,
+                install: if cfg!(windows) {
+                    a.install_windows
+                } else {
+                    a.install_linux
+                }
+                .into(),
+                login: a.login.into(),
+                token_env: a
+                    .token_envs
+                    .iter()
+                    .find(|e| env_set(e))
+                    .map(|e| e.to_string()),
+                model: b.and_then(|b| b.model.clone()),
+                docs: a.docs.into(),
+                custom: false,
+            }
+        })
+        .collect();
+    for (name, b) in &cfg.backends {
+        if AGENTS.iter().any(|a| a.name == name) {
+            continue;
+        }
+        let known = AGENTS
+            .iter()
+            .find(|a| name.starts_with(a.binary) || name.starts_with(a.name));
+        let (binary, found) = match (b.kind.as_str(), known) {
+            ("modelo", _) => (String::new(), None),
+            ("agente-cli", Some(a)) => {
+                let bin = b.binary.clone().unwrap_or_else(|| a.binary.to_string());
+                let f = find(&bin);
+                (bin, f)
+            }
+            // Los demás tipos no se pueden lanzar desde una conversación.
+            _ => continue,
+        };
+        out.push(AgentView {
+            name: name.clone(),
+            label: name.clone(),
+            hint: if b.kind == "modelo" {
+                "backend de modelo de la configuración".into()
+            } else {
+                format!("{} con otra configuración", known.map_or("", |a| a.label))
+            },
+            installed: b.kind == "modelo" || found.is_some(),
+            path: found,
+            binary,
+            install: String::new(),
+            login: String::new(),
+            token_env: None,
+            model: b.model.clone(),
+            docs: String::new(),
+            custom: true,
+        });
+    }
+    out
+}
+
 /// Todo lo que enseña la pantalla de Ajustes.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,6 +366,8 @@ pub struct SettingsView {
     pub presets: &'static [Preset],
     /// Si no hay proveedores, de qué variable saldría el modelo.
     pub fallback: Option<String>,
+    /// Agentes externos (Copilot, Claude Code, Gemini CLI, opencode…).
+    pub agents: Vec<AgentView>,
 }
 
 fn read(p: &Path) -> String {
@@ -259,6 +443,11 @@ pub fn get(paths: &ConfigPaths) -> SettingsView {
         } else {
             None
         },
+        agents: agents(
+            &merged,
+            &std::env::var_os("PATH").unwrap_or_default(),
+            &env_set,
+        ),
         providers,
         env_keys,
         presets: PRESETS,
@@ -472,5 +661,51 @@ mod tests {
             e.contains("¿está arrancado el servidor") && e.contains("PCODE_TEST_NO_EXISTE_JAMAS"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn agentes_instalados_token_y_backends_propios() {
+        let d = tempfile::tempdir().unwrap();
+        let exe = |n: &str| {
+            if cfg!(windows) {
+                format!("{n}.exe")
+            } else {
+                n.to_string()
+            }
+        };
+        std::fs::write(d.path().join(exe("copilot")), "").unwrap();
+        std::fs::write(d.path().join(exe("claude-mio")), "").unwrap();
+        let path = std::env::join_paths([d.path()]).unwrap();
+        let cfg = Config::from_str(
+            "[backends.copilot]\ntipo = \"agente-cli\"\nmodelo = \"claude-haiku-4.5\"\n\
+             [backends.claude-rapido]\ntipo = \"agente-cli\"\nbinario = \"claude-mio\"\n\
+             [backends.glm]\ntipo = \"modelo\"\nmodelo = \"litellm/glm\"\n\
+             [backends.copilot-github]\ntipo = \"agente-github\"\n",
+        )
+        .unwrap();
+        let v = agents(&cfg, &path, &|e| e == "GH_TOKEN");
+        let names: Vec<&str> = v.iter().map(|a| a.name.as_str()).collect();
+        // Copilot primero; los propios lanzables después; agente-github no se ofrece.
+        assert_eq!(
+            names,
+            [
+                "copilot",
+                "claude-code",
+                "gemini",
+                "opencode",
+                "claude-rapido",
+                "glm"
+            ]
+        );
+        let c = &v[0];
+        assert!(c.installed && c.path.is_some() && !c.custom);
+        assert_eq!(c.label, "GitHub Copilot");
+        assert_eq!(c.token_env.as_deref(), Some("GH_TOKEN"));
+        assert_eq!(c.model.as_deref(), Some("claude-haiku-4.5"));
+        assert!(c.install.contains("copilot") || c.install.contains("Copilot"));
+        assert!(c.docs.starts_with("https://docs.github.com/"));
+        assert!(!v[1].installed && v[1].token_env.is_none());
+        assert!(v[4].installed && v[4].custom && v[4].binary == "claude-mio");
+        assert!(v[5].installed && v[5].binary.is_empty());
     }
 }

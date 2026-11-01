@@ -29,6 +29,10 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pcode-e2e-'));
 const D = path.join(TMP, 'demo');
 const MOCK = path.join(TMP, 'mock.json');
 const GLOBAL = path.join(TMP, 'config', 'pcode.toml');
+// Un `copilot` falso en el PATH de Studio: anota sus argumentos en un archivo y responde.
+const BIN = path.join(TMP, 'bin');
+fs.mkdirSync(BIN, { recursive: true });
+fs.writeFileSync(path.join(BIN, 'copilot'), '#!/bin/sh\necho "$*" > de_copilot.txt\necho "He creado de_copilot.txt (hecho por copilot)"\n', { mode: 0o755 });
 const http = require('http');
 /** Servidor OpenAI-compatible falso en 127.0.0.1 que solo responde a GET /v1/models. */
 function servidorModelos() {
@@ -67,7 +71,7 @@ function proyecto() {
 function arranca() {
   return new Promise((ok, mal) => {
     // PCODE_CONFIG: la configuración global de la prueba, para no tocar la del usuario.
-    const p = spawn(PCODE, ['studio', '--no-abrir', '--puerto', '0'], { cwd: D, env: { ...process.env, PCODE_MOCK_SCRIPT: MOCK, NO_COLOR: '1', PCODE_CONFIG: GLOBAL } });
+    const p = spawn(PCODE, ['studio', '--no-abrir', '--puerto', '0'], { cwd: D, env: { ...process.env, PATH: BIN + path.delimiter + process.env.PATH, PCODE_MOCK_SCRIPT: MOCK, NO_COLOR: '1', PCODE_CONFIG: GLOBAL } });
     let err = '';
     const t = setTimeout(() => mal(new Error('Studio no arrancó en 20 s: ' + err)), 20000);
     p.stderr.on('data', (b) => { err += b; const m = err.match(/http:\/\/\S+/); if (m) { clearTimeout(t); ok({ proc: p, url: m[0] }); } });
@@ -256,6 +260,18 @@ function arranca() {
     await captura(p, 'studio-ajustes.png');
     await p.locator('details.opciones summary').click();
     ok((await p.locator('#proveedor option').allTextContents()).some((t) => t.startsWith('equipo · llama3.3')), 'el agente puede elegir proveedor y modelo por conversación');
+    // GitHub Copilot y los demás agentes con la cuenta del usuario
+    ok((await p.textContent('#ag-copilot')).includes('✓ Instalado'), 'Ajustes: GitHub Copilot detectado en el PATH');
+    ok(await p.locator('#ag-copilot pre').count() === 0 && (await p.textContent('#ag-copilot')).includes('Copilot Requests'), 'Copilot: cómo iniciar sesión, sin orden de instalación');
+    if (!enPath('opencode')) ok((await p.textContent('#ag-opencode')).includes('npm install -g opencode-ai'), 'agente sin instalar: orden para instalarlo');
+    await p.locator('.plantilla', { hasText: 'GitHub Copilot' }).click(); await p.waitForTimeout(150);
+    ok(await p.locator('#ag-copilot.destello').count() === 1, 'la plantilla GitHub Copilot lleva a su tarjeta');
+    await p.locator('#aj-agentes').evaluate((e) => e.scrollIntoView({ block: 'start' })); await p.waitForTimeout(1300);
+    await captura(p, 'studio-agentes.png');
+    ok((await p.locator('#proveedor optgroup[label="Agentes con tu cuenta"] option').allTextContents()).some((t) => t.startsWith('GitHub Copilot')), 'Copilot aparece entre los modelos de la conversación');
+    await p.locator('#ag-copilot button', { hasText: 'Usar en una conversación' }).click();
+    ok((await p.inputValue('#proveedor')) === 'agente:copilot' && await p.locator('#modelo-agente').isVisible(), 'usar Copilot en la conversación nueva (con su modelo opcional)');
+    await p.selectOption('#proveedor', ''); ok(await p.locator('#modelo-agente').isHidden(), 'volver al modelo predeterminado');
     await p.locator('details.opciones summary').click();
     falso.s.close();
 
@@ -303,6 +319,23 @@ function arranca() {
     await m.selectOption('#sesion', { index: 1 }); await m.waitForTimeout(500);
     ok(await m.locator('.nav-movil').isVisible(), 'móvil: navegación inferior');
     await captura(m, 'studio-movil.png');
+
+    // ── Una conversación con GitHub Copilot (CLI falsa): sus cambios llegan al proyecto ──
+    await p.bringToFront(); await p.selectOption('#sesion', ''); await p.waitForTimeout(200);
+    if (!(await p.locator('details.opciones').evaluate((e) => e.open))) await p.locator('details.opciones summary').click();
+    await p.selectOption('#proveedor', 'agente:copilot'); await p.fill('#modelo-agente', 'modelo-e2e');
+    await p.fill('#mensaje', 'crea un saludo'); await p.click('#b-enviar');
+    await p.waitForSelector('.burbuja.assistant >> text=hecho por copilot', { timeout: 30000 }).catch(() => {});
+    ok(await p.locator('.burbuja.assistant', { hasText: 'hecho por copilot' }).count() === 1, 'Copilot responde en la conversación');
+    await p.waitForFunction(() => !document.getElementById('b-enviar').disabled, null, { timeout: 30000 }).catch(() => {});
+    const dc = path.join(D, 'de_copilot.txt'), args = fs.existsSync(dc) ? fs.readFileSync(dc, 'utf8') : '';
+    ok(args.includes('-p crea un saludo') && args.includes('--model modelo-e2e'), 'los cambios de Copilot se aplican al proyecto (con su modelo): ' + args.trim());
+    ok((await p.locator('#sesion option').allTextContents()).some((t) => t.includes('GitHub Copilot · crea un saludo')), 'la conversación dice con qué agente va');
+    await p.fill('#mensaje', 'ponlo en inglés'); await p.click('#b-enviar');
+    await p.waitForFunction(() => document.querySelectorAll('.burbuja.assistant').length && [...document.querySelectorAll('.burbuja.assistant')].filter((b) => b.textContent.includes('hecho por copilot')).length === 2, null, { timeout: 30000 }).catch(() => {});
+    await p.waitForFunction(() => !document.getElementById('b-enviar').disabled, null, { timeout: 30000 }).catch(() => {});
+    const args2 = fs.existsSync(dc) ? fs.readFileSync(dc, 'utf8') : '';
+    ok(args2.includes('Usuario: crea un saludo') && args2.includes('Lo que te pido ahora:') && args2.includes('ponlo en inglés'), 'seguir la conversación con Copilot: recibe lo hablado y lo nuevo');
   } catch (e) {
     ok(false, 'excepción: ' + (e.stack || e));
   } finally {

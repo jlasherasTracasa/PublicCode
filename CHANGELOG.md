@@ -13,6 +13,12 @@ comprueba antes de terminar. Cada función sale de un paper de ACL/EMNLP 2026 ([
   servidores locales, predeterminado, global o por proyecto y estado de la variable de cada clave. Modelo por
   conversación en el panel del agente y modelo actual en la barra de estado.
 - `pcode config proveedores [--probar] [--detectar]`, `pcode config proveedor <nombre> …` y `pcode config quitar`.
+- **GitHub Copilot con tu suscripción** (y Claude Code, Gemini CLI y opencode): Ajustes → «Agentes con tu cuenta»
+  dice si están instalados, cómo instalarlos (Linux y Windows) y cómo iniciar sesión; se eligen como modelo de una
+  conversación en Studio (con modelo opcional), la conversación se puede seguir con más mensajes y sus cambios se
+  aplican con punto de control. `pcode config proveedores` también los lista.
+- `pcode run --backend <agente> --aplicar`: aplica los cambios del agente si termina bien, con punto de control para
+  `/deshacer`. Los cuatro agentes funcionan sin declararlos en `[backends]`.
 - **Tool `esquema`** para el agente: símbolos de un archivo, archivos de una carpeta con sus símbolos principales y
   dónde se define un símbolo; el prompt pide localizar antes de leer (RepoNav, SHERLOC).
 - **Preguntas de aclaración** (tool `preguntar`): en la TUI, el chat y Studio el turno termina con la pregunta y sus
@@ -31,6 +37,8 @@ comprueba antes de terminar. Cada función sale de un paper de ACL/EMNLP 2026 ([
 - La compactación conserva literalmente restricciones, decisiones, rutas, órdenes y errores pendientes.
 - Studio: la conversación ya no se reanima entera en cada trozo del streaming.
 - `/recuerda`, `/memoria`, `/olvida`, `/deshacer` y `/rehacer` funcionan también desde el panel del agente de Studio.
+- Copilot se lanza con `-s` (solo la respuesta), y la sandbox deja escribir el estado de cada agente (`~/.copilot`,
+  `~/.claude`, `~/.gemini`, opencode) para que conserve el inicio de sesión.
 
 ## [1.0.0] — 2026-10-31
 

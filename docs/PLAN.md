@@ -117,6 +117,7 @@ Todo vive en el núcleo, así que llega a la vez a la TUI, el chat, Studio y el 
 | Memoria del proyecto y compactación que conserva restricciones (SLUMP, AMIA) | F8.19 | hecho |
 | Verificar antes de terminar (Polished but Unresolved) | F8.46 | hecho |
 | Coste de los esquemas MCP (ProMCP) | F8.47 | hecho |
+| GitHub Copilot, Claude Code, Gemini CLI y opencode con la cuenta del usuario, elegibles en Studio | F8.48 | hecho |
 
 Siguientes candidatos, por orden: la tool `contexto` (F4.01), las tools del LSP para el agente (F8.09), la búsqueda de
 tools cuando hay muchas (F4.10) y la revisión por archivo en la TUI (F8.25).

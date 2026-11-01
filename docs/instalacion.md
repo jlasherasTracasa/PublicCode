@@ -239,12 +239,28 @@ orden = ["pylsp"]
 `pcode` trae su propio agente. Además puede lanzar otros agentes como subagentes en una sandbox
 (`pcode run --backend …` y `pcode flow`). Instálalos si los quieres usar; `pcode doctor` dice cuáles encuentra.
 
-| Agente | Binario | `--backend` |
-|---|---|---|
-| Claude Code | `claude` | `claude-code` |
-| Gemini CLI | `gemini` | `gemini` |
-| GitHub Copilot CLI | `copilot` | `copilot` |
-| opencode | `opencode` | `opencode` |
+| Agente | Binario | `--backend` | Instalar en Linux | Instalar en Windows |
+|---|---|---|---|---|
+| GitHub Copilot CLI | `copilot` | `copilot` | `npm install -g @github/copilot` | `winget install GitHub.Copilot` |
+| Claude Code | `claude` | `claude-code` | `npm install -g @anthropic-ai/claude-code` | igual |
+| Gemini CLI | `gemini` | `gemini` | `npm install -g @google/gemini-cli` | igual |
+| opencode | `opencode` | `opencode` | `npm install -g opencode-ai` | igual |
+
+No hace falta declararlos en la configuración. Studio los enseña en **Ajustes → Agentes con tu cuenta** (instalado o
+no, cómo instalarlo y cómo iniciar sesión) y deja elegirlos como modelo de una conversación.
+
+**GitHub Copilot con tu suscripción.** Copilot CLI necesita Node.js 22 o posterior si se instala con npm. Para
+iniciar sesión, abre `copilot` y escribe `/login`, o crea un token *fine-grained* de tu cuenta personal con el
+permiso «Copilot Requests» y ponlo en `COPILOT_GITHUB_TOKEN` (también valen `GH_TOKEN` y `GITHUB_TOKEN`, por ese orden;
+guía oficial: [Installing GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli)).
+Después:
+
+```bash
+pcode run "añade la validación del formulario" --backend copilot --aplicar
+```
+
+GitHub Models, la API compatible con OpenAI para los modelos de Copilot, se retiró el 30 de julio de 2026; por eso
+Copilot se usa como agente y no como proveedor por URL.
 
 Cada agente usa **tus** credenciales y su vía oficial; PublicCode no comparte suscripciones.
 

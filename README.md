@@ -100,10 +100,13 @@ pcode studio     # el editor en el navegador
 | ✔ **Comprueba antes de terminar** | si cambió archivos sin ejecutar nada, se le pide una vez que pase los tests o la compilación | Polished but Unresolved (EMNLP) |
 | 💸 **Coste de MCP a la vista** | `pcode mcp` dice cuántos tokens cuestan los esquemas de cada servidor en cada petición | ProMCP (Findings ACL) |
 | ⚙ **Ajustes de modelos** | pantalla en Studio (Ctrl+,) para añadir proveedores por URL con plantillas, probar la conexión, elegir modelo y detectar Ollama, LM Studio o vLLM; también `pcode config proveedor` | — |
+| 🐙 **GitHub Copilot con tu suscripción** | elígelo como «modelo» de una conversación en Studio, o `pcode run "…" --backend copilot --aplicar`: usa su CLI oficial y tu cuenta, trabaja en una sandbox y sus cambios llegan con punto de control para deshacerlos. Igual con Claude Code, Gemini CLI y opencode; Ajustes dice cuáles están instalados y cómo instalar los que faltan | — |
 
 <img src="docs/img/studio-pregunta.png" alt="Studio: el agente pregunta la capacidad de la caché con dos opciones, /recuerda guarda la decisión y el agente sigue con la respuesta" width="100%">
 
 <img src="docs/img/studio-ajustes.png" alt="Ajustes de modelos: proveedores con el estado de su clave, LM Studio detectado en el equipo y plantillas para añadir más" width="100%">
+
+<img src="docs/img/studio-agentes.png" alt="Ajustes, Agentes con tu cuenta: GitHub Copilot y Claude Code instalados, con su CLI, su cuenta y el botón Usar en una conversación; Gemini CLI sin instalar, con la orden para instalarlo" width="100%">
 
 Detalle en [docs/papers.md §12](docs/papers.md#12-lo-que-entra-en-la-11) y en la [guía de usuario](docs/usuario.md#41-cómo-trabaja-el-agente-novedades-de-la-11).
 
@@ -233,6 +236,7 @@ resultados y límites conocidos en [docs/evaluacion.md](docs/evaluacion.md#51-re
 
 ```bash
 pcode run "añade tests a parser.rs" --backend claude-code --acepta "cargo test" --aplicar-si-acepta
+pcode run "documenta el módulo de pagos" --backend copilot --aplicar   # tu suscripción de Copilot
 pcode flow run          # ejecuta un plan de tareas (tareas/*.md) con dependencias, reintentos e integración
 pcode sandbox …         # ejecutar, ver cambios, diff, aplicar o descartar a mano
 ```
@@ -245,8 +249,14 @@ pcode sandbox …         # ejecutar, ver cambios, diff, aplicar o descartar a m
 | **opencode** (`opencode`) | agente completo | flujos ya montados sobre opencode |
 | **Tu modelo** (LiteLLM, Ollama, vLLM, API de Anthropic, Gemini u OpenAI) | modelo en el bucle propio | volumen barato y local, datos confidenciales |
 
-Cada agente usa tus credenciales y su vía oficial. El criterio de aceptación (`--acepta`) es el único juez de
-«terminado»: sin la aceptación en verde, los cambios no se aplican.
+Cada agente usa tus credenciales y su vía oficial, y los cuatro funcionan sin declararlos en la configuración. Con
+`--acepta`, el criterio de aceptación es el único juez de «terminado»: sin la aceptación en verde, los cambios no se
+aplican. Sin él, `--aplicar` los aplica si el agente termina bien, con punto de control (`/deshacer`). En Studio,
+elige el agente en Opciones → modelo del panel del agente.
+
+**¿Y los modelos de Copilot como API?** GitHub Models, la API oficial compatible con OpenAI, se retiró el 30 de julio
+de 2026, y GitHub no ofrece otra vía oficial para llamar a los modelos de Copilot desde herramientas de terceros. Por
+eso Copilot entra como agente, con su CLI oficial y tu suscripción, y no como proveedor por URL.
 
 | Nivel | Mecanismo | Arranque | Plataforma |
 |---|---|---|---|
