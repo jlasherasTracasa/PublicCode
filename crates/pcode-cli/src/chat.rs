@@ -291,13 +291,24 @@ async fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
     let mut tools = pcode_tools::native_registry();
     let (extra, mut notices) = crate::provider::mcp_tools(&cfg).await;
     let n_mcp = extra.len();
+    let mcp_tokens: usize = extra
+        .iter()
+        .map(|t| pcode_tools::schema_tokens(&t.spec()))
+        .sum();
     for t in extra {
         if let Err(e) = tools.register(t) {
             notices.push(format!("MCP: {e}"));
         }
     }
     if n_mcp > 0 {
-        notices.push(format!("{n_mcp} tools de MCP disponibles"));
+        notices.push(format!(
+            "{n_mcp} tools de MCP disponibles (~{mcp_tokens} tokens de esquema por petición{})",
+            if mcp_tokens > crate::doctor::MCP_SCHEMA_WARN {
+                "; son muchos: revisa `pcode mcp`"
+            } else {
+                ""
+            }
+        ));
     }
     let agent = Agent::new(
         sel.provider.clone(),
@@ -509,35 +520,17 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
             }
         }
     });
+    let root = std::env::current_dir()?;
     if !a.prompt.is_empty() {
         let first = a.prompt.join(" ");
-        let r = agent.run_turn(history.clone(), &first).await;
-        history = finish_json_turn(&first, r, &agent, &mut persist);
+        if !local_json_command(&root, &first) {
+            let r = agent.run_turn(history.clone(), &first).await;
+            history = finish_json_turn(&first, r, &agent, &mut persist);
+        }
     }
-    let root = std::env::current_dir()?;
     while let Some(msg) = rx.recv().await {
-        if let Some(cmd) = msg.trim().strip_prefix('/') {
-            let local = pcode_tui::run::memory_command(&root, cmd, pcode_tui::i18n::Lang::Es)
-                .or_else(|| match cmd.trim() {
-                    "deshacer" | "undo" => Some(pcode_tui::run::undo_redo(
-                        &root,
-                        false,
-                        pcode_tui::i18n::Lang::Es,
-                    )),
-                    "rehacer" | "redo" => Some(pcode_tui::run::undo_redo(
-                        &root,
-                        true,
-                        pcode_tui::i18n::Lang::Es,
-                    )),
-                    _ => None,
-                });
-            if let Some(text) = local {
-                emit_json(serde_json::json!({"tipo": "texto", "texto": text}));
-                emit_json(
-                    serde_json::json!({"tipo": "fin", "problema": null, "entrada": 0, "salida": 0, "cambios": []}),
-                );
-                continue;
-            }
+        if local_json_command(&root, &msg) {
+            continue;
         }
         let full = pcode_tui::run::expand_message(&root, &msg, &[]);
         let r = agent.run_turn(history.clone(), &full).await;
@@ -547,6 +540,28 @@ async fn chat_jsonl(a: ChatArgs) -> anyhow::Result<i32> {
         let _ = persist.store.finish_session(sid, "chat");
     }
     Ok(0)
+}
+
+/// Órdenes que se resuelven sin el modelo en el protocolo JSONL (Studio): memoria del proyecto y
+/// deshacer/rehacer. Si `msg` es una, emite su texto y un `fin`, y devuelve `true`.
+fn local_json_command(root: &std::path::Path, msg: &str) -> bool {
+    let Some(cmd) = msg.trim().strip_prefix('/') else {
+        return false;
+    };
+    let lang = pcode_tui::i18n::Lang::Es;
+    let local = pcode_tui::run::memory_command(root, cmd, lang).or_else(|| match cmd.trim() {
+        "deshacer" | "undo" => Some(pcode_tui::run::undo_redo(root, false, lang)),
+        "rehacer" | "redo" => Some(pcode_tui::run::undo_redo(root, true, lang)),
+        _ => None,
+    });
+    let Some(text) = local else {
+        return false;
+    };
+    emit_json(serde_json::json!({"tipo": "texto", "texto": text}));
+    emit_json(
+        serde_json::json!({"tipo": "fin", "problema": null, "entrada": 0, "salida": 0, "cambios": []}),
+    );
+    true
 }
 
 fn finish_json_turn(

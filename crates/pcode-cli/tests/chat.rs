@@ -204,15 +204,17 @@ read l
     .success()
     .stdout(predicate::str::contains("⏺ reloj_hora"))
     .stdout(predicate::str::contains("son las 12:00"))
-    .stderr(predicate::str::contains("1 tools de MCP disponibles"));
+    .stderr(predicate::str::contains("1 tools de MCP disponibles (~"));
     Command::cargo_bin("pcode")
         .unwrap()
         .current_dir(d.path())
         .arg("mcp")
         .assert()
         .success()
-        .stdout(predicate::str::contains("✓ reloj: 1 tools"))
-        .stdout(predicate::str::contains("reloj_hora"));
+        .stdout(predicate::str::contains("✓ reloj: 1 tools · ~"))
+        .stdout(predicate::str::contains("tokens de esquema por petición"))
+        .stdout(predicate::str::contains("reloj_hora  ~"))
+        .stdout(predicate::str::contains("Esquemas MCP: ~"));
 }
 
 #[test]
@@ -378,6 +380,30 @@ fn jsonl_pregunta_del_agente_y_memoria_desde_studio() {
             .unwrap()
             .contains("los tests, con pytest")
     );
+}
+
+#[test]
+fn jsonl_recuerda_como_primer_mensaje_no_llama_al_modelo() {
+    let d = tempfile::tempdir().unwrap();
+    pcode(d.path(), json!([]))
+        .args([
+            "chat",
+            "--formato",
+            "jsonl",
+            "/recuerda",
+            "sin",
+            "dependencias",
+            "nuevas",
+        ])
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Guardado en la memoria del proyecto",
+        ))
+        .stdout(predicate::str::contains("\"tipo\":\"fin\""));
+    let notas = std::fs::read_to_string(d.path().join(".pcode/memoria.md")).unwrap();
+    assert_eq!(notas.lines().filter(|l| l.starts_with("- ")).count(), 1);
 }
 
 #[test]

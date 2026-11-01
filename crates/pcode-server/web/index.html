@@ -233,9 +233,10 @@
   .pestana .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   button, .nodo, .cambio, .hit, .problema, .sesion { transition: background-color .12s ease, color .12s ease, box-shadow .15s ease, transform .08s ease; }
   .relleno:active, .tonal:active { transform: scale(.98); }
-  .panel, .burbuja, .aprob { animation: aparece .16s ease-out; }
+  /* Solo lo nuevo se anima: repintar la conversación (cada trozo del streaming) no la hace parpadear. */
+  .panel, .burbuja.nueva, .aprob.nueva, .tarjeta-turno.nueva { animation: aparece .16s ease-out; }
   @keyframes aparece { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .panel, .burbuja, .aprob { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .panel, .burbuja.nueva, .aprob.nueva, .tarjeta-turno.nueva { animation: none; } }
   .scroll::-webkit-scrollbar, .conversacion::-webkit-scrollbar, .codigo textarea::-webkit-scrollbar { width: 10px; height: 10px; }
   .scroll::-webkit-scrollbar-thumb, .conversacion::-webkit-scrollbar-thumb, .codigo textarea::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
 
@@ -633,7 +634,7 @@
     </div>
     <div id="conversacion" class="conversacion" aria-live="polite"></div>
     <div class="entrada-agente">
-      <textarea id="mensaje" placeholder="Pide algo: «arregla el test que falla», «explica este módulo»…" aria-label="Mensaje al agente"></textarea>
+      <textarea id="mensaje" placeholder="Pide algo: «arregla el test que falla», «explica este módulo»… · /recuerda guarda una decisión" aria-label="Mensaje al agente"></textarea>
       <details class="opciones"><summary>Opciones (agente externo, aceptación)</summary>
         <input id="backend" placeholder="Agente: claude-code, gemini, copilot… (vacío = el propio)">
         <input id="acepta" placeholder="Criterio de aceptación: cargo test">
@@ -1273,14 +1274,20 @@ function pintaSesiones() {
   const ea = $("e-agente"); ea.classList.toggle("trabajando", !!ocupado);
   ea.textContent = s ? `✦ #${s.id} · ${ESTADOS[s.state] || s.state}` : "✦ Agente";
 }
+S.vistas = S.vistas || {};
 function pintaConversacion() {
   const box = $("conversacion"); box.replaceChildren();
+  // Cuántas entradas de esta conversación ya estaban en pantalla: solo las demás se animan.
+  const clave = S.sesion ?? "nueva", antes = S.vistas[clave] ?? 0;
+  const lista = S.sesion === null ? [] : S.trans[S.sesion] || [];
+  S.vistas[clave] = lista.length;
   for (const a of S.aprob) {
-    const d = el("div", "aprob"), ok = el("button", "relleno", "Permitir"), no = el("button", "tonal", "Denegar");
+    const d = el("div", "aprob" + (S.aprobVistas?.has(a.id) ? "" : " nueva")), ok = el("button", "relleno", "Permitir"), no = el("button", "tonal", "Denegar");
     ok.onclick = () => decide(a.id, true); no.onclick = () => decide(a.id, false);
     const f = el("div", "fila"); f.append(ok, no);
     d.append(el("div", "motivo", "⚠ " + a.reason), el("code", "", a.action), f); box.appendChild(d);
   }
+  S.aprobVistas = new Set(S.aprob.map((a) => a.id));
   if (S.sesion === null) {
     if (S.aprob.length) return;
     const v = el("div", "vacio-agente"); v.append(el("div", "avatar", ">_"), el("div", "", "Pide lo que quieras sobre este proyecto. El agente lee, busca, edita y ejecuta órdenes; lo delicado te lo pregunta aquí."));
@@ -1298,12 +1305,13 @@ function pintaConversacion() {
     if (tipo === "user") { const f = el("div", "fila-msg de-usuario"); f.append(b); return f; }
     return b;
   };
-  for (const e of S.trans[S.sesion] || []) {
-    if (e.tipo === "cambios") { box.appendChild(tarjetaTurno(e)); continue; }
-    const b = el("div", "burbuja " + e.tipo);
+  lista.forEach((e, i) => {
+    const nueva = i >= antes ? " nueva" : "";
+    if (e.tipo === "cambios") { const t = tarjetaTurno(e); t.className += nueva; box.appendChild(t); return; }
+    const b = el("div", "burbuja " + e.tipo + nueva);
     if (e.tipo === "output") b.textContent = e.text; else b.appendChild(md(e.text));
     box.appendChild(fila(b, e.tipo));
-  }
+  });
   if (S.vivo[S.sesion]) box.appendChild(fila(el("div", "burbuja assistant", S.vivo[S.sesion]), "assistant"));
   box.scrollTop = box.scrollHeight;
 }
@@ -1407,6 +1415,7 @@ const ORDENES = [
   ["Agente: deshacer el último turno", "Ctrl Alt Z", () => deshacerTurno()],
   ["Agente: rehacer el turno", "Ctrl Alt Mayús Z", () => rehacerTurno()],
   ["Actividad del agente", "Ctrl Mayús Y", () => panel("actividad")],
+  ["Memoria del proyecto: ver y editar", "", () => abreMemoria()],
   ["Tema: cambiar", "", () => cambiaTema()],
   ["Tema: automático", "", () => cambiaTema("auto")],
   ["Tema: claro", "", () => cambiaTema("claro")],
@@ -1667,6 +1676,7 @@ $("b-asistente").onclick = (e) => {
     ["✓ Escribir tests del archivo", escribeTests],
     ["⚠ Arreglar los problemas del archivo", () => { const t = tabActiva(); const ds = t ? S.diags[t.path] || [] : []; ds.length ? arreglar(t.path, ds) : aviso("No hay problemas en el archivo abierto"); }],
     ["↶ Deshacer el último turno del agente", deshacerTurno],
+    ["🧠 Memoria del proyecto", abreMemoria],
     ["◷ Actividad del agente", () => panel("actividad")],
   ]);
 };
@@ -1720,7 +1730,7 @@ function hace(ms) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
   return s < 60 ? "hace un momento" : s < 3600 ? `hace ${Math.round(s / 60)} min` : s < 86400 ? `hace ${Math.round(s / 3600)} h` : new Date(ms).toLocaleDateString();
 }
-const ICONO_DECISION = { allow: "✓", deny: "✗", "ask-allowed": "⚠", "ask-denied": "✗", unknown: "?" };
+const ICONO_DECISION = { allow: "✓", deny: "✗", "ask-allowed": "⚠", "ask-denied": "✗", ask: "❓", unknown: "?" };
 async function pintaActividad() {
   const box = $("actividad");
   const [turnos, act] = await Promise.all([rpc("checkpoint.list").catch(() => []), rpc("workspace.activity", { limit: 120 }).catch(() => ({ items: [], intact: true }))]);
@@ -1748,6 +1758,19 @@ async function pintaActividad() {
   if (!act.items.length) box.appendChild(el("div", "vacio", "Aún no hay acciones del agente en este proyecto."));
 }
 $("b-actividad").onclick = pintaActividad;
+
+/* ───────── Memoria del proyecto (F8.19) ───────── */
+const MEMORIA = ".pcode/memoria.md";
+/** Abre `.pcode/memoria.md` en el editor (creándolo si no existe). El agente la lee en cada turno. */
+async function abreMemoria() {
+  try { await rpc("fs.read", { path: MEMORIA }); }
+  catch {
+    const cab = "# Memoria del proyecto\n\nDecisiones y restricciones que el agente lee en cada turno. Una por línea, empezando por «- ».\nTambién se añaden con /recuerda <texto> en el panel del agente.\n\n";
+    try { await rpc("fs.write", { path: MEMORIA, content: cab }); } catch (e) { fallo(e); return; }
+  }
+  await abre(MEMORIA);
+  aviso("El agente lee esta memoria en cada turno: guarda aquí decisiones y restricciones del proyecto");
+}
 $("e-rama").onclick = () => panel("git");
 $("e-agente").onclick = () => agente(true);
 

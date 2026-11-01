@@ -190,6 +190,28 @@ function arranca() {
     ok((await p.inputValue('#mensaje')).includes('**Preguntas:**'), '✦ Concretar reescribe la petición');
     await p.fill('#mensaje', '');
 
+    // ── 1.1: el agente pregunta (Ask or Assume?) y la memoria del proyecto (/recuerda) ──
+    mock(resp('', [{ id: 'q', name: 'preguntar', arguments: { pregunta: '¿Capacidad máxima de la caché?', opciones: ['100', '1000'] } }]),
+      resp('Uso 1000 elementos, como pides.'));
+    await p.selectOption('#sesion', ''); await p.waitForTimeout(200);
+    await p.fill('#mensaje', 'limita la caché'); await p.click('#b-enviar');
+    await p.waitForSelector('.burbuja.assistant >> text=¿Capacidad máxima de la caché?', { timeout: 15000 }).catch(() => {});
+    const preg = await p.locator('.burbuja.assistant', { hasText: 'Capacidad máxima' }).textContent().catch(() => '');
+    ok(preg.startsWith('❓') && preg.includes('2. 1000'), 'el agente pregunta antes de suponer: ' + preg.replace(/\s+/g, ' '));
+    await p.waitForFunction(() => !document.getElementById('b-enviar').disabled, null, { timeout: 10000 });
+    await p.fill('#mensaje', '/recuerda la caché tiene como mucho 1000 elementos'); await p.click('#b-enviar');
+    await p.waitForSelector('.burbuja.assistant >> text=Guardado en la memoria', { timeout: 10000 }).catch(() => {});
+    ok(await p.locator('.burbuja.assistant', { hasText: 'Guardado en la memoria del proyecto' }).count() === 1, '/recuerda desde el panel del agente');
+    ok(fs.readFileSync(path.join(D, '.pcode', 'memoria.md'), 'utf8').includes('como mucho 1000 elementos'), 'la nota queda en .pcode/memoria.md');
+    await p.waitForFunction(() => !document.getElementById('b-enviar').disabled, null, { timeout: 10000 });
+    await p.fill('#mensaje', '1000'); await p.click('#b-enviar');
+    await p.waitForSelector('.burbuja.assistant >> text=Uso 1000 elementos', { timeout: 15000 }).catch(() => {});
+    ok(await p.locator('.burbuja.assistant', { hasText: 'Uso 1000 elementos' }).count() === 1, 'la respuesta del usuario llega al agente');
+    await captura(p, 'studio-pregunta.png');
+    await p.keyboard.press('Control+Shift+p'); await p.keyboard.type('memoria del proyecto'); await p.waitForTimeout(150);
+    await p.keyboard.press('Enter'); await p.waitForTimeout(500);
+    ok((await p.textContent('#e-archivo')).startsWith('.pcode/memoria.md'), 'paleta: Memoria del proyecto abre el archivo en el editor');
+
     // ── Paleta ──
     await p.keyboard.press('Control+Shift+p'); await p.keyboard.type('medianoche'); await p.waitForTimeout(150);
     ok((await p.locator('#l-archivos li').first().textContent()).includes('Tema: medianoche'), 'paleta: Tema medianoche');

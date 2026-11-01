@@ -156,6 +156,7 @@ pub async fn mcp_cmd(project_cfg: &Path) -> anyhow::Result<i32> {
         return Ok(0);
     }
     let mut code = 0;
+    let mut total = 0usize;
     for (name, m) in &cfg.mcp {
         if m.disabled {
             println!("· {name}: desactivado");
@@ -174,15 +175,21 @@ pub async fn mcp_cmd(project_cfg: &Path) -> anyhow::Result<i32> {
         .await
         {
             Ok(Ok(tools)) => {
+                let specs: Vec<_> = tools.iter().map(|t| t.spec()).collect();
+                let tok: usize = specs.iter().map(pcode_tools::schema_tokens).sum();
+                total += tok;
                 println!(
-                    "✓ {name}: {} tools{}",
-                    tools.len(),
+                    "✓ {name}: {} tools · ~{tok} tokens de esquema por petición{}",
+                    specs.len(),
                     if m.ask { " (piden aprobación)" } else { "" }
                 );
-                for t in tools {
-                    let s = t.spec();
-                    let d: String = s.description.chars().take(90).collect();
-                    println!("    {}  {d}", s.name);
+                for s in specs {
+                    let d: String = s.description.chars().take(80).collect();
+                    println!(
+                        "    {}  ~{} tok  {d}",
+                        s.name,
+                        pcode_tools::schema_tokens(&s)
+                    );
                 }
             }
             Ok(Err(e)) => {
@@ -195,8 +202,25 @@ pub async fn mcp_cmd(project_cfg: &Path) -> anyhow::Result<i32> {
             }
         }
     }
+    let nativas: usize = pcode_tools::native_registry()
+        .specs_filtered(|_, _| true)
+        .iter()
+        .map(pcode_tools::schema_tokens)
+        .sum();
+    println!(
+        "\nEsquemas MCP: ~{total} tokens en cada petición al modelo (las tools nativas, ~{nativas})."
+    );
+    if total > MCP_SCHEMA_WARN {
+        println!(
+            "⚠ Es mucho contexto fijo: desactiva los servidores que no uses (`desactivado = true`) o elige \
+             servidores con menos tools. El coste de MCP está en los esquemas (ProMCP)."
+        );
+    }
     Ok(code)
 }
+
+/// A partir de cuántos tokens de esquemas MCP se avisa.
+pub const MCP_SCHEMA_WARN: usize = 4000;
 
 /// Plantilla de la configuración global.
 pub const TEMPLATE: &str = r#"# Configuración global de PublicCode (la del proyecto, pcode.toml, manda sobre esta).

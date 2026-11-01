@@ -119,6 +119,16 @@ impl ToolRegistry {
     }
 }
 
+/// Tokens aproximados (4 caracteres por token) que ocupa la especificación de una tool en **cada**
+/// petición al modelo. Con MCP, la mayor parte del coste está en los esquemas que se inyectan, no
+/// en ejecutar la tool (ProMCP, 2026.findings-acl.1967).
+pub fn schema_tokens(spec: &ToolSpec) -> usize {
+    let chars = spec.name.chars().count()
+        + spec.description.chars().count()
+        + spec.parameters.to_string().chars().count();
+    chars.div_ceil(4)
+}
+
 /// Resuelve `p` dentro de `root` sin tocar el disco.
 pub fn resolve_in_root(root: &Path, p: &str) -> Result<PathBuf, String> {
     let pp = Path::new(p);
@@ -213,5 +223,21 @@ mod tests {
     fn resolve_absoluta_fuera_es_error() {
         assert!(resolve_in_root(Path::new("/r"), "/etc/passwd").is_err());
         assert!(resolve_in_root(Path::new("/r"), "/r/a").is_ok());
+    }
+
+    #[test]
+    fn tokens_de_un_esquema() {
+        let spec = ToolSpec {
+            name: "abcd".into(),
+            description: "x".repeat(8),
+            parameters: serde_json::json!({}),
+        };
+        assert_eq!(schema_tokens(&spec), 4, "(4 + 8 + 2) / 4 hacia arriba");
+        let nativas: usize = crate::native_registry()
+            .specs_filtered(|_, _| true)
+            .iter()
+            .map(schema_tokens)
+            .sum();
+        assert!((200..3000).contains(&nativas), "{nativas}");
     }
 }
