@@ -203,6 +203,21 @@ Los servidores de lenguaje que usa: `rust-analyzer`, `typescript-language-server
 `--aprobar-todo` evita las preguntas (lo denegado sigue denegado). El modo plan no deja tocar nada. La eval
 de seguridad que acompaña a cada versión está en [evaluacion.md](evaluacion.md#51-resultados-de-la-eval-de-seguridad-10).
 
+### 6.1 Desarrollo con especificaciones (opcional)
+
+Es una elección: sin activarlo, todo funciona como siempre. Actívalo en Ajustes → «Forma de desarrollar» (o
+`[proyecto] desarrollo = "specs"` en `pcode.toml`). Después solo escribes la especificación:
+
+| Paso | Orden | Qué pasa |
+|---|---|---|
+| Especificar | `pcode spec nueva <nombre> [--desde "frase"]` | crea `specs/<nombre>/spec.md` (requisitos `### R1.` con criterios y `- acepta: \`orden\``) |
+| Planificar | `pcode spec planificar <nombre>` | `plan.md` (diseño) y `tareas.md` (cada tarea con requisitos, archivos, dependencias y `acepta`); se valida sin modelo y se repara una vez |
+| Implementar | `pcode spec implementar <nombre> [--backend copilot]` | tarea a tarea, hasta que pasa su `acepta`; con punto de control |
+| Verificar | `pcode spec verificar <nombre>` | ejecuta todas las comprobaciones y da el veredicto de cada requisito |
+
+Si cambias un requisito, `estado` avisa y `planificar` solo rehace lo que cambió. En Studio, el panel
+«Especificaciones» (Ctrl+Mayús+K) lo hace todo con botones.
+
 ## 7. Agentes externos, flujos y sandboxes
 
 | Orden | Qué hace |

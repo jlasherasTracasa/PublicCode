@@ -368,6 +368,15 @@ pub struct SettingsView {
     pub fallback: Option<String>,
     /// Agentes externos (Copilot, Claude Code, Gemini CLI, opencode…).
     pub agents: Vec<AgentView>,
+    /// Desarrollo guiado por especificaciones elegido (`false` = programación tradicional).
+    pub specs_mode: bool,
+}
+
+/// Elige la forma de desarrollar en el `pcode.toml` del proyecto.
+pub fn set_development(paths: &ConfigPaths, specs: bool) -> Result<SettingsView, String> {
+    edit::update_file(&paths.project, |t| edit::set_development(t, specs))
+        .map_err(|e| e.to_string())?;
+    Ok(get(paths))
 }
 
 fn read(p: &Path) -> String {
@@ -443,6 +452,7 @@ pub fn get(paths: &ConfigPaths) -> SettingsView {
         } else {
             None
         },
+        specs_mode: merged.project.specs_mode(),
         agents: agents(
             &merged,
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -707,5 +717,21 @@ mod tests {
         assert!(!v[1].installed && v[1].token_env.is_none());
         assert!(v[4].installed && v[4].custom && v[4].binary == "claude-mio");
         assert!(v[5].installed && v[5].binary.is_empty());
+    }
+
+    #[test]
+    fn elegir_desarrollo_con_especificaciones() {
+        let d = tempfile::tempdir().unwrap();
+        let p = paths(&d);
+        std::fs::create_dir_all(d.path().join("proyecto")).unwrap();
+        assert!(!get(&p).specs_mode, "por defecto es tradicional");
+        let v = set_development(&p, true).unwrap();
+        assert!(v.specs_mode);
+        let t = std::fs::read_to_string(&p.project).unwrap();
+        assert!(
+            t.contains("[proyecto]") && t.contains("desarrollo = \"specs\""),
+            "{t}"
+        );
+        assert!(!set_development(&p, false).unwrap().specs_mode);
     }
 }

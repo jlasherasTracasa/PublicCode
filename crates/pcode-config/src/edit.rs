@@ -262,6 +262,19 @@ pub fn remove_provider(text: &str, name: &str) -> Result<String, ConfigError> {
     Ok(out)
 }
 
+/// Activa (`specs`) o desactiva (quita la clave: `tradicional`) el desarrollo guiado por
+/// especificaciones en `[proyecto]`.
+pub fn set_development(text: &str, specs: bool) -> Result<String, ConfigError> {
+    let out = set_key(
+        text,
+        "proyecto",
+        "desarrollo",
+        specs.then(|| "\"specs\"".to_string()),
+    );
+    check(&out)?;
+    Ok(out)
+}
+
 /// Fija el proveedor y el modelo por defecto (`None` o vacío quita la preferencia) y, si se da, el
 /// límite de contexto.
 pub fn set_defaults(

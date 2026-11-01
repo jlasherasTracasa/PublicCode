@@ -166,6 +166,46 @@ impl AppState {
         info
     }
 
+    /// Sesión que ejecuta `pcode <args>` (p. ej. un paso de una especificación): su salida llega
+    /// como bloque de salida y se puede cancelar como cualquier otra.
+    fn create_command_session(
+        self: &Arc<Self>,
+        title: String,
+        label: &str,
+        args: Vec<String>,
+    ) -> SessionInfo {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let info = SessionInfo {
+            id,
+            title: title.chars().take(60).collect(),
+            backend: label.into(),
+            model: None,
+            state: SessionState::Running,
+            parent: None,
+            created_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0),
+        };
+        self.sessions.lock().unwrap().insert(0, info.clone());
+        self.push(id, TranscriptEntry::User { text: title });
+        self.emit(Event::SessionUpdated {
+            session: info.clone(),
+        });
+        let (ctx, crx) = oneshot::channel();
+        self.cancels.lock().unwrap().insert(id, ctx);
+        let mut cmd = tokio::process::Command::new(&self.pcode_bin);
+        cmd.args(&args)
+            .current_dir(&self.repo)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let me = self.clone();
+        tokio::spawn(async move { me.run_process(id, cmd, true, crx).await });
+        info
+    }
+
     fn state_of(&self, id: i64) -> Option<SessionState> {
         self.sessions
             .lock()
@@ -450,7 +490,7 @@ impl AppState {
         self: Arc<Self>,
         id: i64,
         p: SessionCreateParams,
-        mut cancel: oneshot::Receiver<()>,
+        cancel: oneshot::Receiver<()>,
     ) {
         let mut cmd = tokio::process::Command::new(&self.pcode_bin);
         cmd.arg("run")
@@ -474,6 +514,19 @@ impl AppState {
         if let Some(a) = &p.accept {
             cmd.args(["--acepta", a]);
         }
+        self.run_process(id, cmd, false, cancel).await;
+    }
+
+    /// Lanza `cmd` como el proceso de la sesión `id`: cada línea de stdout llega como mensaje del
+    /// asistente (o como salida, con `stdout_as_output`) y cada una de stderr como mensaje del
+    /// sistema. Termina con el estado según el código de salida.
+    async fn run_process(
+        self: Arc<Self>,
+        id: i64,
+        mut cmd: tokio::process::Command,
+        stdout_as_output: bool,
+        mut cancel: oneshot::Receiver<()>,
+    ) {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -494,10 +547,13 @@ impl AppState {
             if let Some(mut r) = out {
                 let mut buf = String::new();
                 while r.read_line(&mut buf).await.unwrap_or(0) > 0 {
+                    let text = buf.trim_end().to_string();
                     me1.push(
                         id,
-                        TranscriptEntry::Assistant {
-                            text: buf.trim_end().to_string(),
+                        if stdout_as_output {
+                            TranscriptEntry::Output { text }
+                        } else {
+                            TranscriptEntry::Assistant { text }
                         },
                     );
                     buf.clear();
@@ -1073,6 +1129,41 @@ async fn rpc(
                 ),
             }
         }
+        methods::SPEC_LIST => {
+            let repo = st.repo.clone();
+            ws_reply(
+                id,
+                blocking(move || Ok::<_, String>(pcode_spec::list(&repo))).await,
+            )
+        }
+        methods::SPEC_GET => {
+            let (repo, name) = (st.repo.clone(), str_param(&p, "name"));
+            ws_reply(id, blocking(move || pcode_spec::status(&repo, &name)).await)
+        }
+        methods::SPEC_CREATE => {
+            let (repo, name) = (st.repo.clone(), str_param(&p, "name"));
+            let title = Some(str_param(&p, "title"))
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| name.replace(['-', '_'], " "));
+            ws_reply(
+                id,
+                blocking(move || {
+                    pcode_spec::status::create(&repo, &name, &pcode_spec::template(title.trim()))
+                        .map(|_| {
+                            serde_json::json!({"path": format!("{}/{name}/{}", pcode_spec::SPECS_DIR, pcode_spec::SPEC_FILE)})
+                        })
+                })
+                .await,
+            )
+        }
+        methods::SPEC_RUN => match spec_args(&p) {
+            Ok((title, args)) => rpc_ok(
+                id,
+                serde_json::to_value(st.create_command_session(title, "spec", args))
+                    .unwrap_or_default(),
+            ),
+            Err(e) => rpc_err(id, -32602, e),
+        },
         methods::SETTINGS_GET => rpc_ok(
             id,
             serde_json::to_value(crate::settings::get(&st.config_paths())).unwrap_or_default(),
@@ -1128,6 +1219,14 @@ async fn rpc(
                     )
                 })
                 .await,
+            )
+        }
+        methods::SETTINGS_SET_DEVELOPMENT => {
+            let paths = st.config_paths();
+            let on = p.get("specs").and_then(|v| v.as_bool()).unwrap_or(false);
+            ws_reply(
+                id,
+                blocking(move || crate::settings::set_development(&paths, on)).await,
             )
         }
         methods::SETTINGS_TEST => rpc_ok(
@@ -1256,6 +1355,61 @@ pub async fn serve_listener(
     Ok(())
 }
 
+/// Título y argumentos de `pcode spec …` para un paso pedido por `spec.run`.
+pub fn spec_args(p: &serde_json::Value) -> Result<(String, Vec<String>), String> {
+    let s = |k: &str| {
+        p.get(k)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(String::from)
+    };
+    let name = s("name").unwrap_or_default();
+    if !pcode_spec::status::valid_name(&name) {
+        return Err(format!("nombre no válido: «{name}»"));
+    }
+    let mut args: Vec<String> = vec!["spec".into()];
+    let title = match s("action").as_deref() {
+        Some("draft") => {
+            let d = s("description").ok_or("falta la descripción")?;
+            args.extend(["nueva".into(), name.clone(), "--desde".into(), d]);
+            format!("✦ Borrador de la especificación {name}")
+        }
+        Some("plan") => {
+            args.extend(["planificar".into(), name.clone()]);
+            if p.get("fresh").and_then(|v| v.as_bool()).unwrap_or(false) {
+                args.push("--desde-cero".into());
+            }
+            format!("✦ Planificar {name}")
+        }
+        Some("implement") => {
+            args.extend(["implementar".into(), name.clone()]);
+            let mut t = format!("▶ Implementar {name}");
+            if let Some(task) = s("task") {
+                t.push_str(&format!(" · {task}"));
+                args.extend(["--tarea".into(), task]);
+            }
+            if let Some(b) = s("backend") {
+                t.push_str(&format!(" con {b}"));
+                args.extend(["--backend".into(), b]);
+            }
+            t
+        }
+        Some("verify") => {
+            args.extend(["verificar".into(), name.clone()]);
+            return Ok((format!("✓ Verificar {name}"), args));
+        }
+        other => return Err(format!("acción desconocida: {}", other.unwrap_or(""))),
+    };
+    if let Some(m) = s("model") {
+        args.extend(["--modelo".into(), m]);
+    }
+    if let Some(pr) = s("provider") {
+        args.extend(["--proveedor".into(), pr]);
+    }
+    Ok((title, args))
+}
+
 /// Contexto máximo (en caracteres) de lo hablado que se pasa al continuar con un agente externo.
 const FOLLOW_UP_CONTEXT: usize = 6000;
 
@@ -1293,6 +1447,42 @@ mod tests {
     use axum::http::Request;
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+
+    #[test]
+    fn pasos_de_una_especificacion() {
+        let (t, a) =
+            spec_args(&serde_json::json!({"name": "pagos", "action": "plan", "fresh": true}))
+                .unwrap();
+        assert_eq!(t, "✦ Planificar pagos");
+        assert_eq!(a, ["spec", "planificar", "pagos", "--desde-cero"]);
+        let (t, a) = spec_args(&serde_json::json!({
+            "name": "pagos", "action": "implement", "task": "T2", "backend": "copilot", "model": "m"
+        }))
+        .unwrap();
+        assert_eq!(t, "▶ Implementar pagos · T2 con copilot");
+        assert_eq!(
+            a,
+            [
+                "spec",
+                "implementar",
+                "pagos",
+                "--tarea",
+                "T2",
+                "--backend",
+                "copilot",
+                "--modelo",
+                "m"
+            ]
+        );
+        let (_, a) = spec_args(
+            &serde_json::json!({"name": "pagos", "action": "draft", "description": "cobrar"}),
+        )
+        .unwrap();
+        assert_eq!(a, ["spec", "nueva", "pagos", "--desde", "cobrar"]);
+        assert!(spec_args(&serde_json::json!({"name": "../x", "action": "plan"})).is_err());
+        assert!(spec_args(&serde_json::json!({"name": "x", "action": "borrar"})).is_err());
+        assert!(spec_args(&serde_json::json!({"name": "x", "action": "draft"})).is_err());
+    }
 
     #[test]
     fn seguimiento_con_agente_lleva_lo_hablado() {

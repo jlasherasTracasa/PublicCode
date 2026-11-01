@@ -123,6 +123,19 @@ pub struct ProjectCfg {
     /// Archivos de instrucciones.
     #[serde(rename = "instrucciones")]
     pub instructions: Vec<String>,
+    /// Forma de desarrollar: `tradicional` (por defecto) o `specs` (escribes la especificación y
+    /// PublicCode planifica, implementa y verifica). Solo con `specs` se activa ese flujo.
+    #[serde(rename = "desarrollo")]
+    pub development: Option<String>,
+}
+
+impl ProjectCfg {
+    /// ¿Está elegido el desarrollo guiado por especificaciones?
+    pub fn specs_mode(&self) -> bool {
+        self.development
+            .as_deref()
+            .is_some_and(|d| d.trim().eq_ignore_ascii_case("specs"))
+    }
 }
 
 /// Un proveedor de modelos.
@@ -262,8 +275,15 @@ impl Config {
         c.roles.extend(project.roles);
         c.mcp.extend(project.mcp);
         c.lsp.extend(project.lsp);
+        let (dev, has_dev) = (
+            project.project.development.clone(),
+            project.project.development.is_some(),
+        );
         if !project.project.instructions.is_empty() {
             c.project = project.project;
+        }
+        if has_dev {
+            c.project.development = dev;
         }
         let p = project.preferences;
         c.preferences.provider = p

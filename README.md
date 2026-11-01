@@ -106,6 +106,18 @@ pcode studio     # el editor en el navegador
 
 <img src="docs/img/studio-ajustes.png" alt="Ajustes de modelos: proveedores con el estado de su clave, LM Studio detectado en el equipo y plantillas para añadir más" width="100%">
 
+### Desarrollo con especificaciones (opcional)
+
+Por defecto programas como siempre. Si lo eliges (Ajustes → «Forma de desarrollar», o `desarrollo = "specs"` en `[proyecto]`), solo escribes `specs/<nombre>/spec.md` —requisitos con sus criterios de aceptación— y PublicCode **planifica** (`plan.md` y `tareas.md`), **implementa** tarea a tarea hasta que pasa la comprobación de cada una y **verifica** cada requisito. Si cambias un requisito, solo se rehace lo que cambió.
+
+```bash
+pcode spec nueva exportar --desde "sacar las facturas de un mes en CSV"
+pcode spec planificar exportar && pcode spec implementar exportar   # o con --backend copilot
+pcode spec estado exportar                                          # requisitos → tareas → veredicto
+```
+
+<img src="docs/img/studio-spec.png" alt="Studio: una especificación con sus cuatro pasos, requisitos verificados, tareas y última verificación" width="100%">
+
 <img src="docs/img/studio-agentes.png" alt="Ajustes, Agentes con tu cuenta: GitHub Copilot y Claude Code instalados, con su CLI, su cuenta y el botón Usar en una conversación; Gemini CLI sin instalar, con la orden para instalarlo" width="100%">
 
 Detalle en [docs/papers.md §12](docs/papers.md#12-lo-que-entra-en-la-11) y en la [guía de usuario](docs/usuario.md#41-cómo-trabaja-el-agente-novedades-de-la-11).

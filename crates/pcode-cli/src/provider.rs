@@ -212,6 +212,12 @@ pub fn system_prompt(cfg: &Config, root: &std::path::Path) -> String {
             s.push_str(&format!("\n\n# Instrucciones del proyecto ({f})\n{cut}"));
         }
     }
+    // Si el proyecto se desarrolla con especificaciones, son la fuente de verdad.
+    if cfg.project.specs_mode()
+        && let Some(specs) = pcode_spec::prompts::prompt_section(root)
+    {
+        s.push_str(&format!("\n\n{specs}"));
+    }
     s
 }
 
@@ -317,5 +323,29 @@ mod tests {
         std::fs::write(d.path().join("AGENTS.md"), "REGLA-UNICA").unwrap();
         let s = system_prompt(&Config::default(), d.path());
         assert!(s.contains("REGLA-UNICA") && s.contains("Directorio de trabajo"));
+        assert!(
+            !s.contains("## Especificaciones"),
+            "sin specs/ no se menciona"
+        );
+    }
+
+    #[test]
+    fn system_prompt_con_especificaciones() {
+        let d = tempfile::tempdir().unwrap();
+        pcode_spec::status::create(
+            d.path(),
+            "pagos",
+            "# Pagos\n## Requisitos\n### R1. Cobrar\n- ok\n",
+        )
+        .unwrap();
+        // Programación tradicional (por defecto): las specs no cambian nada.
+        let s = system_prompt(&Config::default(), d.path());
+        assert!(!s.contains("## Especificaciones"), "{s}");
+        let cfg = Config::from_str("[proyecto]\ndesarrollo = \"specs\"\n").unwrap();
+        let s = system_prompt(&cfg, d.path());
+        assert!(
+            s.contains("## Especificaciones") && s.contains("pagos («Pagos»)"),
+            "{s}"
+        );
     }
 }

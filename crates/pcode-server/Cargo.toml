@@ -12,6 +12,7 @@ pcode-models = { path = "../pcode-models" }
 pcode-policy = { path = "../pcode-policy" }
 pcode-tools = { path = "../pcode-tools" }
 pcode-lsp = { path = "../pcode-lsp" }
+pcode-spec = { path = "../pcode-spec" }
 regex.workspace = true
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
 tokio-stream = { version = "0.1", features = ["sync"] }

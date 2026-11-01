@@ -4390,3 +4390,20 @@ aplica los cambios del agente si termina bien, con punto de control. Solo vías 
 30 de julio de 2026, así que Copilot entra con su CLI y la suscripción del usuario.
 '''
 tests = ["agentes_integrados_sin_declararlos", "agentes_instalados_token_y_backends_propios", "copilot_integrado_aplica_con_punto_de_control"]
+
+[[tarea]]
+id = "F8.49"
+nombre = "desarrollo-con-especificaciones"
+titulo = "Desarrollo guiado por especificaciones, opcional: pcode spec, panel de Studio y ajuste desarrollo = \"specs\""
+fase = "F8"
+ejecutor = "coordinador"
+depende = ["F8.48"]
+toca = ["crates/pcode-spec/src/lib.rs", "crates/pcode-cli/src/spec_cmd.rs", "crates/pcode-cli/tests/spec.rs", "crates/pcode-server/web/index.html", "tools/studio/e2e.js"]
+acepta = "cargo test -p pcode-spec && cargo test -p pcode-cli --test spec"
+contexto = ["docs/usuario.md §6.1", "docs/papers.md §12 (2026.findings-emnlp.76, 2026.findings-emnlp.1335, 2026.findings-emnlp.1950)"]
+objetivo = '''
+`spec.md` (requisitos con criterios y `acepta`) → `plan.md` y `tareas.md` validados sin modelo → implementación tarea a
+tarea hasta su `acepta` → verificación con veredicto por requisito; deriva entre spec y plan. Solo si se elige
+(`[proyecto] desarrollo = "specs"`); por defecto, programación tradicional.
+'''
+tests = ["ciclo_completo_de_una_especificacion", "fases_de_una_especificacion", "elegir_desarrollo_con_especificaciones"]

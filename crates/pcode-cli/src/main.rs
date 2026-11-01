@@ -6,6 +6,7 @@ mod doctor;
 mod flow_cmd;
 mod provider;
 mod run;
+mod spec_cmd;
 mod update;
 
 use clap::{Parser, Subcommand};
@@ -44,6 +45,12 @@ enum Cmd {
     /// Flujos de tareas: DAG, aceptación, reintentos e integración.
     #[command(subcommand)]
     Flow(flow_cmd::FlowCmd),
+    /// Desarrollo guiado por especificaciones: escribes `specs/<nombre>/spec.md` y PublicCode
+    /// planifica, implementa y verifica (sin subcomando, lista las especificaciones).
+    Spec {
+        #[command(subcommand)]
+        cmd: Option<spec_cmd::SpecCmd>,
+    },
     /// PublicCode Studio: editor, git, terminal y agente en el navegador, solo en este equipo.
     Studio {
         /// Puerto (0 = uno libre).
@@ -90,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     if matches!(
         cli.command,
-        Some(Cmd::Flow(_)) | Some(Cmd::Sandbox(_)) | Some(Cmd::Run(_))
+        Some(Cmd::Flow(_)) | Some(Cmd::Sandbox(_)) | Some(Cmd::Run(_)) | Some(Cmd::Spec { .. })
     ) {
         choose_sandbox_level();
     }
@@ -157,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c).await?),
         Some(Cmd::Actualizar { check }) => std::process::exit(update::update(check).await?),
         Some(Cmd::Flow(c)) => std::process::exit(flow_cmd::flow_cmd(c).await?),
+        Some(Cmd::Spec { cmd }) => std::process::exit(spec_cmd::spec_cmd(cmd).await?),
         Some(Cmd::Sandbox(c)) => std::process::exit(backend_run::sandbox_cmd(c).await?),
         None => {
             use std::io::IsTerminal;

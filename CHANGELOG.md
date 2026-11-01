@@ -17,6 +17,11 @@ comprueba antes de terminar. Cada función sale de un paper de ACL/EMNLP 2026 ([
   dice si están instalados, cómo instalarlos (Linux y Windows) y cómo iniciar sesión; se eligen como modelo de una
   conversación en Studio (con modelo opcional), la conversación se puede seguir con más mensajes y sus cambios se
   aplican con punto de control. `pcode config proveedores` también los lista.
+- **Desarrollo con especificaciones** (opcional; por defecto, programación tradicional): `desarrollo = "specs"` en
+  `[proyecto]` o Ajustes → «Forma de desarrollar». Escribes `specs/<nombre>/spec.md` y `pcode spec nueva | planificar |
+  implementar | verificar | estado` (y el panel «Especificaciones» de Studio) generan el plan, escriben el código y los
+  tests tarea a tarea y verifican cada requisito; el plan se valida sin modelo, detecta cambios en la spec y solo
+  replanifica lo que cambió (SLUMP, DualGauge, PaveDSL, MACBench).
 - `pcode run --backend <agente> --aplicar`: aplica los cambios del agente si termina bien, con punto de control para
   `/deshacer`. Los cuatro agentes funcionan sin declararlos en `[backends]`.
 - **Tool `esquema`** para el agente: símbolos de un archivo, archivos de una carpeta con sus símbolos principales y

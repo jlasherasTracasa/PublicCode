@@ -505,6 +505,62 @@
   .agente-t .acciones .enlace { margin-left: auto; align-self: center; font-size: 12.5px; color: var(--primario); text-decoration: none; }
   .agente-t .acciones .enlace:hover { text-decoration: underline; }
   .prov.destello { animation: destello 1.2s ease; }
+  /* Especificaciones */
+  .spec-vacio { margin: 10px; padding: 14px; border-radius: 16px; background: var(--superficie); box-shadow: var(--sombra); font-size: 12.5px; display: flex; flex-direction: column; gap: 10px; }
+  .spec-vacio ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--texto-2); } .spec-vacio ol b { color: var(--texto); }
+  .spec-item { display: flex; flex-direction: column; gap: 6px; width: calc(100% - 16px); margin: 0 8px 8px; padding: 11px 12px; border-radius: 14px; text-align: left; background: var(--superficie); box-shadow: var(--sombra); border: 2px solid transparent; }
+  .spec-item:hover { box-shadow: var(--sombra-2); } .spec-item.activa { border-color: var(--primario); }
+  .spec-item .cab { display: flex; align-items: center; gap: 8px; } .spec-item .cab b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+  .spec-item .meta { font-size: 11.5px; color: var(--texto-2); }
+  .spec-item .barra { height: 5px; border-radius: 99px; background: var(--superficie-3); overflow: hidden; } .spec-item .barra i { display: block; height: 100%; background: linear-gradient(90deg, var(--primario), var(--ok)); border-radius: 99px; }
+  .fase { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; background: var(--superficie-3); color: var(--texto-2); }
+  .fase.f-plan, .fase.f-replan { background: var(--aviso-fondo); color: var(--aviso); } .fase.f-implement { background: var(--contenedor); color: var(--sobre-contenedor); }
+  .fase.f-verify { background: var(--superficie-3); color: var(--primario); } .fase.f-done { background: var(--ok-fondo); color: var(--ok); } .fase.f-error { background: var(--error-fondo); color: var(--error); }
+  .spec-heroe { background: radial-gradient(110% 160% at 100% 0%, #22c1a6 0%, transparent 55%), linear-gradient(135deg, var(--barra-a), var(--barra-b)); }
+  .spec-heroe .eti { font-size: 11.5px; opacity: .8; font-family: var(--mono); margin-bottom: 4px; }
+  .anillo { margin-left: auto; position: relative; width: 96px; height: 96px; flex: none; }
+  .anillo svg { width: 100%; height: 100%; transform: rotate(-90deg); } .anillo circle { fill: none; stroke-width: 9; } .anillo .fondo { stroke: rgba(255,255,255,.2); } .anillo .valor { stroke: #fff; stroke-linecap: round; transition: stroke-dasharray .5s; }
+  .anillo .txt { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; } .anillo b { font-size: 19px; } .anillo small { font-size: 9.5px; opacity: .85; line-height: 1.1; max-width: 70px; }
+  .pasos-spec { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .pasos-spec li { background: var(--superficie); border-radius: 16px; padding: 12px 14px; box-shadow: var(--sombra); display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; border: 2px solid transparent; }
+  .pasos-spec .num { grid-row: span 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--superficie-3); color: var(--texto-2); }
+  .pasos-spec b { font-size: 13.5px; } .pasos-spec small { color: var(--texto-2); font-size: 11.5px; }
+  .pasos-spec li.hecho .num { background: var(--ok-fondo); color: var(--ok); } .pasos-spec li.actual { border-color: var(--primario); } .pasos-spec li.actual .num { background: var(--primario); color: var(--sobre-primario); }
+  .pasos-spec li.atencion { border-color: var(--aviso); } .pasos-spec li.atencion .num { background: var(--aviso-fondo); color: var(--aviso); }
+  .spec-acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .spec-acciones button { padding: 8px 16px; border-radius: 999px; font-size: 13px; } .spec-acciones .relleno { background: var(--primario); color: var(--sobre-primario); font-weight: 600; }
+  .spec-acciones .tonal { background: var(--superficie-3); } .spec-acciones button:disabled { opacity: .5; cursor: not-allowed; }
+  .spec-acciones select { border: 1.5px solid var(--linea); border-radius: 999px; padding: 7px 12px; background: var(--superficie); color: var(--texto); font: inherit; font-size: 12.5px; }
+  .spec-en-marcha { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; background: var(--contenedor); color: var(--sobre-contenedor); font-size: 13px; }
+  .spec-en-marcha button { margin-left: auto; padding: 5px 12px; border-radius: 999px; font-size: 12px; background: var(--superficie); }
+  .spec-aviso { padding: 10px 14px; border-radius: 14px; font-size: 13px; } .spec-aviso ul { margin: 6px 0 0; padding-left: 18px; }
+  .spec-aviso.cuidado { background: var(--aviso-fondo); color: var(--aviso); } .spec-aviso.mal { background: var(--error-fondo); color: var(--error); } .spec-aviso.pregunta { background: var(--contenedor); color: var(--sobre-contenedor); }
+  .spec-reqs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .req { background: var(--superficie); border-radius: 18px; padding: 14px 16px; box-shadow: var(--sombra); display: flex; flex-direction: column; gap: 8px; border-left: 5px solid var(--superficie-3); }
+  .req.v-ok { border-left-color: var(--ok); } .req.v-failed { border-left-color: var(--error); } .req.v-not-run { border-left-color: var(--primario); }
+  .req .cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .req .cab b { font-size: 14px; }
+  .req .veredicto { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--superficie-3); }
+  .req.v-ok .veredicto { background: var(--ok-fondo); color: var(--ok); } .req.v-failed .veredicto { background: var(--error-fondo); color: var(--error); }
+  .req .id, .tarea .id { font: 600 11.5px var(--mono); padding: 2px 7px; border-radius: 7px; background: var(--contenedor); color: var(--sobre-contenedor); }
+  .req .estado { margin-left: auto; font-size: 11px; color: var(--texto-2); } .chip-s.cambio { background: var(--aviso-fondo); color: var(--aviso); }
+  .req ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--texto-2); display: flex; flex-direction: column; gap: 3px; }
+  .req .pie { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: auto; } .req .cmds { margin-left: auto; font-size: 11px; color: var(--texto-2); }
+  .spec-tareas { display: flex; flex-direction: column; gap: 8px; }
+  .tarea { display: flex; gap: 12px; align-items: flex-start; background: var(--superficie); border-radius: 14px; padding: 11px 14px; box-shadow: var(--sombra); }
+  .tarea .marca { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; background: var(--superficie-3); color: var(--texto-2); flex: none; margin-top: 1px; }
+  .tarea.hecha .marca { background: var(--ok-fondo); color: var(--ok); font-weight: 700; } .tarea.hecha .cab b { color: var(--texto-2); }
+  .tarea .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; } .tarea .cab { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .tarea .cab b { font-size: 13.5px; }
+  .tarea code { font: 11.5px var(--mono); color: var(--texto-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tarea .detalle { font-size: 12px; color: var(--texto-2); white-space: pre-wrap; }
+  .tarea button { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--superficie-3); } .tarea button:disabled { opacity: .45; cursor: not-allowed; }
+  .spec-verif { display: flex; flex-direction: column; gap: 6px; } .spec-verif .res { background: var(--superficie); border-radius: 12px; padding: 8px 12px; box-shadow: var(--sombra); font-size: 12.5px; }
+  .spec-verif .cab { display: flex; gap: 10px; align-items: center; } .spec-verif .cab code { font: 12px var(--mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .spec-verif small { color: var(--texto-2); white-space: nowrap; }
+  .spec-verif .ok > .cab > span:first-child { color: var(--ok); font-weight: 700; } .spec-verif .mal > .cab > span:first-child { color: var(--error); font-weight: 700; }
+  .spec-verif pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--codigo); color: var(--sobre-codigo); font: 11.5px/1.45 var(--mono); overflow: auto; max-height: 180px; }
+  .plantilla.modo.elegido { outline: 2.5px solid var(--primario); } .plantilla.modo { min-width: 0; }
+  .spec-logo { background: linear-gradient(135deg, #22c1a6, #1d4ed8); color: #fff; }
+  .nota-form { margin: -6px 0 0; font-size: 13px; color: var(--texto-2); }
+  .form-prov textarea { min-height: 92px; resize: vertical; border: 1.5px solid var(--linea); border-radius: 12px; padding: 9px 11px; background: var(--superficie); color: var(--texto); font: inherit; font-size: 13.5px; }
+  @media (max-width: 900px) { .pasos-spec { grid-template-columns: repeat(2, 1fr); } .anillo { width: 80px; height: 80px; } }
   @keyframes destello { 0%, 60% { border-color: var(--primario); transform: scale(1.015); } 100% { border-color: transparent; transform: none; } }
   .detectado { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--ok-fondo); color: var(--ok); font-size: 13px; }
   .detectado b { color: var(--texto); } .detectado .relleno { margin-left: auto; padding: 6px 14px; }
@@ -580,6 +636,7 @@
     <button data-panel="problemas" aria-pressed="false" title="Problemas (Ctrl+Shift+M)"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5M12 17.5v.01"/></svg><span id="n-diag" class="insignia oculto"></span></button>
     <button data-panel="esquema" aria-pressed="false" title="Esquema del archivo (Ctrl+Shift+O)"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h4M4 12h4M4 19h4M11 5h9M13 12h7M13 19h7M8 5v14"/></svg></button>
     <button data-panel="git" aria-pressed="false" title="Git (Ctrl+Shift+G)"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="8.5" r="2.5"/><path d="M6 8v8M18 11c0 4-6 3.5-11 6"/></svg><span id="n-git" class="insignia oculto"></span></button>
+    <button data-panel="specs" id="b-panel-specs" class="oculto" aria-pressed="false" title="Especificaciones: escribe la spec y el agente planifica, implementa y verifica (Ctrl+Shift+K)"><svg class="i" viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5A1.5 1.5 0 0 1 7.5 3.5z"/><path d="M14 3.5V8h4M9 13l2 2 4-4"/></svg></button>
     <button data-panel="actividad" aria-pressed="false" title="Actividad del agente y deshacer (Ctrl+Shift+Y)"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
     <button id="b-ajustes" class="abajo" title="Ajustes: modelos y proveedores (Ctrl+,)"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </nav>
@@ -609,6 +666,10 @@
       <header>Esquema <span id="esquema-archivo" style="text-transform:none;letter-spacing:0;font-weight:500"></span></header>
       <div class="campo-lat filtro"><input id="q-esquema" placeholder="Filtrar símbolos" aria-label="Filtrar símbolos"></div>
       <div id="esquema" class="scroll"></div>
+    </section>
+    <section id="p-specs" class="panel oculto">
+      <header>Especificaciones <div class="acciones"><button id="b-spec-nueva" title="Especificación nueva">＋</button><button id="b-specs" title="Refrescar">⟳</button></div></header>
+      <div id="specs" class="scroll"></div>
     </section>
     <section id="p-actividad" class="panel oculto">
       <header>Actividad <div class="acciones"><button id="b-actividad" title="Refrescar">⟳</button></div></header>
@@ -695,6 +756,7 @@
       <div id="binario" class="binario oculto">Archivo binario: no se puede editar aquí.</div>
       <div id="documento" class="documento oculto"></div>
       <div id="ajustes" class="ajustes oculto" aria-label="Ajustes"></div>
+      <div id="vista-spec" class="ajustes oculto" aria-label="Especificación"></div>
     </div>
     <section id="terminal" class="terminal" aria-label="Terminal">
       <div class="asa-h" data-asa="terminal" title="Arrastra para cambiar el alto"></div>
@@ -830,7 +892,7 @@ function pintaPestanas() {
     const b = el("div", "pestana" + (t.id === S.activa ? " activa" : "") + (t.dirty ? " sucia" : ""));
     b.setAttribute("role", "tab"); b.tabIndex = 0; b.title = t.path;
     if (t.kind === "file") { const dot = insignia(base(t.path)); dot.className = "punto"; dot.textContent = ""; b.append(dot); }
-    b.append(el("span", "", t.kind === "ajustes" ? "⚙ Ajustes" : t.kind === "doc" ? "✦ " + t.path : (t.kind === "diff" ? "± " : "") + base(t.path)));
+    b.append(el("span", "", t.kind === "ajustes" ? "⚙ Ajustes" : t.kind === "spec" ? "◇ " + t.name : t.kind === "doc" ? "✦ " + t.path : (t.kind === "diff" ? "± " : "") + base(t.path)));
     const x = el("button", "cerrar"); x.title = "Cerrar (Ctrl+W)"; x.append(el("span", "", "×"));
     x.onclick = (e) => { e.stopPropagation(); cierra(t.id); };
     b.append(x);
@@ -849,6 +911,8 @@ function muestra() {
   $("documento").classList.toggle("oculto", !t || t.kind !== "doc");
   $("ajustes").classList.toggle("oculto", !t || t.kind !== "ajustes");
   if (t && t.kind === "ajustes") pintaAjustes();
+  $("vista-spec").classList.toggle("oculto", !t || t.kind !== "spec");
+  if (t && t.kind === "spec") pintaSpec(t);
   if (t && t.kind === "doc") pintaDocumento(t);
   pintaMigas(); pintaEsquema();
   $("e-archivo").textContent = t ? t.path + (t.dirty ? " ●" : "") : "Sin archivo";
@@ -911,6 +975,7 @@ async function guarda() {
   const t = tabActiva(); if (!t || t.kind !== "file" || t.binary) return;
   try {
     await rpc("fs.write", { path: t.path, content: t.content }); t.saved = t.content; t.dirty = false; pintaPestanas(); muestra(); aviso("Guardado " + base(t.path), "ok"); cargaMarcas(t);
+    if (t.path.startsWith("specs/")) refrescaSpecs();
     if (LSP_EXT.test(t.path) && !S.lspError[grupoLsp(t.path)]) rpc("lsp.saved", { path: t.path }).catch(() => {});
   }
   catch (e) { aviso("No se pudo guardar: " + e.message); }
@@ -1390,11 +1455,14 @@ function pintaConversacion() {
     if (tipo === "user") { const f = el("div", "fila-msg de-usuario"); f.append(b); return f; }
     return b;
   };
+  let salida = null;
   lista.forEach((e, i) => {
     const nueva = i >= antes ? " nueva" : "";
+    if (e.tipo === "output" && salida) { salida.textContent += "\n" + e.text; return; }
+    salida = null;
     if (e.tipo === "cambios") { const t = tarjetaTurno(e); t.className += nueva; box.appendChild(t); return; }
     const b = el("div", "burbuja " + e.tipo + nueva);
-    if (e.tipo === "output") b.textContent = e.text; else b.appendChild(md(e.text));
+    if (e.tipo === "output") { b.textContent = e.text; salida = b; } else b.appendChild(md(e.text));
     box.appendChild(fila(b, e.tipo));
   });
   if (S.vivo[S.sesion]) box.appendChild(fila(el("div", "burbuja assistant", S.vivo[S.sesion]), "assistant"));
@@ -1505,6 +1573,9 @@ const ORDENES = [
   ["Actividad del agente", "Ctrl Mayús Y", () => panel("actividad")],
   ["Memoria del proyecto: ver y editar", "", () => abreMemoria()],
   ["Ajustes: modelos y proveedores", "Ctrl ,", () => abreAjustes()],
+  ["Especificaciones: ver y avanzar", "Ctrl Mayús K", exigeSpecs(() => panel("specs"))],
+  ["Especificación nueva", "", exigeSpecs(() => nuevaSpec())],
+  ["Desarrollo: activar o desactivar las especificaciones", "", () => ajusteRpc("settings.setDevelopment", { specs: !S.ajustes?.specsMode }, S.ajustes?.specsMode ? "Programación tradicional" : "Desarrollo con especificaciones activado")],
   ["Ajustes: buscar modelos locales (Ollama, LM Studio)", "", () => abreAjustes()],
   ["Tema: cambiar", "", () => cambiaTema()],
   ["Tema: automático", "", () => cambiaTema("auto")],
@@ -1886,7 +1957,7 @@ async function abreAjustes() {
 }
 async function cargaAjustes(detectar) {
   try { S.ajustes = await rpc("settings.get"); } catch (e) { fallo(e); return; }
-  pintaModeloActual(); if (tabActiva()?.kind === "ajustes") pintaAjustes();
+  pintaModeloActual(); aplicaModoSpecs(); if (tabActiva()?.kind === "ajustes") pintaAjustes();
   if (detectar) { S.detectados = null; if (tabActiva()?.kind === "ajustes") pintaAjustes();
     try { S.detectados = await rpc("settings.detect"); } catch { S.detectados = []; }
     if (tabActiva()?.kind === "ajustes") pintaAjustes(); }
@@ -1930,6 +2001,16 @@ function pintaAjustes() {
   txt.append(el("h2", "", "Modelos"), el("p", "", "Elige con qué modelos trabaja el agente: en la nube (Anthropic, Gemini, OpenAI, OpenRouter) o en tu equipo (Ollama, LM Studio, vLLM, LiteLLM), o agentes con tu propia suscripción como GitHub Copilot. Las claves nunca se guardan en archivos: cada proveedor lee la suya de una variable de entorno."));
   const act = el("div", "actual"); act.append(document.createTextNode("Predeterminado"), el("b", "", a.defaultProvider ? `${a.defaultProvider}${a.defaultModel ? " · " + a.defaultModel : ""}` : a.fallback ? `clave de ${a.fallback}` : "sin configurar"));
   h.append(el("div", "ic", "◆"), txt, act); c.appendChild(h);
+  // Forma de desarrollar: tradicional (por defecto) o guiada por especificaciones
+  const sd = el("section", "aj-seccion"); sd.appendChild(el("h3", "", "Forma de desarrollar en este proyecto"));
+  const dg = el("div", "aj-rejilla"), modo = (esSpecs, ic, tit, desc) => {
+    const b = el("button", "plantilla modo" + (!!a.specsMode === esSpecs ? " elegido" : "")), tx = el("span"); b.setAttribute("aria-pressed", String(!!a.specsMode === esSpecs));
+    tx.append(el("b", "", tit), el("small", "", desc)); b.append(el("span", "logo-prov spec-logo", ic), tx);
+    b.onclick = () => { if (!!a.specsMode !== esSpecs) ajusteRpc("settings.setDevelopment", { specs: esSpecs }, esSpecs ? "Desarrollo con especificaciones activado" : "Programación tradicional"); }; dg.appendChild(b);
+  };
+  modo(false, "›_", "Tradicional", "pides al agente lo que quieres, como siempre");
+  modo(true, "◇", "Con especificaciones", "escribes la spec; el agente planifica, implementa y verifica cada requisito");
+  sd.appendChild(dg); c.appendChild(sd);
   // Servidores locales detectados
   const det = el("section", "aj-seccion");
   if (S.detectados === null) { const b = el("div", "buscando"); b.append(el("span", "giro"), el("span", "", "Buscando Ollama, LM Studio y vLLM en este equipo…")); det.appendChild(b); }
@@ -2028,7 +2109,7 @@ function tarjetaAgente(g) {
   return d;
 }
 async function ajusteRpc(metodo, params, okTxt) {
-  try { S.ajustes = await rpc(metodo, params); pintaModeloActual(); pintaAjustes(); aviso(okTxt, "ok"); return true; } catch (e) { fallo(e); return false; }
+  try { S.ajustes = await rpc(metodo, params); pintaModeloActual(); aplicaModoSpecs(); pintaAjustes(); aviso(okTxt, "ok"); return true; } catch (e) { fallo(e); return false; }
 }
 function formProveedor(v, modelos) {
   document.querySelectorAll(".velo-form").forEach((x) => x.remove());
@@ -2073,12 +2154,201 @@ function formProveedor(v, modelos) {
   velo.addEventListener("keydown", (e) => { if (e.key === "Escape") velo.remove(); });
   document.body.appendChild(velo); (v.editando ? $("f-modelo") : $("f-nombre")).focus();
 }
+/* ───────── Especificaciones: escribes la spec; el agente planifica, implementa y verifica ───────── */
+const NOMBRE_FASE = { plan: "por planificar", replan: "replanificar", implement: "implementando", verify: "por verificar", done: "hecha" };
+const SIM_VEREDICTO = { ok: "✓", failed: "✗", "not-run": "⏳", "no-checks": "○" };
+const TXT_VEREDICTO = { ok: "verificado", failed: "falla", "not-run": "sin verificar", "no-checks": "sin comprobación" };
+S.specs = null; S.spec = {}; S.specPendiente = null;
+function aplicaModoSpecs() {
+  const on = !!S.ajustes?.specsMode; $("b-panel-specs").classList.toggle("oculto", !on);
+  if (!on) { S.tabs = S.tabs.filter((t) => t.kind !== "spec"); if (S.activa?.startsWith("spec:")) S.activa = S.tabs.length ? S.tabs[S.tabs.length - 1].id : null; if (!$("p-specs").classList.contains("oculto")) panel("archivos"); pintaPestanas(); muestra(); }
+}
+function exigeSpecs(fn) { return () => { if (!S.ajustes?.specsMode) { aviso("El desarrollo con especificaciones no está activado", "", ["Activar", async () => { await ajusteRpc("settings.setDevelopment", { specs: true }, "Desarrollo con especificaciones activado"); fn(); }]); return; } fn(); }; }
+let tSpecs = 0;
+function refrescaSpecs() {
+  clearTimeout(tSpecs);
+  tSpecs = setTimeout(() => {
+    if (!$("p-specs").classList.contains("oculto")) cargaSpecs();
+    for (const t of S.tabs) if (t.kind === "spec") cargaSpec(t.name);
+  }, 250);
+}
+async function cargaSpecs() {
+  try { S.specs = await rpc("spec.list"); } catch { S.specs = []; }
+  pintaSpecs();
+}
+function pintaSpecs() {
+  const box = $("specs"); box.replaceChildren();
+  if (S.specs === null) { box.appendChild(el("div", "vacio", "Cargando…")); return; }
+  if (!S.specs.length) {
+    const v = el("div", "spec-vacio");
+    v.appendChild(el("b", "", "Programa escribiendo solo la especificación"));
+    const ol = el("ol");
+    for (const [t, d] of [["Especifica", "qué debe hacer y cómo se comprueba (spec.md)"], ["Planifica", "✦ diseño y tareas, cada una con su comprobación"], ["Implementa", "el agente escribe código y tests, tarea a tarea"], ["Verifica", "cada requisito, con su veredicto"]]) { const li = el("li"); li.append(el("b", "", t), document.createTextNode(" · " + d)); ol.appendChild(li); }
+    const b = el("button", "relleno", "＋ Nueva especificación"); b.onclick = nuevaSpec;
+    v.append(ol, b); box.appendChild(v); return;
+  }
+  for (const s of S.specs) {
+    const b = el("button", "spec-item" + (S.activa === "spec:" + s.name ? " activa" : ""));
+    const cab = el("div", "cab"); cab.append(el("b", "", s.title), el("span", "fase f-" + (s.phase || "error"), s.phase ? NOMBRE_FASE[s.phase] : "✗ error"));
+    const barra = el("div", "barra"), r = el("i"); r.style.width = (s.tasksTotal ? Math.round(100 * s.tasksDone / s.tasksTotal) : 0) + "%"; barra.appendChild(r);
+    b.append(cab, el("div", "meta", s.error ? s.error.split("\n")[0] : `${s.verified} de ${s.requirements} requisitos verificados · ${s.tasksDone} de ${s.tasksTotal} tareas`), barra);
+    b.title = "specs/" + s.name; b.onclick = () => abreSpec(s.name); box.appendChild(b);
+  }
+}
+async function abreSpec(name) {
+  const id = "spec:" + name;
+  if (!S.tabs.some((t) => t.id === id)) S.tabs.push({ id, kind: "spec", path: "specs/" + name, name });
+  activa(id); await cargaSpec(name); pintaSpecs();
+}
+async function cargaSpec(name) {
+  try { S.spec[name] = await rpc("spec.get", { name }); } catch (e) { S.spec[name] = { error: e.message }; }
+  const t = tabActiva(); if (t && t.id === "spec:" + name) pintaSpec(t);
+}
+function sesionSpec(name) { return S.sesiones.find((x) => x.backend === "spec" && (x.state === "running" || x.state === "waitingApproval") && x.title.split(/\s+/).includes(name)); }
+function alPasoSpec(sesion) {
+  refrescaSpecs();
+  const n = S.specPendiente;
+  if (n && sesion.state !== "running" && sesion.title.split(/\s+/).includes(n)) {
+    S.specPendiente = null;
+    if (sesion.state === "done") { abreSpec(n); abre(`specs/${n}/spec.md`); aviso("Borrador listo: revísalo y planifica", "ok"); }
+  }
+}
+async function pasoSpec(name, action, extra) {
+  try {
+    const info = await rpc("spec.run", { name, action, ...(extra || {}) });
+    if (!S.sesiones.some((x) => x.id === info.id)) S.sesiones.unshift(info);
+    S.sesion = info.id; S.trans[info.id] ||= [];
+    agente(true); if (innerWidth <= 900) vista("agente");
+    pintaSesiones(); pintaConversacion(); refrescaSpecs();
+  } catch (e) { fallo(e); }
+}
+function anillo(pct, texto, sub) {
+  const d = el("div", "anillo"), r = 34, c = 2 * Math.PI * r;
+  d.innerHTML = `<svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="${r}" class="fondo"/><circle cx="42" cy="42" r="${r}" class="valor" stroke-dasharray="${(c * pct).toFixed(1)} ${c.toFixed(1)}"/></svg>`;
+  const t = el("div", "txt"); t.append(el("b", "", texto), el("small", "", sub)); d.appendChild(t); return d;
+}
+function pintaSpec(t) {
+  const box = $("vista-spec"), s = S.spec[t.name]; box.replaceChildren();
+  const c = el("div", "contenedor"); box.appendChild(c);
+  if (!s) { c.appendChild(el("div", "vacio", "Cargando…")); return; }
+  if (s.error) {
+    const e = el("section", "aj-ayuda"); e.append(el("b", "", "✗ spec.md no se puede leer"), el("pre", "", s.error));
+    const b = el("button", "relleno", "✎ Abrir spec.md"); b.onclick = () => abre(`specs/${t.name}/spec.md`); e.appendChild(b); c.appendChild(e); return;
+  }
+  const run = sesionSpec(t.name), total = s.requirements.length, verif = s.requirements.filter((r) => r.verdict === "ok").length;
+  // Héroe
+  const h = el("section", "aj-heroe spec-heroe"), tx = el("div");
+  tx.append(el("div", "eti", "Especificación · " + s.dir), el("h2", "", s.title), el("p", "", s.objective || "Sin objetivo: añádelo en spec.md."));
+  h.append(el("div", "ic", "◇"), tx, anillo(total ? verif / total : 0, `${verif}/${total}`, "requisitos verificados")); c.appendChild(h);
+  // Pasos
+  const pasos = el("ol", "pasos-spec"), hecho = s.planned && s.tasksDone === s.tasks.length;
+  const estado = [
+    ["Especificar", `${total} requisitos`, "hecho"],
+    ["Planificar", !s.planned ? "sin plan" : s.phase === "replan" ? "⚠ la spec cambió" : `${s.tasks.length} tareas`, !s.planned ? "actual" : s.phase === "replan" ? "atencion" : "hecho"],
+    ["Implementar", s.planned ? `${s.tasksDone} de ${s.tasks.length}` : "—", s.phase === "implement" ? "actual" : hecho ? "hecho" : "pendiente"],
+    ["Verificar", s.verification ? `${verif} de ${total}` : "sin verificar", s.phase === "done" ? "hecho" : s.phase === "verify" ? "actual" : "pendiente"],
+  ];
+  estado.forEach(([n, d, e], i) => { const li = el("li", e); li.append(el("span", "num", e === "hecho" ? "✓" : e === "atencion" ? "!" : String(i + 1)), el("b", "", n), el("small", "", d)); pasos.appendChild(li); });
+  c.appendChild(pasos);
+  // Acciones
+  const ac = el("div", "spec-acciones");
+  const boton = (txt, cls, fn, titulo) => { const b = el("button", cls, txt); b.onclick = fn; b.disabled = !!run; if (titulo) b.title = titulo; ac.appendChild(b); return b; };
+  const con = el("select"); con.id = "spec-con"; con.setAttribute("aria-label", "Quién implementa"); con.appendChild(new Option("con el agente propio", ""));
+  for (const g of (S.ajustes?.agents || []).filter((x) => x.installed && !x.custom)) con.appendChild(new Option("con " + g.label, g.name));
+  const extraImpl = () => (con.value ? { backend: con.value } : {});
+  if (s.phase === "plan") boton("✦ Planificar", "relleno", () => pasoSpec(t.name, "plan"), "Diseño y tareas a partir de la especificación");
+  else if (s.phase === "replan") boton("✦ Replanificar lo que cambió", "relleno", () => pasoSpec(t.name, "plan"));
+  else if (s.phase === "implement") { boton("▶ Implementar", "relleno", () => pasoSpec(t.name, "implement", extraImpl()), "Tarea a tarea, hasta que pase la comprobación de cada una"); con.disabled = !!run; ac.appendChild(con); }
+  else boton(s.phase === "done" ? "✓ Verificar de nuevo" : "✓ Verificar", "relleno", () => pasoSpec(t.name, "verify"));
+  if (s.planned && s.phase !== "verify" && s.phase !== "done") boton("✓ Verificar", "tonal", () => pasoSpec(t.name, "verify"));
+  const edita = el("button", "tonal", "✎ spec.md"); edita.onclick = () => abre(`${s.dir}/spec.md`); ac.appendChild(edita);
+  if (s.hasPlan) { const b = el("button", "tonal", "plan.md"); b.onclick = () => abre(`${s.dir}/plan.md`); ac.appendChild(b); }
+  if (s.planned) { const b = el("button", "tonal", "tareas.md"); b.onclick = () => abre(`${s.dir}/tareas.md`); ac.appendChild(b); boton("↻ Rehacer el plan", "tonal", () => { if (confirm("¿Rehacer el plan desde cero? Las tareas hechas se marcarán como pendientes.")) pasoSpec(t.name, "plan", { fresh: true }); }); }
+  c.appendChild(ac);
+  if (run) { const r = el("div", "spec-en-marcha"); r.append(el("span", "giro"), el("span", "", "En marcha: " + run.title)); const v = el("button", "tonal", "Ver en el panel del agente"); v.onclick = () => { eligeSesion(run.id); agente(true); }; r.appendChild(v); c.appendChild(r); }
+  // Avisos
+  const d = s.drift, cambios = [...d.changed.map((x) => x + " cambió"), ...d.added.map((x) => x + " es nuevo"), ...d.removed.map((x) => x + " ya no está")];
+  if (cambios.length) c.appendChild(el("div", "spec-aviso cuidado", `⚠ La especificación cambió desde el plan (${cambios.join(", ")}). Replanifica: solo se rehace lo que cambió.`));
+  if (s.problems.length) { const a = el("div", "spec-aviso mal"); a.appendChild(el("b", "", "✗ El plan tiene problemas")); const ul = el("ul"); s.problems.forEach((x) => ul.appendChild(el("li", "", x))); a.appendChild(ul); c.appendChild(a); }
+  if (s.openQuestions.length) { const a = el("div", "spec-aviso pregunta"); a.appendChild(el("b", "", "? Preguntas abiertas del plan: resuélvelas en spec.md")); const ul = el("ul"); s.openQuestions.forEach((x) => ul.appendChild(el("li", "", x))); a.appendChild(ul); c.appendChild(a); }
+  for (const w of s.warnings) c.appendChild(el("div", "spec-aviso cuidado", "⚠ " + w));
+  // Requisitos (trazabilidad)
+  const sr = el("section", "aj-seccion"); sr.appendChild(el("h3", "", `Requisitos · ${verif} de ${total} verificados`));
+  const gr = el("div", "spec-reqs");
+  for (const r of s.requirements) {
+    const a = el("article", "req v-" + r.verdict), cab = el("div", "cab");
+    cab.append(el("span", "veredicto", SIM_VEREDICTO[r.verdict]), el("span", "id", r.id), el("b", "", r.title));
+    if (r.changed) cab.appendChild(el("span", "chip-s cambio", "cambió"));
+    cab.appendChild(el("span", "estado", TXT_VEREDICTO[r.verdict])); a.appendChild(cab);
+    if (r.criteria.length) { const ul = el("ul"); r.criteria.forEach((x) => ul.appendChild(el("li", "", x))); a.appendChild(ul); }
+    const pie = el("div", "pie");
+    for (const id of r.tasks) { const tk = s.tasks.find((x) => x.id === id); pie.appendChild(el("span", "chip-s" + (tk?.done ? " ok" : ""), (tk?.done ? "✓ " : "") + id)); }
+    if (!r.tasks.length) pie.appendChild(el("span", "chip-s", s.planned ? "sin tareas" : "sin plan"));
+    pie.appendChild(el("span", "cmds", r.commands.length ? `${r.commands.length} comprobaci${r.commands.length === 1 ? "ón" : "ones"}` : "sin comprobación"));
+    a.appendChild(pie); gr.appendChild(a);
+  }
+  sr.appendChild(gr); c.appendChild(sr);
+  // Tareas
+  if (s.tasks.length) {
+    const st = el("section", "aj-seccion"); st.appendChild(el("h3", "", `Tareas · ${s.tasksDone} de ${s.tasks.length}`));
+    const ul = el("div", "spec-tareas");
+    for (const k of s.tasks) {
+      const f = el("div", "tarea" + (k.done ? " hecha" : "")), info = el("div", "info"), cab = el("div", "cab");
+      cab.append(el("span", "id", k.id), el("b", "", k.title), ...k.requirements.map((r) => el("span", "chip-s", r)));
+      info.appendChild(cab); if (k.accept) info.appendChild(el("code", "", "acepta: " + k.accept));
+      if (k.detail) info.appendChild(el("div", "detalle", k.detail));
+      const b = el("button", "tonal mini", k.done ? "↻" : "▶"); b.title = k.done ? `Rehacer ${k.id}` : `Implementar solo ${k.id}`; b.disabled = !!run || s.phase === "replan" || s.problems.length > 0;
+      b.onclick = () => pasoSpec(t.name, "implement", { task: k.id, ...extraImpl() });
+      f.append(el("span", "marca", k.done ? "✓" : "○"), info, b); ul.appendChild(f);
+    }
+    st.appendChild(ul); c.appendChild(st);
+  }
+  // Última verificación
+  if (s.verification) {
+    const sv = el("section", "aj-seccion"), fecha = new Date(s.verification.time * 1000);
+    sv.appendChild(el("h3", "", "Última verificación · " + fecha.toLocaleString()));
+    const lv = el("div", "spec-verif");
+    for (const r of s.verification.results) {
+      const f = el("div", "res " + (r.ok ? "ok" : "mal")), cab = el("div", "cab");
+      cab.append(el("span", "", r.ok ? "✓" : "✗"), el("code", "", r.command), el("small", "", `${r.sources.join(", ")} · ${(r.millis / 1000).toFixed(1)} s`));
+      f.appendChild(cab); if (!r.ok && r.tail) f.appendChild(el("pre", "", r.tail)); lv.appendChild(f);
+    }
+    sv.appendChild(lv); c.appendChild(sv);
+  }
+}
+function nuevaSpec() {
+  document.querySelectorAll(".velo-form").forEach((x) => x.remove());
+  const velo = el("div", "velo-form"), f = el("form", "form-prov"); velo.setAttribute("role", "dialog"); velo.setAttribute("aria-modal", "true");
+  const titulo = el("h3"); titulo.append(el("span", "logo-prov spec-logo", "◇"), document.createTextNode("Especificación nueva")); f.appendChild(titulo);
+  f.appendChild(el("p", "nota-form", "Solo escribes qué debe hacer el sistema y cómo se comprueba. PublicCode genera el diseño, las tareas, el código y los tests, y verifica cada requisito."));
+  const campo = (etq, id, ph, area) => { const c = el("label", "campo"); c.append(document.createTextNode(etq)); const i = el(area ? "textarea" : "input"); i.id = id; i.placeholder = ph; i.autocomplete = "off"; i.spellcheck = !!area; c.appendChild(i); return c; };
+  f.append(campo("Título", "f-spec-titulo", "Exportar facturas a CSV"), campo("Nombre de la carpeta", "f-spec-nombre", "exportar-facturas"),
+    campo("Descríbela en una o dos frases (opcional): ✦ el agente redacta el borrador", "f-spec-desc", "Contabilidad necesita sacar las facturas de un mes en CSV para importarlas en su programa…", true));
+  let tocado = false;
+  f.querySelector("#f-spec-titulo").oninput = (e) => { if (!tocado) $("f-spec-nombre").value = e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48); };
+  f.querySelector("#f-spec-nombre").oninput = () => { tocado = true; };
+  const pie = el("div", "pie"), cancelar = el("button", "tonal", "Cancelar"), crear = el("button", "relleno", "Crear");
+  cancelar.type = "button"; cancelar.onclick = () => velo.remove(); crear.type = "submit"; pie.append(cancelar, crear); f.appendChild(pie);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $("f-spec-nombre").value.trim(), title = $("f-spec-titulo").value.trim(), desc = $("f-spec-desc").value.trim();
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) { aviso("Nombre no válido: minúsculas, números, - y _"); $("f-spec-nombre").focus(); return; }
+    if (desc) { S.specPendiente = name; velo.remove(); await pasoSpec(name, "draft", { description: (title ? title + ". " : "") + desc }); return; }
+    try { const r = await rpc("spec.create", { name, title }); velo.remove(); await cargaSpecs(); await abreSpec(name); abre(r.path); aviso("Escribe los requisitos y planifica", "ok"); } catch (er) { fallo(er); }
+  };
+  velo.appendChild(f); velo.onclick = (e) => { if (e.target === velo) velo.remove(); };
+  velo.addEventListener("keydown", (e) => { if (e.key === "Escape") velo.remove(); });
+  document.body.appendChild(velo); $("f-spec-titulo").focus();
+}
+$("b-spec-nueva").onclick = nuevaSpec;
+$("b-specs").onclick = cargaSpecs;
 $("b-ajustes").onclick = abreAjustes;
 $("e-modelo").onclick = abreAjustes;
 
 /* ───────── Vistas, atajos y eventos ───────── */
 function panel(nombre) {
-  for (const p of ["archivos", "buscar", "problemas", "git", "esquema", "actividad"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
+  for (const p of ["archivos", "buscar", "problemas", "git", "esquema", "specs", "actividad"]) $("p-" + p).classList.toggle("oculto", p !== nombre);
+  if (nombre === "specs") cargaSpecs();
   if (nombre === "esquema") pintaEsquema();
   if (nombre === "actividad") pintaActividad();
   if (nombre === "problemas" && !$("problemas").children.length) pintaProblemas();
@@ -2097,6 +2367,7 @@ document.addEventListener("keydown", (e) => {
   const c = e.ctrlKey || e.metaKey; if (!c) return;
   const k = e.key.toLowerCase();
   if (k === "s") { e.preventDefault(); guarda(); }
+  else if (k === "k" && e.shiftKey) { e.preventDefault(); if (S.ajustes?.specsMode) panel("specs"); }
   else if (k === "p" && !e.shiftKey) { e.preventDefault(); abreRapido(); }
   else if (k === "p" && e.shiftKey) { e.preventDefault(); paleta(); }
   else if (k === "f" && e.shiftKey) { e.preventDefault(); panel("buscar"); }
@@ -2121,7 +2392,7 @@ let tRefresco = 0;
 async function alCambiarArchivos() {
   clearTimeout(tRefresco);
   tRefresco = setTimeout(async () => {
-    S.todos = null; refrescaArbol(); refrescaGit();
+    S.todos = null; refrescaArbol(); refrescaGit(); refrescaSpecs();
     const act = tabActiva(); if (act && act.kind === "file") cargaMarcas(act);
     if (!$("p-actividad").classList.contains("oculto")) pintaActividad();
     for (const t of S.tabs) {
@@ -2141,11 +2412,14 @@ function conecta() {
       case "sessionUpdated": {
         const i = S.sesiones.findIndex((s) => s.id === e.session.id);
         if (i >= 0) S.sesiones[i] = e.session; else S.sesiones.unshift(e.session);
-        pintaSesiones(); break;
+        pintaSesiones();
+        if (e.session.backend === "spec") alPasoSpec(e.session);
+        break;
       }
       case "transcript":
         (S.trans[e.session] ||= []).push(e.entry);
         if (e.entry.tipo === "assistant") delete S.vivo[e.session];
+        if (e.entry.tipo === "output" && /^[✓✗▶]/.test(e.entry.text)) refrescaSpecs();
         if (e.session === S.sesion) pintaConversacion(); break;
       case "assistantDelta":
         S.vivo[e.session] = (S.vivo[e.session] || "") + e.text;

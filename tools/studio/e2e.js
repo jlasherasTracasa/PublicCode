@@ -336,6 +336,52 @@ function arranca() {
     await p.waitForFunction(() => !document.getElementById('b-enviar').disabled, null, { timeout: 30000 }).catch(() => {});
     const args2 = fs.existsSync(dc) ? fs.readFileSync(dc, 'utf8') : '';
     ok(args2.includes('Usuario: crea un saludo') && args2.includes('Lo que te pido ahora:') && args2.includes('ponlo en inglés'), 'seguir la conversación con Copilot: recibe lo hablado y lo nuevo');
+
+    // ── Desarrollo guiado por especificaciones: solo se escribe la spec ──
+    const SPEC_E2E = '# Saludo\n\n## Objetivo\nSaludar y despedirse con dos archivos de texto.\n\n## Requisitos\n\n### R1. Archivo de saludo\nCUANDO se pide un saludo EL SISTEMA DEBE escribir saludo.txt con «hola».\n\n- saludo.txt contiene hola\n- si ya existe, se sobrescribe\n\n### R2. Despedida\nCUANDO se pide una despedida EL SISTEMA DEBE crear adios.txt.\n\n- adios.txt existe\n- acepta: `test -f adios.txt`\n\n## Restricciones\n- solo archivos de texto, sin dependencias\n';
+    const TAREAS_E2E = '# Tareas: Saludo\n\n- [ ] T1. Escribir el saludo\n  - requisitos: R1\n  - toca: saludo.txt\n  - depende: —\n  - acepta: `grep -q hola saludo.txt`\n  - Crea saludo.txt con «hola».\n- [ ] T2. Escribir la despedida\n  - requisitos: R2\n  - toca: adios.txt\n  - depende: T1\n  - acepta: `test -f adios.txt`\n  - Crea adios.txt.';
+    const PLAN_E2E = '<<<plan.md\n# Plan\n## Enfoque\nDos archivos de texto en la raíz.\n## Preguntas abiertas\n- ninguna\n>>>\n\n<<<tareas.md\n' + TAREAS_E2E + '\n>>>\n';
+    ok(await p.locator('#b-panel-specs').isHidden(), 'por defecto es programación tradicional: no hay panel de especificaciones');
+    await p.keyboard.press('Control+,'); await p.waitForSelector('.plantilla.modo', { timeout: 10000 });
+    await p.locator('.plantilla.modo', { hasText: 'Con especificaciones' }).click(); await p.waitForTimeout(500);
+    ok(await p.locator('#b-panel-specs').isVisible() && fs.readFileSync(path.join(D, 'pcode.toml'), 'utf8').includes('desarrollo = "specs"'), 'elegir «Con especificaciones» lo activa en el proyecto');
+    await p.click('.actividad button[data-panel="specs"]'); await p.waitForSelector('.spec-vacio', { timeout: 10000 }).catch(() => {});
+    ok((await p.textContent('#p-specs')).includes('Programa escribiendo solo la especificación'), 'Especificaciones: estado vacío con los cuatro pasos');
+    mock(resp(SPEC_E2E));
+    await p.locator('.spec-vacio button', { hasText: 'Nueva especificación' }).click();
+    await p.fill('#f-spec-titulo', 'Saludo y despedida');
+    ok((await p.inputValue('#f-spec-nombre')) === 'saludo-y-despedida', 'el nombre de la carpeta sale del título');
+    await p.fill('#f-spec-nombre', 'saludo');
+    await p.fill('#f-spec-desc', 'Escribe un saludo y una despedida en dos archivos de texto.');
+    await p.locator('.form-prov button', { hasText: 'Crear' }).click();
+    await p.waitForSelector('.pestana:has-text("◇ saludo")', { timeout: 30000 }).catch(() => {});
+    const specMd = path.join(D, 'specs', 'saludo', 'spec.md');
+    ok(fs.existsSync(specMd) && fs.readFileSync(specMd, 'utf8').includes('### R2. Despedida'), 'Especificación nueva: ✦ el agente redacta el borrador desde una frase');
+    ok(await p.locator('.pestana', { hasText: 'spec.md' }).count() === 1, 'el borrador se abre en el editor para revisarlo');
+    await p.locator('.pestana', { hasText: '◇ saludo' }).click(); await p.waitForSelector('.spec-heroe h2', { timeout: 10000 }).catch(() => {});
+    ok((await p.textContent('.spec-heroe h2')) === 'Saludo' && await p.locator('.spec-reqs .req').count() === 2, 'la vista de la especificación: título y requisitos');
+    ok((await p.textContent('.pasos-spec li.actual')).includes('Planificar'), 'el paso actual es planificar');
+    mock(resp('', [{ id: '1', name: 'esquema', arguments: { path: '.' } }]), resp(PLAN_E2E));
+    await p.locator('.spec-acciones button', { hasText: 'Planificar' }).click();
+    await p.waitForSelector('.spec-acciones button:has-text("Implementar")', { timeout: 30000 }).catch(() => {});
+    ok(await p.locator('.spec-tareas .tarea').count() === 2 && fs.existsSync(path.join(D, 'specs', 'saludo', 'plan.md')), '✦ Planificar: plan.md y dos tareas trazadas a sus requisitos');
+    ok((await p.locator('#spec-con option').allTextContents()).some((t) => t.includes('GitHub Copilot')), 'se puede implementar con Copilot u otro agente');
+    await captura(p, 'studio-spec-plan.png');
+    mock(resp('', [{ id: '1', name: 'escribir', arguments: { path: 'saludo.txt', content: 'hola\n' } }]), resp('Saludo escrito.'),
+      resp('', [{ id: '2', name: 'escribir', arguments: { path: 'adios.txt', content: 'adiós\n' } }]), resp('Despedida escrita.'));
+    await p.locator('.spec-acciones button', { hasText: 'Implementar' }).click();
+    await p.waitForFunction(() => document.querySelector('.anillo b')?.textContent === '2/2', null, { timeout: 60000 }).catch(() => {});
+    ok((await p.textContent('.anillo b')) === '2/2' && (await p.textContent('.pasos-spec li:last-child')).includes('2 de 2'), '▶ Implementar: tarea a tarea, y los dos requisitos verificados');
+    ok(fs.readFileSync(path.join(D, 'saludo.txt'), 'utf8') === 'hola\n' && fs.existsSync(path.join(D, 'adios.txt')), 'el código lo escribe el agente');
+    ok(await p.locator('.spec-tareas .tarea.hecha').count() === 2 && (await p.textContent('.spec-verif')).includes('grep -q hola saludo.txt'), 'tareas marcadas y última verificación');
+    ok(await p.locator('.burbuja.output', { hasText: '✓ T1 hecha' }).count() === 1 && (await p.locator('.burbuja.output', { hasText: '✓ T1 hecha' }).textContent()).includes('✓ T2 hecha'), 'la salida del paso va en un solo bloque');
+    await p.locator('.spec-heroe').evaluate((e) => e.scrollIntoView({ block: 'start' })); await p.waitForTimeout(400);
+    await captura(p, 'studio-spec.png');
+    fs.writeFileSync(specMd, fs.readFileSync(specMd, 'utf8').replace('con «hola».', 'con «hola, mundo».'));
+    await p.click('#b-specs'); await p.waitForTimeout(300);
+    await p.locator('.spec-item', { hasText: 'Saludo' }).click(); await p.waitForTimeout(500);
+    ok((await p.textContent('#vista-spec')).includes('R1 cambió') && await p.locator('.spec-acciones button', { hasText: 'Replanificar' }).count() === 1, 'si cambia la especificación, lo detecta y pide replanificar solo eso');
+    ok((await p.textContent('.spec-item .fase')) === 'replanificar', 'la lista dice en qué fase está');
   } catch (e) {
     ok(false, 'excepción: ' + (e.stack || e));
   } finally {

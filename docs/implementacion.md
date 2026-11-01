@@ -328,5 +328,6 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F8.45-esquema-agente](../tareas/F8.45-esquema-agente.md) | Tool `esquema` para el agente: localizar sin leer archivos enteros (RepoNav, SHERLOC) | coordinador | F8.39 | hecha |
 | [F8.46-verificar-antes-de-terminar](../tareas/F8.46-verificar-antes-de-terminar.md) | Verificar antes de terminar: recordatorio si el turno cambió archivos sin comprobar nada (Polished but Unresolved) | coordinador | F8.15 | hecha |
 | [F8.47-coste-esquemas-mcp](../tareas/F8.47-coste-esquemas-mcp.md) | Coste de los esquemas de tools MCP en `pcode mcp` y en el arranque del chat (ProMCP) | coordinador | — | hecha |
-| [F8.48-agentes-con-tu-cuenta](../tareas/F8.48-agentes-con-tu-cuenta.md) | GitHub Copilot (y Claude Code, Gemini CLI, opencode) con la cuenta del usuario: Ajustes, conversación en Studio y `--aplicar` | coordinador | F8.15 | pendiente |
+| [F8.48-agentes-con-tu-cuenta](../tareas/F8.48-agentes-con-tu-cuenta.md) | GitHub Copilot (y Claude Code, Gemini CLI, opencode) con la cuenta del usuario: Ajustes, conversación en Studio y `--aplicar` | coordinador | F8.15 | hecha |
+| [F8.49-desarrollo-con-especificaciones](../tareas/F8.49-desarrollo-con-especificaciones.md) | Desarrollo guiado por especificaciones, opcional: pcode spec, panel de Studio y ajuste desarrollo = "specs" | coordinador | F8.48 | pendiente |
 <!-- tabla:fin -->

@@ -1544,6 +1544,7 @@ dependencies = [
  "pcode-policy",
  "pcode-sandbox",
  "pcode-server",
+ "pcode-spec",
  "pcode-store",
  "pcode-tools",
  "pcode-tui",
@@ -1679,6 +1680,7 @@ dependencies = [
  "pcode-models",
  "pcode-policy",
  "pcode-protocol",
+ "pcode-spec",
  "pcode-tools",
  "regex",
  "serde",
@@ -1696,6 +1698,17 @@ version = "1.1.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pcode-spec"
+version = "1.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

@@ -411,6 +411,17 @@ pub mod methods {
     pub const SETTINGS_TEST: &str = "settings.test";
     /// Busca servidores de modelos en este equipo (Ollama, LM Studio, vLLM): `{}` → `{name, label, url, models}[]`.
     pub const SETTINGS_DETECT: &str = "settings.detect";
+    /// Elige la forma de desarrollar: `{specs: bool}` → ajustes (`specsMode`). Por defecto, tradicional.
+    pub const SETTINGS_SET_DEVELOPMENT: &str = "settings.setDevelopment";
+    /// Especificaciones del proyecto (`specs/<nombre>/spec.md`) con su fase: `{}` → lista.
+    pub const SPEC_LIST: &str = "spec.list";
+    /// Estado de una especificación (requisitos, tareas, trazabilidad, deriva, verificación): `{name}`.
+    pub const SPEC_GET: &str = "spec.get";
+    /// Crea `specs/<name>/spec.md` desde la plantilla: `{name, title?}` → `{path}`.
+    pub const SPEC_CREATE: &str = "spec.create";
+    /// Lanza un paso como sesión (`pcode spec …`): `{name, action: draft|plan|implement|verify,
+    /// description?, task?, backend?, fresh?, model?, provider?}` → sesión.
+    pub const SPEC_RUN: &str = "spec.run";
     /// Lanza una orden en la terminal integrada: `{command}` → `{id}`.
     pub const TERMINAL_RUN: &str = "terminal.run";
     /// Detiene una orden: `{id}`.
