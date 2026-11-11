@@ -20,6 +20,7 @@ pcode-backends = { path = "../pcode-backends" }
 pcode-flow = { path = "../pcode-flow" }
 pcode-spec = { path = "../pcode-spec" }
 pcode-server = { path = "../pcode-server" }
+pcode-lsp = { path = "../pcode-lsp" }
 pcode-tui = { path = "../pcode-tui" }
 async-trait.workspace = true
 clap.workspace = true
@@ -32,6 +33,7 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid = { version = "1", features = ["v4"] }
+shell-words.workspace = true
 sha2.workspace = true
 hex.workspace = true
 reqwest.workspace = true

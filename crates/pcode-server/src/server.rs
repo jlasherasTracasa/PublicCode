@@ -1351,8 +1351,24 @@ pub async fn serve_listener(
     l: tokio::net::TcpListener,
 ) -> anyhow::Result<()> {
     tracing::info!("pcoded escuchando en http://{}", l.local_addr()?);
+    tokio::spawn(reap_idle_lsp(Arc::downgrade(&state)));
     axum::serve(l, router(state)).await?;
     Ok(())
+}
+
+/// Cada minuto para los servidores de lenguaje inactivos (`[recursos] lsp_inactivo_min`); termina
+/// cuando se suelta el estado del demonio.
+async fn reap_idle_lsp(st: std::sync::Weak<AppState>) {
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+    tick.tick().await;
+    loop {
+        tick.tick().await;
+        let Some(st) = st.upgrade() else { return };
+        let stopped = st.lsp.reap_idle(std::time::Instant::now()).await;
+        if !stopped.is_empty() {
+            tracing::info!("servidores de lenguaje parados por inactividad: {stopped:?}");
+        }
+    }
 }
 
 /// Título y argumentos de `pcode spec …` para un paso pedido por `spec.run`.

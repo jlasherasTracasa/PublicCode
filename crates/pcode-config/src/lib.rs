@@ -50,6 +50,96 @@ pub struct Config {
     /// Servidores de lenguaje por grupo (`rust`, `typescript`, `python`, `go`, `c`).
     #[serde(rename = "lsp")]
     pub lsp: BTreeMap<String, LspCfg>,
+    /// Uso de recursos del equipo (`[recursos]`): perfil ligero para equipos modestos.
+    #[serde(rename = "recursos")]
+    pub resources: ResourcesCfg,
+}
+
+/// Sección `[recursos]`: cuánto puede gastar PublicCode en este equipo. Todo es opcional; lo que
+/// falte sale del perfil (`auto` lo elige según la RAM y los núcleos).
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(default)]
+pub struct ResourcesCfg {
+    /// `auto` (por defecto), `ligero` o `normal`.
+    #[serde(rename = "perfil")]
+    pub profile: Option<String>,
+    /// Servidores de lenguaje vivos a la vez; al pasar de aquí se para el que lleva más sin usarse.
+    #[serde(rename = "lsp_max")]
+    pub lsp_max: Option<usize>,
+    /// Minutos sin usarse tras los que se para un servidor de lenguaje (0 = nunca).
+    #[serde(rename = "lsp_inactivo_min")]
+    pub lsp_idle_min: Option<u64>,
+}
+
+/// Lo que se sabe del equipo para elegir el perfil.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SystemInfo {
+    /// RAM total en MB (None si no se pudo leer).
+    pub mem_total_mb: Option<u64>,
+    /// Núcleos lógicos.
+    pub cpus: usize,
+}
+
+impl SystemInfo {
+    /// Lee la RAM total (`/proc/meminfo` en Linux) y los núcleos del equipo.
+    pub fn detect() -> SystemInfo {
+        SystemInfo {
+            mem_total_mb: mem_total_mb(),
+            cpus: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn mem_total_mb() -> Option<u64> {
+    let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+    parse_meminfo_total_mb(&s)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn mem_total_mb() -> Option<u64> {
+    None
+}
+
+/// MB de la línea `MemTotal:` de `/proc/meminfo` (viene en kB).
+pub fn parse_meminfo_total_mb(meminfo: &str) -> Option<u64> {
+    let l = meminfo.lines().find(|l| l.starts_with("MemTotal:"))?;
+    let kb: u64 = l.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kb / 1024)
+}
+
+/// RAM por debajo de la cual `auto` elige el perfil ligero.
+pub const LIGHT_MEM_MB: u64 = 6 * 1024;
+
+/// Límites efectivos tras aplicar el perfil.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Resources {
+    /// Si se usa el perfil ligero.
+    pub light: bool,
+    /// Servidores de lenguaje vivos a la vez (al menos 1).
+    pub lsp_max: usize,
+    /// Minutos sin uso tras los que se para un servidor de lenguaje (0 = nunca).
+    pub lsp_idle_min: u64,
+}
+
+impl ResourcesCfg {
+    /// Aplica el perfil: `ligero` → 1 servidor LSP y 5 min de inactividad; `normal` → 4 y 30 min;
+    /// `auto` → ligero si hay menos de [`LIGHT_MEM_MB`] de RAM o 2 núcleos o menos.
+    pub fn resolve(&self, sys: SystemInfo) -> Resources {
+        let light = match self.profile.as_deref() {
+            Some("ligero") => true,
+            Some("normal") => false,
+            _ => sys.mem_total_mb.is_some_and(|m| m < LIGHT_MEM_MB) || sys.cpus <= 2,
+        };
+        let (max, idle) = if light { (1, 5) } else { (4, 30) };
+        Resources {
+            light,
+            lsp_max: self.lsp_max.unwrap_or(max).max(1),
+            lsp_idle_min: self.lsp_idle_min.unwrap_or(idle),
+        }
+    }
 }
 
 /// Un servidor de lenguaje (`[lsp.<grupo>]`).
@@ -296,6 +386,10 @@ impl Config {
         c.preferences.max_context_tokens =
             p.max_context_tokens.or(c.preferences.max_context_tokens);
         c.sandbox = project.sandbox;
+        let r = project.resources;
+        c.resources.profile = r.profile.or(c.resources.profile);
+        c.resources.lsp_max = r.lsp_max.or(c.resources.lsp_max);
+        c.resources.lsp_idle_min = r.lsp_idle_min.or(c.resources.lsp_idle_min);
         c
     }
 
@@ -357,6 +451,61 @@ mod tests {
             Some("PCODE_TEST_NO_EXISTE_JAMAS")
         );
         assert_eq!(p.model.as_deref(), Some("m1"));
+    }
+
+    #[test]
+    fn recursos_perfil_auto_ligero_y_normal() {
+        let modesto = SystemInfo {
+            mem_total_mb: Some(3735),
+            cpus: 2,
+        };
+        let grande = SystemInfo {
+            mem_total_mb: Some(32 * 1024),
+            cpus: 16,
+        };
+        let auto = ResourcesCfg::default();
+        assert_eq!(
+            auto.resolve(modesto),
+            Resources {
+                light: true,
+                lsp_max: 1,
+                lsp_idle_min: 5
+            }
+        );
+        assert!(!auto.resolve(grande).light);
+        assert_eq!(auto.resolve(grande).lsp_max, 4);
+        // Sin poder leer la RAM, mandan los núcleos.
+        let sin_ram = SystemInfo {
+            mem_total_mb: None,
+            cpus: 8,
+        };
+        assert!(!auto.resolve(sin_ram).light);
+        let c = Config::from_str(
+            "[recursos]\nperfil = \"ligero\"\nlsp_max = 0\nlsp_inactivo_min = 0\n",
+        )
+        .unwrap();
+        let r = c.resources.resolve(grande);
+        assert!(r.light);
+        assert_eq!(r.lsp_max, 1, "al menos un servidor");
+        assert_eq!(r.lsp_idle_min, 0, "0 = no parar nunca");
+        let normal = Config::from_str("[recursos]\nperfil = \"normal\"\n").unwrap();
+        assert!(!normal.resources.resolve(modesto).light);
+        assert_eq!(
+            parse_meminfo_total_mb("MemTotal:        3824836 kB\nMemFree: 1 kB\n"),
+            Some(3735)
+        );
+        assert_eq!(parse_meminfo_total_mb("nada"), None);
+    }
+
+    #[test]
+    fn recursos_el_proyecto_manda_campo_a_campo() {
+        let user =
+            Config::from_str("[recursos]\nperfil = \"ligero\"\nlsp_inactivo_min = 2\n").unwrap();
+        let project = Config::from_str("[recursos]\nlsp_max = 3\n").unwrap();
+        let c = Config::merge(user, project);
+        assert_eq!(c.resources.profile.as_deref(), Some("ligero"));
+        assert_eq!(c.resources.lsp_max, Some(3));
+        assert_eq!(c.resources.lsp_idle_min, Some(2));
     }
 
     #[test]

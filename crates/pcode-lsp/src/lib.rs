@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, oneshot};
 
@@ -126,6 +126,75 @@ pub fn default_server(lang: &str) -> Option<(&'static str, Vec<&'static str>)> {
         "c" | "cpp" => ("c", vec!["clangd"]),
         _ => return None,
     })
+}
+
+/// Servidores posibles para un lenguaje, en orden de preferencia: (grupo, órdenes). Con `light`
+/// van primero los que gastan menos memoria (para Python, `jedi-language-server` y `pylsp`
+/// antes que `pyright`, que necesita Node y varios cientos de MB).
+pub fn server_candidates(
+    lang: &str,
+    light: bool,
+) -> Option<(&'static str, Vec<Vec<&'static str>>)> {
+    let (group, first) = default_server(lang)?;
+    let mut c = vec![first];
+    if group == "python" {
+        c.push(vec!["basedpyright-langserver", "--stdio"]);
+        c.push(vec!["pylsp"]);
+        c.push(vec!["jedi-language-server"]);
+        if light {
+            c.reverse();
+        }
+    }
+    Some((group, c))
+}
+
+/// La primera orden cuyo programa existe según `exists`; si no hay ninguna, la primera (así el
+/// error dice qué instalar).
+pub fn pick_command(candidates: &[Vec<&str>], exists: impl Fn(&str) -> bool) -> Vec<String> {
+    candidates
+        .iter()
+        .find(|c| c.first().is_some_and(|p| exists(p)))
+        .or(candidates.first())
+        .map(|c| c.iter().map(|s| s.to_string()).collect())
+        .unwrap_or_default()
+}
+
+/// Si `prog` se puede ejecutar: una ruta que existe, o un nombre que está en el `PATH`.
+pub fn on_path(prog: &str) -> bool {
+    if prog.contains('/') || prog.contains('\\') {
+        return Path::new(prog).is_file();
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let exts: &[&str] = if cfg!(windows) {
+        &["", ".exe", ".cmd", ".bat"]
+    } else {
+        &[""]
+    };
+    std::env::split_paths(&path)
+        .any(|d| exts.iter().any(|e| d.join(format!("{prog}{e}")).is_file()))
+}
+
+/// Límites del gestor de servidores de lenguaje (de `[recursos]`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LspLimits {
+    /// Servidores vivos a la vez (al menos 1).
+    pub max: usize,
+    /// Tiempo sin usarse tras el que se para un servidor (None = nunca).
+    pub idle: Option<Duration>,
+    /// Perfil ligero: elige primero los servidores que gastan menos.
+    pub light: bool,
+}
+
+impl Default for LspLimits {
+    fn default() -> Self {
+        LspLimits {
+            max: 4,
+            idle: Some(Duration::from_secs(30 * 60)),
+            light: false,
+        }
+    }
 }
 
 type Pending = Arc<std::sync::Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
@@ -262,6 +331,16 @@ impl LspClient {
             pending.lock().unwrap().clear();
         });
         c
+    }
+
+    /// Cierra el servidor con educación (`shutdown` y `exit`, como mucho 2 s); al soltar el último
+    /// `Arc`, el proceso se mata si sigue vivo (`kill_on_drop`).
+    pub async fn shutdown(&self) {
+        let _ = self
+            .request("shutdown", Value::Null, Duration::from_secs(2))
+            .await;
+        let _ =
+            tokio::time::timeout(Duration::from_secs(1), self.notify("exit", Value::Null)).await;
     }
 
     /// Lanza el servidor en `root` y lo inicializa.
@@ -531,13 +610,36 @@ pub fn rel_path(root: &Path, p: &Path) -> String {
     }
 }
 
-/// Servidores LSP de un proyecto, arrancados al abrir el primer archivo de cada lenguaje.
+/// Un servidor del gestor: el cliente (o por qué no arrancó) y cuándo se usó por última vez.
+struct Slot {
+    client: Result<Arc<LspClient>, String>,
+    last_used: Instant,
+}
+
+/// Servidores LSP de un proyecto, arrancados al abrir el primer archivo de cada lenguaje. Con
+/// [`LspLimits`] se paran los que pasan del máximo (el que lleva más sin usarse) y los inactivos;
+/// el siguiente uso los vuelve a arrancar.
 pub struct LspManager {
     root: PathBuf,
     sink: DiagnosticsSink,
     overrides: std::sync::Mutex<HashMap<String, Vec<String>>>,
-    clients: Mutex<HashMap<&'static str, Result<Arc<LspClient>, String>>>,
+    limits: std::sync::Mutex<LspLimits>,
+    clients: Mutex<HashMap<&'static str, Slot>>,
+    /// Grupos parados por el gestor (por inactividad o por el máximo), para el estado.
+    stopped: std::sync::Mutex<HashMap<&'static str, String>>,
+    /// Lanza un servidor; se cambia en las pruebas.
+    spawner: Spawner,
 }
+
+/// Futuro en caja que se puede mandar entre hilos.
+pub type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
+
+/// Cómo arranca el gestor un servidor: (raíz, orden, sumidero de diagnósticos) → cliente.
+pub type Spawner = Box<
+    dyn Fn(PathBuf, Vec<String>, DiagnosticsSink) -> BoxFuture<Result<Arc<LspClient>, String>>
+        + Send
+        + Sync,
+>;
 
 impl LspManager {
     /// Crea el gestor; `overrides` cambia la orden por grupo (`rust`, `typescript`, `python`, `go`, `c`).
@@ -550,18 +652,69 @@ impl LspManager {
             root: root.to_path_buf(),
             sink,
             overrides: std::sync::Mutex::new(overrides),
+            limits: std::sync::Mutex::new(LspLimits::default()),
             clients: Mutex::new(HashMap::new()),
+            stopped: std::sync::Mutex::new(HashMap::new()),
+            spawner: Box::new(|root, cmd, sink| {
+                Box::pin(async move { LspClient::spawn(&root, &cmd, sink).await })
+            }),
         }
+    }
+
+    /// Cambia cómo se lanza un servidor (pruebas: servidores falsos en el propio proceso).
+    pub fn with_spawner(
+        mut self,
+        f: impl Fn(PathBuf, Vec<String>, DiagnosticsSink) -> BoxFuture<Result<Arc<LspClient>, String>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> LspManager {
+        self.spawner = Box::new(f);
+        self
+    }
+
+    /// Cambia los límites (de `[recursos]`); se aplican en el siguiente arranque o barrido.
+    pub fn set_limits(&self, l: LspLimits) {
+        *self.limits.lock().unwrap() = LspLimits {
+            max: l.max.max(1),
+            ..l
+        };
+    }
+
+    /// Límites actuales.
+    pub fn limits(&self) -> LspLimits {
+        *self.limits.lock().unwrap()
     }
 
     /// Cliente para el lenguaje de `rel` (lo arranca si hace falta). Error si no hay servidor.
     pub async fn client_for(&self, rel: &str) -> Result<Arc<LspClient>, String> {
         let lang = language_id(rel).ok_or("sin servidor de lenguaje para este archivo")?;
-        let (group, cmd) =
-            default_server(lang).ok_or("sin servidor de lenguaje para este archivo")?;
+        let limits = self.limits();
+        let (group, candidates) = server_candidates(lang, limits.light)
+            .ok_or("sin servidor de lenguaje para este archivo")?;
         let mut g = self.clients.lock().await;
-        if let Some(r) = g.get(group) {
-            return r.clone();
+        if let Some(s) = g.get_mut(group) {
+            s.last_used = Instant::now();
+            return s.client.clone();
+        }
+        // Antes de arrancar otro, se para el que lleva más sin usarse si ya se está en el máximo.
+        let mut evicted = vec![];
+        while g.values().filter(|s| s.client.is_ok()).count() >= limits.max {
+            let Some(lru) = g
+                .iter()
+                .filter(|(_, s)| s.client.is_ok())
+                .min_by_key(|(_, s)| s.last_used)
+                .map(|(k, _)| *k)
+            else {
+                break;
+            };
+            if let Some(s) = g.remove(lru) {
+                self.stopped.lock().unwrap().insert(
+                    lru,
+                    format!("parado para arrancar {group} (máximo {})", limits.max),
+                );
+                evicted.push(s);
+            }
         }
         let command: Vec<String> = self
             .overrides
@@ -569,17 +722,66 @@ impl LspManager {
             .unwrap()
             .get(group)
             .cloned()
-            .unwrap_or_else(|| cmd.iter().map(|s| s.to_string()).collect());
-        let r = LspClient::spawn(&self.root, &command, self.sink.clone())
+            .unwrap_or_else(|| pick_command(&candidates, on_path));
+        let r = (self.spawner)(self.root.clone(), command.clone(), self.sink.clone())
             .await
             .map_err(|e| {
+                let others: Vec<&str> = candidates
+                    .iter()
+                    .filter_map(|c| c.first().copied())
+                    .collect();
                 format!(
                     "{e} (instala {} o configúralo en [lsp.{group}])",
-                    command[0]
+                    others.join(", ")
                 )
             });
-        g.insert(group, r.clone());
+        self.stopped.lock().unwrap().remove(group);
+        g.insert(
+            group,
+            Slot {
+                client: r.clone(),
+                last_used: Instant::now(),
+            },
+        );
+        drop(g);
+        for s in evicted {
+            if let Ok(c) = s.client {
+                c.shutdown().await;
+            }
+        }
         r
+    }
+
+    /// Para los servidores que llevan más de `idle` sin usarse (según `now`); devuelve sus grupos.
+    pub async fn reap_idle(&self, now: Instant) -> Vec<String> {
+        let Some(idle) = self.limits().idle else {
+            return vec![];
+        };
+        let mut g = self.clients.lock().await;
+        let old: Vec<&'static str> = g
+            .iter()
+            .filter(|(_, s)| s.client.is_ok() && now.saturating_duration_since(s.last_used) >= idle)
+            .map(|(k, _)| *k)
+            .collect();
+        let mut out = vec![];
+        let mut gone = vec![];
+        for k in old {
+            if let Some(s) = g.remove(k) {
+                self.stopped.lock().unwrap().insert(
+                    k,
+                    format!("parado tras {} min sin usarse", idle.as_secs() / 60),
+                );
+                out.push(k.to_string());
+                gone.push(s);
+            }
+        }
+        drop(g);
+        for s in gone {
+            if let Ok(c) = s.client {
+                c.shutdown().await;
+            }
+        }
+        out
     }
 
     /// Cambia las órdenes por grupo (de `[lsp.<grupo>] orden`); afecta a los que aún no arrancaron.
@@ -587,21 +789,30 @@ impl LspManager {
         *self.overrides.lock().unwrap() = o;
     }
 
-    /// Estado: grupo → «activo» o el error.
+    /// Estado: grupo → «activo», el error, o por qué se paró (vuelve a arrancar al usarse).
     pub async fn status(&self) -> Vec<(String, String)> {
-        self.clients
+        let mut out: Vec<(String, String)> = self
+            .clients
             .lock()
             .await
             .iter()
             .map(|(k, v)| {
                 (
                     k.to_string(),
-                    v.as_ref()
+                    v.client
+                        .as_ref()
                         .map(|_| "activo".to_string())
                         .unwrap_or_else(|e| e.clone()),
                 )
             })
-            .collect()
+            .collect();
+        for (k, why) in self.stopped.lock().unwrap().iter() {
+            if !out.iter().any(|(g, _)| g == k) {
+                out.push((k.to_string(), why.clone()));
+            }
+        }
+        out.sort();
+        out
     }
 }
 
@@ -743,6 +954,99 @@ mod tests {
         assert_eq!(language_id("web/app.tsx"), Some("typescriptreact"));
         assert_eq!(default_server("javascript").unwrap().0, "typescript");
         assert!(language_id("README.md").is_none());
+    }
+
+    /// Gestor con servidores falsos que cuenta cuántos arranca.
+    fn manager_falso(root: &Path) -> (LspManager, Arc<AtomicU64>) {
+        let n = Arc::new(AtomicU64::new(0));
+        let n2 = n.clone();
+        let m = LspManager::new(root, HashMap::new(), Arc::new(|_, _| {})).with_spawner(
+            move |root, _cmd, _sink| {
+                n2.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move { Ok(fake(&root).await.0) })
+            },
+        );
+        (m, n)
+    }
+
+    #[tokio::test]
+    async fn lsp_maximo_para_el_menos_usado() {
+        let d = tempfile::tempdir().unwrap();
+        let (m, n) = manager_falso(d.path());
+        m.set_limits(LspLimits {
+            max: 1,
+            idle: None,
+            light: true,
+        });
+        m.client_for("a.rs").await.unwrap();
+        m.client_for("b.rs").await.unwrap();
+        assert_eq!(n.load(Ordering::SeqCst), 1, "mismo grupo, mismo servidor");
+        m.client_for("c.py").await.unwrap();
+        assert_eq!(n.load(Ordering::SeqCst), 2);
+        let st = m.status().await;
+        assert_eq!(st[0], ("python".to_string(), "activo".to_string()));
+        assert_eq!(st[1].0, "rust");
+        assert!(st[1].1.contains("máximo 1"), "{st:?}");
+        // Volver a Rust lo arranca otra vez (y para Python).
+        m.client_for("a.rs").await.unwrap();
+        assert_eq!(n.load(Ordering::SeqCst), 3);
+        let activos = m
+            .status()
+            .await
+            .into_iter()
+            .filter(|(_, s)| s == "activo")
+            .count();
+        assert_eq!(activos, 1);
+    }
+
+    #[tokio::test]
+    async fn lsp_inactivo_se_para_y_vuelve_al_usarse() {
+        let d = tempfile::tempdir().unwrap();
+        let (m, n) = manager_falso(d.path());
+        m.set_limits(LspLimits {
+            max: 4,
+            idle: Some(Duration::from_secs(300)),
+            light: false,
+        });
+        m.client_for("a.rs").await.unwrap();
+        let ahora = Instant::now();
+        assert!(m.reap_idle(ahora).await.is_empty(), "recién usado");
+        let parados = m.reap_idle(ahora + Duration::from_secs(301)).await;
+        assert_eq!(parados, vec!["rust".to_string()]);
+        assert!(m.status().await[0].1.contains("sin usarse"));
+        m.client_for("a.rs").await.unwrap();
+        assert_eq!(n.load(Ordering::SeqCst), 2);
+        assert_eq!(m.status().await[0].1, "activo");
+        m.set_limits(LspLimits {
+            max: 4,
+            idle: None,
+            light: false,
+        });
+        assert!(
+            m.reap_idle(ahora + Duration::from_secs(99_999))
+                .await
+                .is_empty(),
+            "sin límite de inactividad no se para nada"
+        );
+    }
+
+    #[test]
+    fn lsp_alternativas_ligeras_primero() {
+        let (g, normal) = server_candidates("python", false).unwrap();
+        assert_eq!(g, "python");
+        assert_eq!(normal[0][0], "pyright-langserver");
+        let (_, ligero) = server_candidates("python", true).unwrap();
+        assert_eq!(ligero[0][0], "jedi-language-server");
+        assert_eq!(
+            server_candidates("rust", true).unwrap().1,
+            vec![vec!["rust-analyzer"]]
+        );
+        // Se elige la primera instalada; si no hay ninguna, la primera (para explicar qué instalar).
+        let elegida = pick_command(&ligero, |p| p == "pylsp" || p == "pyright-langserver");
+        assert_eq!(elegida, vec!["pylsp".to_string()]);
+        assert_eq!(pick_command(&normal, |_| false)[0], "pyright-langserver");
+        assert!(on_path("sh") || cfg!(windows));
+        assert!(!on_path("no-existe-este-programa-pcode"));
     }
 
     #[tokio::test]

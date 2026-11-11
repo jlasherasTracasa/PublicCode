@@ -200,7 +200,7 @@ Enlaces relativos que existan (la CI los comprueba).
 
 **Rust (cuando la tarea lo diga)**: `landlock`, `seccompiler`, `rmcp`, `tree-sitter`,
 `tree-sitter-rust`, `tree-sitter-python`, `axum`, `tokio-stream`, `ts-rs`, `ratatui`, `crossterm`,
-`keyring`, `tauri` y sus plugins oficiales (`single-instance`, `notification`, `deep-link`,
+`keyring`, `eframe` (solo `pcode-ide`, sin wgpu), `tauri` y sus plugins oficiales (`single-instance`, `notification`, `deep-link`,
 `window-state`, `autostart`, `updater`).
 
 **JavaScript/TypeScript (`apps/`)**: `react`, `react-dom`, `typescript`, `vite`,

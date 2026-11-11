@@ -5,6 +5,7 @@ mod chat;
 mod doctor;
 mod flow_cmd;
 mod provider;
+mod remote;
 mod run;
 mod spec_cmd;
 mod update;
@@ -59,7 +60,18 @@ enum Cmd {
         /// No abrir el navegador; solo imprimir la dirección.
         #[arg(long = "no-abrir")]
         no_open: bool,
+        /// Terminar cuando se cierre la entrada estándar (lo usa `pcode remoto` y el IDE nativo).
+        #[arg(long = "hasta-eof", hide = true)]
+        until_eof: bool,
     },
+    /// IDE nativo (sin navegador): abre `pcode-ide` sobre el Studio de este proyecto.
+    Ide {
+        /// Puerto del demonio (0 = uno libre).
+        #[arg(long, default_value_t = 0)]
+        puerto: u16,
+    },
+    /// Trabaja en otro equipo por SSH: Studio (o la TUI, o el IDE) con lo pesado en el servidor.
+    Remoto(remote::RemoteArgs),
     /// Servidores MCP configurados y las tools que aporta cada uno.
     Mcp {
         /// Configuración del proyecto.
@@ -138,7 +150,11 @@ async fn main() -> anyhow::Result<()> {
             pcode_server::serve(st, std::net::SocketAddr::new(escuchar, puerto)).await?;
             Ok(())
         }
-        Some(Cmd::Studio { puerto, no_open }) => {
+        Some(Cmd::Studio {
+            puerto,
+            no_open,
+            until_eof,
+        }) => {
             let token = format!(
                 "{}{}",
                 uuid::Uuid::new_v4().simple(),
@@ -156,9 +172,44 @@ async fn main() -> anyhow::Result<()> {
             if !no_open {
                 open_browser(&url);
             }
-            pcode_server::serve_listener(st, l).await?;
+            if until_eof {
+                tokio::select! {
+                    r = pcode_server::serve_listener(st, l) => r?,
+                    _ = stdin_closed() => {}
+                }
+            } else {
+                pcode_server::serve_listener(st, l).await?;
+            }
             Ok(())
         }
+        Some(Cmd::Ide { puerto }) => {
+            let token = format!(
+                "{}{}",
+                uuid::Uuid::new_v4().simple(),
+                uuid::Uuid::new_v4().simple()
+            );
+            let st = pcode_server::AppState::new(
+                std::env::current_dir()?,
+                std::env::current_exe()?,
+                Some(token.clone()),
+            );
+            apply_lsp_config(&st);
+            let l = tokio::net::TcpListener::bind(("127.0.0.1", puerto)).await?;
+            let url = format!("http://{}/?t={token}", l.local_addr()?);
+            let Some(mut ide) = spawn_ide(&url) else {
+                eprintln!(
+                    "No se encontró pcode-ide (instálalo junto a pcode). Mientras, usa: pcode studio"
+                );
+                std::process::exit(2);
+            };
+            // El demonio vive lo que viva la ventana del IDE.
+            tokio::select! {
+                r = pcode_server::serve_listener(st, l) => r?,
+                _ = tokio::task::spawn_blocking(move || ide.wait()) => {}
+            }
+            Ok(())
+        }
+        Some(Cmd::Remoto(a)) => std::process::exit(remote::remote(a).await?),
         Some(Cmd::Mcp { config }) => std::process::exit(doctor::mcp_cmd(&config).await?),
         Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
         Some(Cmd::Config(c)) => std::process::exit(doctor::config_cmd(c).await?),
@@ -198,9 +249,15 @@ fn choose_sandbox_level() {
     }
 }
 
-/// Aplica `[lsp.*]` de la configuración (global y del proyecto) al demonio.
+/// Aplica `[lsp.*]` y `[recursos]` de la configuración (global y del proyecto) al demonio.
 fn apply_lsp_config(st: &pcode_server::AppState) {
     if let Ok((cfg, _)) = pcode_config::Config::load_layered(std::path::Path::new("pcode.toml")) {
+        let r = cfg.resources.resolve(pcode_config::SystemInfo::detect());
+        st.lsp.set_limits(pcode_lsp::LspLimits {
+            max: r.lsp_max,
+            idle: (r.lsp_idle_min > 0).then(|| std::time::Duration::from_secs(r.lsp_idle_min * 60)),
+            light: r.light,
+        });
         st.lsp.set_overrides(
             cfg.lsp
                 .into_iter()
@@ -208,6 +265,53 @@ fn apply_lsp_config(st: &pcode_server::AppState) {
                 .map(|(k, l)| (k, l.command))
                 .collect(),
         );
+    }
+}
+
+/// Termina cuando la entrada estándar llega al final (o falla).
+async fn stdin_closed() {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 256];
+    let mut stdin = tokio::io::stdin();
+    while let Ok(n) = stdin.read(&mut buf).await {
+        if n == 0 {
+            break;
+        }
+    }
+}
+
+/// Ruta de `pcode-ide`: al lado de este binario o en el `PATH`.
+fn ide_path() -> Option<std::path::PathBuf> {
+    let name = if cfg!(windows) {
+        "pcode-ide.exe"
+    } else {
+        "pcode-ide"
+    };
+    let here = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(name)));
+    here.filter(|p| p.is_file()).or_else(|| {
+        std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|d| d.join(name))
+                .find(|p| p.is_file())
+        })
+    })
+}
+
+/// Lanza el IDE nativo contra `url` (None si no está instalado).
+fn spawn_ide(url: &str) -> Option<std::process::Child> {
+    std::process::Command::new(ide_path()?)
+        .args(["--url", url])
+        .spawn()
+        .ok()
+}
+
+/// Abre el IDE nativo; si no está, el navegador.
+fn open_ide(url: &str) {
+    if spawn_ide(url).is_none() {
+        eprintln!("No se encontró pcode-ide: se abre el navegador.");
+        open_browser(url);
     }
 }
 

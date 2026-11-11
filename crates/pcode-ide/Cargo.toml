@@ -1,0 +1,16 @@
+[package]
+name = "pcode-ide"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "IDE nativo de PublicCode (sin navegador): cliente ligero del demonio pcoded"
+
+[[bin]]
+name = "pcode-ide"
+path = "src/main.rs"
+
+[dependencies]
+# Solo OpenGL (glow) y X11: compila y arranca mucho más ligero que wgpu (ADR-0011).
+eframe = { version = "=0.37.0", default-features = false, features = ["glow", "default_fonts", "x11", "clipboard"] }
+serde.workspace = true
+serde_json.workspace = true
