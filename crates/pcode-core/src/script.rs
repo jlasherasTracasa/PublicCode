@@ -4,6 +4,8 @@
 //! salida de `bash` y el resumen que se devuelve al modelo. La ejecución va en otra tarea.
 
 use pcode_models::ToolSpec;
+use pcode_policy::{Decision, Policy};
+use pcode_tools::{Bash, Tool, ToolContext};
 use serde_json::{Value, json};
 
 /// Nombre de la tool.
@@ -100,9 +102,52 @@ pub fn render(results: &[StepResult], total: usize) -> String {
     lineas.join("\n")
 }
 
+/// Ejecuta los pasos en orden con la tool `bash`; cada uno pasa antes por la política.
+pub async fn run_script(
+    steps: &[String],
+    stop_on_error: bool,
+    policy: &Policy,
+    ctx: &ToolContext,
+) -> Vec<StepResult> {
+    let mut results = Vec::new();
+    for paso in steps {
+        let denegado = match policy.check_command(paso) {
+            Decision::Deny(why) => Some(why),
+            Decision::Ask(why) => Some(format!(
+                "requiere aprobación ({why}): ejecútala sola con `bash`"
+            )),
+            Decision::Allow => None,
+        };
+        if let Some(motivo) = denegado {
+            // Una denegación o una aprobación pendiente siempre para el guion.
+            results.push(StepResult {
+                command: paso.clone(),
+                code: -1,
+                output: String::new(),
+                denied: Some(motivo),
+            });
+            break;
+        }
+        let out = Bash.call(json!({"command": paso}), ctx).await;
+        let code = exit_code(&out.content);
+        let output = crate::compress::compress_tool_output(paso, &out.content);
+        results.push(StepResult {
+            command: paso.clone(),
+            code,
+            output,
+            denied: None,
+        });
+        if code != 0 && stop_on_error {
+            break;
+        }
+    }
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pcode_policy::Capabilities;
 
     fn paso(command: &str, code: i32, output: &str) -> StepResult {
         StepResult {
@@ -179,5 +224,74 @@ mod tests {
             render(&results, 1),
             "[1/1] ⛔ git push: orden denegada: git push\nguion: 0 de 1 pasos correctos"
         );
+    }
+
+    fn ctx_en(dir: &tempfile::TempDir) -> ToolContext {
+        ToolContext {
+            root: dir.path().to_path_buf(),
+            timeout: std::time::Duration::from_secs(10),
+        }
+    }
+
+    #[tokio::test]
+    async fn ejecuta_en_orden() {
+        let d = tempfile::tempdir().unwrap();
+        let ctx = ctx_en(&d);
+        let libre = Policy::new(Capabilities::default());
+        let r = run_script(&["echo uno".into(), "echo dos".into()], true, &libre, &ctx).await;
+        assert_eq!(r.len(), 2);
+        assert!(r.iter().all(|s| s.code == 0 && s.denied.is_none()));
+        assert!(r[0].output.contains("uno"));
+    }
+
+    #[tokio::test]
+    async fn ejecuta_y_para_en_error() {
+        let d = tempfile::tempdir().unwrap();
+        let ctx = ctx_en(&d);
+        let libre = Policy::new(Capabilities::default());
+        let r = run_script(&["exit 3".into(), "echo no".into()], true, &libre, &ctx).await;
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].code, 3);
+    }
+
+    #[tokio::test]
+    async fn ejecuta_y_sigue_si_no_parar() {
+        let d = tempfile::tempdir().unwrap();
+        let ctx = ctx_en(&d);
+        let libre = Policy::new(Capabilities::default());
+        let r = run_script(&["exit 3".into(), "echo si".into()], false, &libre, &ctx).await;
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].code, 3);
+        assert_eq!(r[1].code, 0);
+    }
+
+    #[tokio::test]
+    async fn ejecuta_politica_deniega_un_paso() {
+        let d = tempfile::tempdir().unwrap();
+        let ctx = ctx_en(&d);
+        let sin_push = Policy::new(Capabilities {
+            deny_commands: vec!["git push*".into()],
+            ..Default::default()
+        });
+        let pasos = ["echo a".into(), "git push origin x".into(), "echo b".into()];
+        let r = run_script(&pasos, false, &sin_push, &ctx).await;
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].code, 0);
+        assert!(r[1].denied.is_some());
+        assert_eq!(r[1].code, -1);
+    }
+
+    #[tokio::test]
+    async fn ejecuta_pide_aprobacion_como_denegado() {
+        let d = tempfile::tempdir().unwrap();
+        let ctx = ctx_en(&d);
+        let con_ask = Policy::new(Capabilities {
+            ask_commands: vec!["git push*".into()],
+            ..Default::default()
+        });
+        let r = run_script(&["git push origin x".into()], false, &con_ask, &ctx).await;
+        assert_eq!(r.len(), 1);
+        let motivo = r[0].denied.clone().unwrap_or_default();
+        assert!(motivo.contains("requiere aprobación"), "{motivo}");
     }
 }
