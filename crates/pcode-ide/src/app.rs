@@ -966,6 +966,9 @@ impl Ide {
         let p = self.pal();
         let t = self.t;
         let mut cmd = None;
+        // El rectángulo entero de la barra: el menú se queda con el ancho libre, así que el centro
+        // y los conmutadores se colocan en posiciones absolutas con `ui.put`.
+        let full = ui.max_rect();
         ui.horizontal_centered(|ui| {
             ui.label(RichText::new(">_").strong().color(p.accent).size(15.0));
             egui::MenuBar::new().ui(ui, |ui| {
@@ -1032,43 +1035,46 @@ impl Ide {
                 });
             });
             // «Command center» en el centro, como en VS Code.
-            let w = 420.0_f32.min(ui.available_width() - 160.0).max(120.0);
-            let left = (ui.available_width() - w) / 2.0 - 80.0;
-            ui.add_space(left.max(8.0));
             let label = if self.project.is_empty() {
                 "PublicCode".to_string()
             } else {
                 self.project.clone()
             };
-            let b = egui::Button::new(RichText::new(format!("🔍  {label}")).color(p.fg_dim))
+            let (center, toggles) = title_rects(full);
+            let b = egui::Button::new(RichText::new(format!("⚲  {label}")).color(p.fg_dim))
                 .fill(p.input)
                 .stroke(Stroke::new(1.0, p.border))
-                .corner_radius(6)
-                .min_size(vec2(w, 22.0));
+                .corner_radius(6);
             if ui
-                .add(b)
+                .put(center, b)
                 .on_hover_text(format!("{} (Ctrl+P)", t.quick_open))
                 .clicked()
             {
                 self.quick = Some(Picker::default());
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let toggle = |ui: &mut egui::Ui, on: bool, glyph: &str, tip: &str| {
-                    let c = if on { p.fg } else { p.fg_dim };
-                    ui.add(egui::Button::new(RichText::new(glyph).color(c).size(15.0)).frame(false))
-                        .on_hover_text(tip)
-                        .clicked()
-                };
-                if toggle(ui, self.settings.show_agent, "◨", t.toggle_agent) {
-                    cmd = Some(Command::ToggleAgent);
+            let items = [
+                (
+                    self.show_side,
+                    "◧",
+                    t.toggle_sidebar,
+                    Command::ToggleSidebar,
+                ),
+                (self.show_panel, "⬓", t.toggle_panel, Command::TogglePanel),
+                (
+                    self.settings.show_agent,
+                    "◨",
+                    t.toggle_agent,
+                    Command::ToggleAgent,
+                ),
+            ];
+            for ((on, glyph, tip, c), rect) in items.into_iter().zip(toggles) {
+                let color = if on { p.fg } else { p.fg_dim };
+                let b =
+                    egui::Button::new(RichText::new(glyph).color(color).size(15.0)).frame(false);
+                if ui.put(rect, b).on_hover_text(tip).clicked() {
+                    cmd = Some(c);
                 }
-                if toggle(ui, self.show_panel, "⬓", t.toggle_panel) {
-                    cmd = Some(Command::TogglePanel);
-                }
-                if toggle(ui, self.show_side, "◧", t.toggle_sidebar) {
-                    cmd = Some(Command::ToggleSidebar);
-                }
-            });
+            }
         });
         if let Some(c) = cmd {
             let ctx = ui.ctx().clone();
@@ -1082,8 +1088,8 @@ impl Ide {
         ui.add_space(4.0);
         let mut pick = None;
         for (side, glyph, tip) in [
-            (Side::Explorer, "🗐", t.explorer),
-            (Side::Search, "🔍", t.search),
+            (Side::Explorer, "❐", t.explorer),
+            (Side::Search, "⚲", t.search),
             (Side::Git, "⎇", t.git),
         ] {
             let active = self.show_side && self.side == side;
@@ -1830,8 +1836,12 @@ impl Ide {
                 ui.label(RichText::new(t.welcome_sub).size(15.0).color(p.fg_dim));
                 ui.add_space(28.0);
             });
-            ui.columns(2, |cols| {
-                cols[0].with_layout(Layout::top_down(Align::Max), |ui| {
+            // Dos columnas de ancho fijo centradas, las dos alineadas a la izquierda.
+            let margin = welcome_margin(ui.available_width());
+            ui.horizontal_top(|ui| {
+                ui.add_space(margin);
+                ui.vertical(|ui| {
+                    ui.set_width(WELCOME_COL);
                     ui.label(RichText::new(t.start).size(16.0).color(p.fg));
                     ui.add_space(6.0);
                     for c in [
@@ -1858,8 +1868,9 @@ impl Ide {
                         self.palette = Some(Picker::default());
                     }
                 });
-                cols[1].with_layout(Layout::top_down(Align::Min), |ui| {
-                    ui.add_space(0.0);
+                ui.add_space(WELCOME_GAP);
+                ui.vertical(|ui| {
+                    ui.set_width(WELCOME_COL);
                     ui.label(RichText::new(t.recent).size(16.0).color(p.fg));
                     ui.add_space(6.0);
                     let recent: Vec<String> = if self.recent_files.is_empty() {
@@ -2513,7 +2524,7 @@ impl Ide {
                                 let (g, c) = if t.error {
                                     ("✗", p.error)
                                 } else {
-                                    ("ⓘ", p.accent)
+                                    ("●", p.accent)
                                 };
                                 ui.label(RichText::new(g).color(c));
                                 ui.add(egui::Label::new(&t.text).wrap());
@@ -2528,6 +2539,36 @@ impl Ide {
 }
 
 /// Un elemento de menú con su atajo a la derecha.
+/// Ancho de cada columna de la bienvenida y separación entre las dos.
+const WELCOME_COL: f32 = 260.0;
+const WELCOME_GAP: f32 = 20.0;
+
+/// Margen izquierdo que centra las dos columnas de la bienvenida en `width` (0 si no caben).
+fn welcome_margin(width: f32) -> f32 {
+    ((width - 2.0 * WELCOME_COL - WELCOME_GAP) / 2.0).max(0.0)
+}
+
+/// Dónde van, dentro de la barra de título `full`, el «command center» (centrado, 420 px como
+/// mucho) y los tres conmutadores de paneles (26×22, pegados a la derecha, de izquierda a derecha).
+fn title_rects(full: egui::Rect) -> (egui::Rect, [egui::Rect; 3]) {
+    const TOGGLE: f32 = 26.0;
+    const H: f32 = 22.0;
+    let y = full.center().y;
+    let toggles = [2.0, 1.0, 0.0].map(|i: f32| {
+        let right = full.right() - 6.0 - i * TOGGLE;
+        egui::Rect::from_min_max(
+            egui::pos2(right - TOGGLE, y - H / 2.0),
+            egui::pos2(right, y + H / 2.0),
+        )
+    });
+    // El centro no pisa los conmutadores ni, a la izquierda, un hueco simétrico para el menú.
+    let w = (2.0 * (toggles[0].left() - 8.0 - full.center().x)).clamp(120.0, 420.0);
+    (
+        egui::Rect::from_center_size(full.center(), vec2(w, H)),
+        toggles,
+    )
+}
+
 fn menu_item(ui: &mut egui::Ui, t: &Texts, c: Command, out: &mut Option<Command>) {
     let (label, keys) = c.label(t);
     if ui
@@ -2777,6 +2818,36 @@ impl eframe::App for Ide {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn barra_de_titulo_centro_y_conmutadores_a_la_derecha() {
+        let full = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(1100.0, 30.0));
+        let (center, toggles) = title_rects(full);
+        assert_eq!(center.center(), full.center());
+        assert_eq!(center.width(), 420.0);
+        // Tres botones de 26×22, de izquierda a derecha, pegados al borde y sin solaparse.
+        assert!(
+            toggles
+                .iter()
+                .all(|r| r.width() == 26.0 && r.height() == 22.0)
+        );
+        assert!(toggles[0].right() <= toggles[1].left() && toggles[1].right() <= toggles[2].left());
+        assert_eq!(toggles[2].right(), full.right() - 6.0);
+        assert!(center.right() < toggles[0].left());
+        // En una ventana estrecha el centro encoge y sigue sin pisar los conmutadores.
+        let (c, t) = title_rects(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            vec2(500.0, 30.0),
+        ));
+        assert!(c.width() < 420.0 && c.right() < t[0].left());
+    }
+
+    #[test]
+    fn bienvenida_centrada() {
+        assert_eq!(welcome_margin(1000.0), 230.0);
+        assert_eq!(welcome_margin(540.0), 0.0);
+        assert_eq!(welcome_margin(300.0), 0.0);
+    }
 
     #[test]
     fn paleta_filtra_comandos() {

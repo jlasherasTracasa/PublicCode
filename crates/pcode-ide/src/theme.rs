@@ -174,7 +174,7 @@ pub fn file_icon(name: &str) -> (&'static str, Color32) {
         (_, "go") => ("◆", hex(0x00add8)),
         (_, "c" | "h" | "cc" | "cpp" | "hpp") => ("◆", hex(0x659ad2)),
         (_, "java" | "kt") => ("◆", hex(0xb07219)),
-        (_, "md") => ("ⓘ", hex(0x519aba)),
+        (_, "md") => ("¶", hex(0x519aba)),
         (_, "json") => ("{}", hex(0xcbcb41)),
         (_, "toml" | "yaml" | "yml" | "ini" | "cfg" | "conf") => ("⚙", hex(0x6d8086)),
         (_, "sh" | "bash" | "ps1") => ("$", hex(0x89e051)),
@@ -210,6 +210,8 @@ mod tests {
         assert_eq!(file_icon("datos.JSON").0, "{}");
         assert_eq!(file_icon(".gitignore").0, "◈");
         assert_eq!(file_icon("sin_extension").0, "≡");
+        // Solo glifos que existen en las fuentes del IDE (ⓘ salía como un cuadro).
+        assert_eq!(file_icon("README.md").0, "¶");
     }
 
     #[test]
