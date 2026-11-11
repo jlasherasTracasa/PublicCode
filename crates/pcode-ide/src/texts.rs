@@ -173,6 +173,36 @@ pub struct Texts {
     pub definition_none: &'static str,
     /// «Para abrir otra carpeta: pcode ide <ruta>».
     pub open_folder_hint: &'static str,
+    /// Menú Ejecutar.
+    pub menu_run: &'static str,
+    /// Pestaña y panel de depuración.
+    pub debug: &'static str,
+    /// Depurar el archivo abierto o continuar.
+    pub debug_start: &'static str,
+    /// Detener la depuración.
+    pub debug_stop: &'static str,
+    /// Paso a la línea siguiente.
+    pub debug_next: &'static str,
+    /// Entrar en la función.
+    pub debug_step_in: &'static str,
+    /// Salir de la función.
+    pub debug_step_out: &'static str,
+    /// Punto de ruptura en la línea del cursor.
+    pub toggle_breakpoint: &'static str,
+    /// Aviso: solo se depura Python.
+    pub debug_only_python: &'static str,
+    /// Panel sin depuración en marcha.
+    pub debug_idle: &'static str,
+    /// El programa corre.
+    pub debug_running: &'static str,
+    /// El programa está parado.
+    pub debug_stopped: &'static str,
+    /// El programa terminó.
+    pub debug_exit: &'static str,
+    /// Título de la pila.
+    pub debug_stack: &'static str,
+    /// Título de las variables.
+    pub debug_vars: &'static str,
     /// Título de la lista de fragmentos (Ctrl+Espacio).
     pub snippets: &'static str,
     /// Teclas de la lista de fragmentos.
@@ -278,6 +308,21 @@ pub const ES: Texts = Texts {
     hover_none: "Sin información en esta posición",
     definition_none: "No se encontró la definición",
     open_folder_hint: "Para abrir otra carpeta: pcode ide <ruta>",
+    menu_run: "Ejecutar",
+    debug: "Depuración",
+    debug_start: "Depurar / Continuar",
+    debug_stop: "Detener la depuración",
+    debug_next: "Paso a paso por procedimientos",
+    debug_step_in: "Paso a paso por instrucciones",
+    debug_step_out: "Paso a paso para salir",
+    toggle_breakpoint: "Alternar punto de ruptura",
+    debug_only_python: "Por ahora solo se depuran archivos de Python (.py)",
+    debug_idle: "F9 pone un punto de ruptura · F5 depura el archivo de Python abierto",
+    debug_running: "En ejecución…",
+    debug_stopped: "Parado",
+    debug_exit: "Terminó con código",
+    debug_stack: "PILA DE LLAMADAS",
+    debug_vars: "VARIABLES",
     snippets: "Fragmentos",
     snippets_hint: "↑ ↓ elegir · Intro insertar · Esc cerrar",
     no_snippets: "Ningún fragmento coincide (instala extensiones con: pcode extensiones)",
@@ -375,6 +420,21 @@ pub const EN: Texts = Texts {
     hover_none: "No information here",
     definition_none: "No definition found",
     open_folder_hint: "To open another folder: pcode ide <path>",
+    menu_run: "Run",
+    debug: "Debug",
+    debug_start: "Start / Continue Debugging",
+    debug_stop: "Stop Debugging",
+    debug_next: "Step Over",
+    debug_step_in: "Step Into",
+    debug_step_out: "Step Out",
+    toggle_breakpoint: "Toggle Breakpoint",
+    debug_only_python: "Only Python files (.py) can be debugged for now",
+    debug_idle: "F9 sets a breakpoint · F5 debugs the open Python file",
+    debug_running: "Running…",
+    debug_stopped: "Paused",
+    debug_exit: "Exited with code",
+    debug_stack: "CALL STACK",
+    debug_vars: "VARIABLES",
     snippets: "Snippets",
     snippets_hint: "↑ ↓ choose · Enter insert · Esc close",
     no_snippets: "No matching snippet (install extensions with: pcode extensiones)",

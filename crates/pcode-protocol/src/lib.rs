@@ -185,6 +185,54 @@ pub enum Event {
         /// Archivos cambiados en el turno.
         changes: Vec<TurnChangeDto>,
     },
+    /// El programa que se depura se paró (punto de ruptura, paso o excepción).
+    DebugStopped {
+        /// Motivo (`breakpoint`, `step`, `exception`…).
+        reason: String,
+        /// Pila del hilo parado, del marco más interno al más externo.
+        frames: Vec<DebugFrameDto>,
+    },
+    /// Salida del programa que se depura.
+    DebugOutput {
+        /// `stdout`, `stderr` o `console`.
+        category: String,
+        /// Texto.
+        text: String,
+    },
+    /// Terminó la depuración.
+    DebugExited {
+        /// Código de salida del programa (None si no se supo).
+        code: Option<i32>,
+    },
+}
+
+/// Un marco de la pila del programa que se depura.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DebugFrameDto {
+    /// Id del marco (para pedir sus variables).
+    #[ts(type = "number")]
+    pub id: i64,
+    /// Función.
+    pub name: String,
+    /// Archivo: relativo al proyecto si está dentro; si no, la ruta que dio el adaptador.
+    pub path: String,
+    /// Línea (desde 1).
+    pub line: u32,
+}
+
+/// Una variable local de un marco.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DebugVariableDto {
+    /// Nombre.
+    pub name: String,
+    /// Valor como texto.
+    pub value: String,
+    /// Tipo, si el adaptador lo dice.
+    pub kind: String,
 }
 
 /// Un archivo cambiado en un turno del agente.
@@ -426,6 +474,23 @@ pub mod methods {
     pub const TERMINAL_RUN: &str = "terminal.run";
     /// Detiene una orden: `{id}`.
     pub const TERMINAL_KILL: &str = "terminal.kill";
+    /// Empieza a depurar un programa de Python: `{program, breakpoints: {ruta: [líneas]}}`.
+    /// Después llegan los eventos `debugStopped`, `debugOutput` y `debugExited`.
+    pub const DEBUG_START: &str = "debug.start";
+    /// Fija los puntos de ruptura de un archivo: `{path, lines}` → líneas verificadas.
+    pub const DEBUG_SET_BREAKPOINTS: &str = "debug.setBreakpoints";
+    /// Sigue hasta el siguiente punto de ruptura.
+    pub const DEBUG_CONTINUE: &str = "debug.continue";
+    /// Paso a la línea siguiente.
+    pub const DEBUG_NEXT: &str = "debug.next";
+    /// Entra en la función.
+    pub const DEBUG_STEP_IN: &str = "debug.stepIn";
+    /// Sale de la función.
+    pub const DEBUG_STEP_OUT: &str = "debug.stepOut";
+    /// Variables locales de un marco: `{frameId}` → `[{name, value, kind}]`.
+    pub const DEBUG_VARIABLES: &str = "debug.variables";
+    /// Termina la depuración.
+    pub const DEBUG_STOP: &str = "debug.stop";
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! IDE nativo de PublicCode: un cliente más del demonio `pcoded` (JSON-RPC y SSE), sin navegador.
 pub mod agent;
 pub mod app;
+pub mod debug;
 pub mod events;
 pub mod find;
 pub mod git;

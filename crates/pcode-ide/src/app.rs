@@ -51,6 +51,10 @@ pub enum Msg {
     Event(Value),
     /// Aviso (texto, es error).
     Toast(String, bool),
+    /// Variables del marco elegido en el depurador.
+    DebugVars(Value),
+    /// No se pudo empezar a depurar (mensaje).
+    DebugFailed(String),
 }
 
 /// Un archivo con cambios en git.
@@ -86,6 +90,8 @@ pub enum Bottom {
     Output,
     /// Terminal.
     Terminal,
+    /// Depuración.
+    Debug,
 }
 
 /// Órdenes de la paleta y de los menús.
@@ -137,13 +143,25 @@ pub enum Command {
     NewChat,
     /// Deshacer el turno del agente.
     UndoTurn,
+    /// Depurar el archivo abierto o, si está parado, continuar.
+    DebugStart,
+    /// Detener la depuración.
+    DebugStop,
+    /// Paso a la línea siguiente.
+    DebugNext,
+    /// Entrar en la función.
+    DebugStepIn,
+    /// Salir de la función.
+    DebugStepOut,
+    /// Poner o quitar un punto de ruptura en la línea del cursor.
+    ToggleBreakpoint,
     /// Salir.
     Quit,
 }
 
 impl Command {
     /// Todas, en el orden de la paleta.
-    pub const ALL: [Command; 24] = [
+    pub const ALL: [Command; 30] = [
         Command::QuickOpen,
         Command::Save,
         Command::SaveAll,
@@ -167,6 +185,12 @@ impl Command {
         Command::ZoomOut,
         Command::NewChat,
         Command::UndoTurn,
+        Command::DebugStart,
+        Command::DebugStop,
+        Command::DebugNext,
+        Command::DebugStepIn,
+        Command::DebugStepOut,
+        Command::ToggleBreakpoint,
         Command::Quit,
     ];
 
@@ -196,6 +220,12 @@ impl Command {
             Command::ZoomOut => (t.zoom_out, "Ctrl+-"),
             Command::NewChat => (t.new_chat, "Ctrl+I"),
             Command::UndoTurn => (t.undo_turn, "Ctrl+Alt+Z"),
+            Command::DebugStart => (t.debug_start, "F5"),
+            Command::DebugStop => (t.debug_stop, "Mayús+F5"),
+            Command::DebugNext => (t.debug_next, "F10"),
+            Command::DebugStepIn => (t.debug_step_in, "F11"),
+            Command::DebugStepOut => (t.debug_step_out, "Mayús+F11"),
+            Command::ToggleBreakpoint => (t.toggle_breakpoint, "F9"),
             Command::Quit => (t.quit, "Ctrl+Q"),
         };
         (a.to_string(), b)
@@ -344,6 +374,8 @@ pub struct Ide {
     hover: Option<String>,
     /// Fragmentos que coinciden con la palabra antes del cursor y cuál está elegido (Ctrl+Espacio).
     snippet_pick: Option<(Vec<crate::snippets::Snippet>, usize)>,
+    /// Depurador: puntos de ruptura, pila, variables y salida.
+    debug: crate::debug::DebugState,
     toasts: Vec<Toast>,
     lsp: Vec<(String, String)>,
     connected: bool,
@@ -411,6 +443,7 @@ impl Ide {
             recent_files: vec![],
             ssh_hosts: None,
             snippet_pick: None,
+            debug: crate::debug::DebugState::default(),
             last_sync: None,
         };
         ide.list_dir("");
@@ -453,6 +486,92 @@ impl Ide {
         std::thread::spawn(move || {
             let _ = tx.send(f(&c));
         });
+    }
+
+    /// Manda una orden `debug.*` sin parámetros; si falla, sale un aviso.
+    fn debug_call(&self, method: &'static str) {
+        self.spawn(move |c| match c.call(method, json!({})) {
+            Ok(_) => Msg::Toast(String::new(), false),
+            Err(e) => Msg::Toast(e, true),
+        });
+    }
+
+    /// Elige un marco de la pila: pide sus variables y enseña su línea en el editor.
+    fn debug_select(&mut self, i: usize) {
+        let Some(f) = self.debug.frames.get(i).cloned() else {
+            return;
+        };
+        self.debug.selected = i;
+        self.spawn(
+            move |c| match c.call("debug.variables", json!({"frameId": f.id})) {
+                Ok(v) => Msg::DebugVars(v),
+                Err(e) => Msg::Toast(e, true),
+            },
+        );
+        // Solo los archivos del proyecto (ruta relativa) se pueden abrir.
+        if !f.path.starts_with('/') && !f.path.contains(':') {
+            self.open_at(&f.path, Some(f.line), None);
+        }
+    }
+
+    /// F5: continúa si está parado; si no hay depuración, empieza con el archivo abierto.
+    fn debug_start(&mut self) {
+        use crate::debug::Phase;
+        match self.debug.phase {
+            Phase::Stopped => {
+                self.debug.resumed();
+                self.debug_call("debug.continue");
+            }
+            Phase::Running => {}
+            Phase::Idle => {
+                let Some(path) = self.tabs.current().map(|t| t.path.clone()) else {
+                    return;
+                };
+                if !path.ends_with(".py") {
+                    self.toast(self.t.debug_only_python, true);
+                    return;
+                }
+                // Se depura lo que hay en disco.
+                self.save_tab(self.tabs.active);
+                self.debug.started();
+                self.show_panel = true;
+                self.bottom = Bottom::Debug;
+                let bps = self.debug.breakpoints_json();
+                self.spawn(move |c| {
+                    match c.call("debug.start", json!({"program": path, "breakpoints": bps})) {
+                        Ok(_) => Msg::Toast(String::new(), false),
+                        Err(e) => Msg::DebugFailed(e),
+                    }
+                });
+            }
+        }
+    }
+
+    /// F10, F11 y Mayús+F11: un paso, solo si el programa está parado.
+    fn debug_step(&mut self, method: &'static str) {
+        if self.debug.phase == crate::debug::Phase::Stopped {
+            self.debug.resumed();
+            self.debug_call(method);
+        }
+    }
+
+    /// F9: punto de ruptura en la línea del cursor; con una depuración en marcha, se manda ya.
+    fn toggle_breakpoint(&mut self) {
+        let Some(path) = self.tabs.current().map(|t| t.path.clone()) else {
+            return;
+        };
+        let lines = self.debug.toggle_breakpoint(&path, self.cursor.0 + 1);
+        if self.debug.phase != crate::debug::Phase::Idle {
+            self.spawn(move |c| {
+                match c.call(
+                    "debug.setBreakpoints",
+                    json!({"path": path, "lines": lines}),
+                ) {
+                    Ok(_) => Msg::Toast(String::new(), false),
+                    Err(e) => Msg::Toast(e, true),
+                }
+            });
+        }
     }
 
     /// Ctrl+Espacio: fragmentos de las extensiones cuyo prefijo empieza por la palabra del cursor.
@@ -785,6 +904,12 @@ impl Ide {
                 self.show_panel = true;
                 self.bottom = Bottom::Problems;
             }
+            Command::DebugStart => self.debug_start(),
+            Command::DebugStop => self.debug_call("debug.stop"),
+            Command::DebugNext => self.debug_step("debug.next"),
+            Command::DebugStepIn => self.debug_step("debug.stepIn"),
+            Command::DebugStepOut => self.debug_step("debug.stepOut"),
+            Command::ToggleBreakpoint => self.toggle_breakpoint(),
             Command::ToggleTheme => {
                 self.settings.dark = !self.settings.dark;
                 self.set_theme(ctx);
@@ -822,6 +947,14 @@ impl Ide {
         }
         self.connected = true;
         if self.problems.apply(&ev) || self.term.apply(&ev) {
+            return;
+        }
+        if self.debug.apply(&ev) {
+            if ev["tipo"] == "debugStopped" {
+                self.show_panel = true;
+                self.bottom = Bottom::Debug;
+                self.debug_select(0);
+            }
             return;
         }
         if self.stream.apply(&ev) && ev["tipo"] == "assistantDelta" {
@@ -935,6 +1068,11 @@ impl Ide {
             Msg::Hover(h) => self.hover = Some(h),
             Msg::Event(ev) => self.on_event(ev),
             Msg::Toast(t, e) => self.toast(t, e),
+            Msg::DebugVars(v) => self.debug.set_vars(&v),
+            Msg::DebugFailed(e) => {
+                self.debug.apply(&json!({"tipo": "debugExited"}));
+                self.toast(e, true);
+            }
         }
     }
 
@@ -982,6 +1120,19 @@ impl Ide {
         }
         if press(Modifiers::NONE, Key::F12) {
             cmds.push(Some(Command::GoToDefinition));
+        }
+        // Depurador, con las teclas de VS Code (primero las que llevan Mayús).
+        for (m, k, c) in [
+            (Modifiers::SHIFT, Key::F5, Command::DebugStop),
+            (Modifiers::SHIFT, Key::F11, Command::DebugStepOut),
+            (Modifiers::NONE, Key::F5, Command::DebugStart),
+            (Modifiers::NONE, Key::F9, Command::ToggleBreakpoint),
+            (Modifiers::NONE, Key::F10, Command::DebugNext),
+            (Modifiers::NONE, Key::F11, Command::DebugStepIn),
+        ] {
+            if press(m, k) {
+                cmds.push(Some(c));
+            }
         }
         // Fragmentos: con la lista abierta, las flechas, Intro y Esc son suyos (se consumen aquí,
         // antes de que los vea el editor).
@@ -1090,6 +1241,18 @@ impl Ide {
                         Command::GoToLine,
                         Command::GoToDefinition,
                         Command::ShowHover,
+                    ] {
+                        menu_item(ui, t, c, &mut cmd);
+                    }
+                });
+                ui.menu_button(t.menu_run, |ui| {
+                    for c in [
+                        Command::DebugStart,
+                        Command::DebugStop,
+                        Command::DebugNext,
+                        Command::DebugStepIn,
+                        Command::DebugStepOut,
+                        Command::ToggleBreakpoint,
                     ] {
                         menu_item(ui, t, c, &mut cmd);
                     }
@@ -1691,6 +1854,15 @@ impl Ide {
         let lines = tab.text.split('\n').count();
         let width = lines.to_string().len().max(3);
         let cur_line = self.cursor.0 as usize + 1;
+        // Puntos de ruptura del archivo y línea donde está parado el depurador.
+        let breaks: Vec<bool> = (1..=lines as u32)
+            .map(|l| self.debug.has_breakpoint(&tab.path, l))
+            .collect();
+        let stopped_line = self
+            .debug
+            .location()
+            .filter(|(path, _)| *path == tab.path)
+            .map(|(_, l)| l as usize);
         let numbers: String = (1..=lines).map(|i| format!("{i:>width$}\n")).collect();
         let mut new_cursor = None;
         egui::Frame::new().fill(p.editor).show(ui, |ui| {
@@ -1703,7 +1875,11 @@ impl Ide {
                         // Números de línea; el de la línea actual, más claro.
                         let mut job = egui::text::LayoutJob::default();
                         for (i, l) in numbers.lines().enumerate() {
-                            let c = if i + 1 == cur_line {
+                            let c = if Some(i + 1) == stopped_line {
+                                p.git_modified
+                            } else if breaks[i] {
+                                p.error
+                            } else if i + 1 == cur_line {
                                 p.fg
                             } else {
                                 p.line_number
@@ -2038,6 +2214,7 @@ impl Ide {
                 ),
                 (Bottom::Output, t.output.to_uppercase()),
                 (Bottom::Terminal, t.terminal.to_uppercase()),
+                (Bottom::Debug, t.debug.to_uppercase()),
             ] {
                 let active = self.bottom == b;
                 let r = ui.add(
@@ -2159,6 +2336,88 @@ impl Ide {
                     }
                 });
             }
+            Bottom::Debug => self.ui_debug(ui),
+        }
+    }
+
+    /// Panel de depuración: órdenes, pila, variables y salida del programa.
+    fn ui_debug(&mut self, ui: &mut egui::Ui) {
+        use crate::debug::Phase;
+        let p = self.pal();
+        let t = self.t;
+        let mut cmd = None;
+        let mut pick = None;
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            for (glyph, c) in [
+                ("▶", Command::DebugStart),
+                ("➤", Command::DebugNext),
+                ("▾", Command::DebugStepIn),
+                ("▸", Command::DebugStepOut),
+                ("■", Command::DebugStop),
+            ] {
+                let (label, keys) = c.label(t);
+                if ui
+                    .button(glyph)
+                    .on_hover_text(format!("{label} ({keys})"))
+                    .clicked()
+                {
+                    cmd = Some(c);
+                }
+            }
+            let estado = match (self.debug.phase, self.debug.exit) {
+                (Phase::Running, _) => t.debug_running.to_string(),
+                (Phase::Stopped, _) => format!("{}: {}", t.debug_stopped, self.debug.reason),
+                (Phase::Idle, Some(code)) => format!("{} {code}", t.debug_exit),
+                (Phase::Idle, None) => t.debug_idle.to_string(),
+            };
+            ui.label(RichText::new(estado).color(p.fg_dim));
+        });
+        ui.separator();
+        ui.columns(3, |cols| {
+            cols[0].label(RichText::new(t.debug_stack).small().color(p.fg_dim));
+            egui::ScrollArea::vertical()
+                .id_salt("debug-pila")
+                .show(&mut cols[0], |ui| {
+                    for (i, f) in self.debug.frames.iter().enumerate() {
+                        let text = format!("{}  {}:{}", f.name, f.path, f.line);
+                        if ui
+                            .selectable_label(i == self.debug.selected, text)
+                            .clicked()
+                        {
+                            pick = Some(i);
+                        }
+                    }
+                });
+            cols[1].label(RichText::new(t.debug_vars).small().color(p.fg_dim));
+            egui::ScrollArea::vertical()
+                .id_salt("debug-variables")
+                .show(&mut cols[1], |ui| {
+                    for v in &self.debug.vars {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&v.name).monospace().color(p.accent));
+                            ui.label(RichText::new(format!("= {}", v.value)).monospace());
+                            ui.label(RichText::new(&v.kind).small().color(p.fg_dim));
+                        });
+                    }
+                });
+            cols[2].label(RichText::new(t.output).small().color(p.fg_dim));
+            egui::ScrollArea::vertical()
+                .id_salt("debug-salida")
+                .stick_to_bottom(true)
+                .show(&mut cols[2], |ui| {
+                    ui.add(
+                        egui::Label::new(RichText::new(self.debug.output.join("\n")).monospace())
+                            .wrap(),
+                    );
+                });
+        });
+        if let Some(i) = pick {
+            self.debug_select(i);
+        }
+        if let Some(c) = cmd {
+            let ctx = ui.ctx().clone();
+            self.run(c, &ctx);
         }
     }
 

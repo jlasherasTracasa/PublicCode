@@ -37,6 +37,8 @@ pub struct AppState {
     inputs: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<tokio::process::ChildStdin>>>>,
     /// Servidores de lenguaje del proyecto.
     pub lsp: pcode_lsp::LspManager,
+    /// Depuración (DAP) del proyecto.
+    pub debug: crate::debug::DebugManager,
     /// Archivo de configuración global (se puede cambiar en las pruebas).
     global_config: Mutex<Option<PathBuf>>,
     /// Con qué se lanzó cada conversación con un agente externo, para poder continuarla.
@@ -71,6 +73,7 @@ impl AppState {
             global_config: Mutex::new(pcode_config::user_config_path()),
             agent_params: Mutex::new(HashMap::new()),
             lsp,
+            debug: crate::debug::DebugManager::default(),
             repo,
             pcode_bin,
             token,
@@ -1257,6 +1260,53 @@ async fn rpc(
             st.run_terminal(str_param(&p, "command"))
                 .map(|t| serde_json::json!({"id": t})),
         ),
+        methods::DEBUG_START => {
+            let ev = st.events.clone();
+            let emit: crate::debug::Emit = Arc::new(move |e| {
+                let _ = ev.send(e);
+            });
+            let none = serde_json::Value::Null;
+            ws_reply(
+                id,
+                st.debug
+                    .start(
+                        &st.repo,
+                        &str_param(&p, "program"),
+                        p.get("breakpoints").unwrap_or(&none),
+                        emit,
+                    )
+                    .await
+                    .map(|()| true),
+            )
+        }
+        methods::DEBUG_SET_BREAKPOINTS => {
+            let lines: Vec<i64> = p
+                .get("lines")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|l| l.as_i64())
+                .collect();
+            ws_reply(
+                id,
+                st.debug
+                    .set_breakpoints(&st.repo, &str_param(&p, "path"), &lines)
+                    .await,
+            )
+        }
+        methods::DEBUG_CONTINUE
+        | methods::DEBUG_NEXT
+        | methods::DEBUG_STEP_IN
+        | methods::DEBUG_STEP_OUT => {
+            // El método es `debug.<orden DAP>`.
+            let command = req.method.trim_start_matches("debug.");
+            ws_reply(id, st.debug.step(command).await.map(|()| true))
+        }
+        methods::DEBUG_VARIABLES => {
+            let frame = p.get("frameId").and_then(|v| v.as_i64()).unwrap_or(0);
+            ws_reply(id, st.debug.variables(frame).await)
+        }
+        methods::DEBUG_STOP => rpc_ok(id, serde_json::json!(st.debug.stop().await)),
         methods::TERMINAL_KILL => {
             let t = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let tx = st.terminals.lock().unwrap().remove(&t);
@@ -1571,6 +1621,39 @@ mod tests {
             call(&a, "x.y", serde_json::json!({}), None).await.1["error"]["code"],
             -32601
         );
+    }
+    #[tokio::test]
+    async fn rpc_depuracion_sin_sesion_y_fuera_del_proyecto() {
+        let (_s, a) = app(None, "/bin/true");
+        // Sin depuración en marcha: parar dice que no había y un paso da un error claro.
+        let (_, v) = call(&a, "debug.stop", serde_json::json!({}), None).await;
+        assert_eq!(v["result"], false);
+        for m in [
+            "debug.continue",
+            "debug.next",
+            "debug.stepIn",
+            "debug.stepOut",
+        ] {
+            let (_, v) = call(&a, m, serde_json::json!({}), None).await;
+            assert_eq!(v["error"]["code"], -32000, "{m}");
+        }
+        let (_, v) = call(
+            &a,
+            "debug.variables",
+            serde_json::json!({"frameId": 1}),
+            None,
+        )
+        .await;
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("no hay ninguna depuración")
+        );
+        // El programa tiene que estar dentro del proyecto.
+        let p = serde_json::json!({"program": "../../etc/passwd"});
+        let (_, v) = call(&a, "debug.start", p, None).await;
+        assert_eq!(v["error"]["code"], -32000);
     }
     #[tokio::test]
     async fn rpc_parametros_invalidos() {

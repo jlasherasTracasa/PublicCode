@@ -2899,6 +2899,7 @@ dependencies = [
  "http-body-util",
  "pcode-config",
  "pcode-core",
+ "pcode-dap",
  "pcode-lsp",
  "pcode-models",
  "pcode-policy",
