@@ -1,0 +1,754 @@
+# Tareas de la fase F9. Índice de fases e hitos: tareas/plan.toml. Tras editar: tools/tareas/generar.py
+
+[[tarea]]
+id = "F9.01"
+nombre = "push-por-tarea"
+titulo = "Entrega continua: push de la rama tras cada tarea aceptada (sin --force) y reglas.py al día"
+fase = "F9"
+ejecutor = "coordinador"
+depende = []
+toca = ["AGENTS.md", "tools/bench/reglas.py", "tools/bench/test_reglas.py"]
+acepta = "python3 -m unittest tools/bench/test_reglas.py -v && grep -q 'git push origin HEAD' AGENTS.md"
+contexto = ["AGENTS.md §0 y §10"]
+objetivo = '''
+El usuario pide que el trabajo se suba según avanza. AGENTS.md pasa de «nunca git push» a «tras el commit, `git push origin
+HEAD`; nunca `--force` ni `-f`; si el push falla, no lo fuerces: anótalo en *Pendiente*». `tools/bench/reglas.py` deja de
+marcar `git push` y marca `git push --force`, `git push -f` y `git push --force-with-lease`.
+'''
+tests = ["test_ordenes_prohibidas_detecta_stash_y_add_all", "test_push_normal_permitido_y_forzado_prohibido"]
+
+[[tarea]]
+id = "F9.02"
+nombre = "recursos"
+titulo = "Sección [recursos] y perfil automático ligero/normal según la RAM y los núcleos"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.01"]
+toca = ["crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/Cargo.toml"]
+acepta = "cargo test -p pcode-config recursos"
+contexto = ["docs/ligero.md §3"]
+objetivo = '''
+`[recursos] perfil = "auto" | "ligero" | "normal"`, `lsp_max`, `lsp_inactivo_min`. `auto` elige ligero con menos de 6 GB
+de RAM o 2 núcleos o menos. Ligero: 1 servidor LSP vivo y parada a los 5 min sin uso; normal: 4 y 30 min. El proyecto
+manda campo a campo sobre el global. `pcode studio`, `daemon` e `ide` aplican los límites al gestor LSP.
+'''
+firmas = '''
+// crates/pcode-config/src/lib.rs
+pub struct ResourcesCfg { pub profile: Option<String>, pub lsp_max: Option<usize>, pub lsp_idle_min: Option<u64> }
+pub struct SystemInfo { pub mem_total_mb: Option<u64>, pub cpus: usize }
+impl SystemInfo { pub fn detect() -> SystemInfo; }
+pub fn parse_meminfo_total_mb(meminfo: &str) -> Option<u64>;
+pub const LIGHT_MEM_MB: u64 = 6 * 1024;
+pub struct Resources { pub light: bool, pub lsp_max: usize, pub lsp_idle_min: u64 }
+impl ResourcesCfg { pub fn resolve(&self, sys: SystemInfo) -> Resources; }
+'''
+tests = ["recursos_perfil_auto_ligero_y_normal", "recursos_el_proyecto_manda_campo_a_campo"]
+
+[[tarea]]
+id = "F9.03"
+nombre = "lsp-ligero"
+titulo = "LSP ligero: alternativas que gastan menos, máximo de servidores vivos y parada por inactividad"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.02"]
+toca = ["crates/pcode-lsp/src/lib.rs", "crates/pcode-server/src/server.rs"]
+acepta = "cargo test -p pcode-lsp lsp_"
+contexto = ["docs/ligero.md §3"]
+objetivo = '''
+rust-analyzer o pyright pueden ocupar de 300 MB a más de 1 GB. Con el perfil ligero, Python prueba primero
+`jedi-language-server` y `pylsp` (sin Node). El gestor para el servidor menos usado al pasar de `lsp_max`, y el demonio
+barre cada minuto los inactivos; el siguiente uso los vuelve a arrancar. `lsp.status` dice por qué se paró cada uno.
+'''
+firmas = '''
+// crates/pcode-lsp/src/lib.rs
+pub fn server_candidates(lang: &str, light: bool) -> Option<(&'static str, Vec<Vec<&'static str>>)>;
+pub fn pick_command(candidates: &[Vec<&str>], exists: impl Fn(&str) -> bool) -> Vec<String>;
+pub fn on_path(prog: &str) -> bool;
+pub struct LspLimits { pub max: usize, pub idle: Option<Duration>, pub light: bool }
+impl LspClient { pub async fn shutdown(&self); }
+impl LspManager {
+    pub fn with_spawner(self, f: impl Fn(PathBuf, Vec<String>, DiagnosticsSink) -> BoxFuture<Result<Arc<LspClient>, String>> + Send + Sync + 'static) -> LspManager;
+    pub fn set_limits(&self, l: LspLimits);
+    pub fn limits(&self) -> LspLimits;
+    pub async fn reap_idle(&self, now: Instant) -> Vec<String>;
+}
+'''
+tests = ["lsp_maximo_para_el_menos_usado", "lsp_inactivo_se_para_y_vuelve_al_usarse", "lsp_alternativas_ligeras_primero"]
+
+[[tarea]]
+id = "F9.04"
+nombre = "remoto-ssh"
+titulo = "`pcode remoto <servidor>`: Studio, TUI o IDE contra otro equipo por SSH, instalando pcode allí si falta"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.02"]
+toca = ["crates/pcode-cli/src/remote.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/remoto.rs", "crates/pcode-cli/Cargo.toml"]
+acepta = "cargo test -p pcode-cli remote:: && cargo test -p pcode-cli --test remoto"
+contexto = ["docs/ligero.md §4"]
+objetivo = '''
+Como Remote-SSH de VS Code, pero sin servidor Node en el otro lado: sonda (`uname`, dónde está pcode y su versión);
+`--instalar` copia este binario por la misma conexión SSH a `~/.local/bin/pcode` (el servidor no necesita Internet);
+Studio remoto en loopback con `--hasta-eof` y túnel `ssh -L`; al salir se cierra todo. `--tui` abre la TUI con
+`ssh -t`; `--ide` abre el IDE nativo; `--reenviar 11434` trae puertos extra (Ollama del servidor). `PCODE_SSH` cambia
+el binario de ssh (pruebas).
+'''
+firmas = '''
+// crates/pcode-cli/src/remote.rs
+pub struct RemoteArgs { pub destino: String, pub ruta: String, pub local_port: u16, pub no_open: bool, pub install: bool, pub tui: bool, pub ide: bool, pub forward: Vec<u16> }
+pub struct Probe { pub os: String, pub arch: String, pub bin: Option<String>, pub version: Option<String> }
+pub const PROBE_SCRIPT: &str; pub const INSTALL_SCRIPT: &str;
+pub fn parse_probe(out: &str) -> Probe;
+pub fn same_target(p: &Probe, local_os: &str, local_arch: &str) -> bool;
+pub fn cd_command(dir: &str) -> String;
+pub fn remote_studio_command(bin: &str, dir: &str, port: u16) -> String;
+pub fn ssh_tunnel_args(dest: &str, local: u16, remote: u16, forwards: &[u16], cmd: &str) -> Vec<String>;
+pub fn tunnel_url(line: &str, local: u16) -> Option<String>;
+pub fn valid_destination(d: &str) -> bool;
+pub async fn remote(a: RemoteArgs) -> anyhow::Result<i32>;
+'''
+tests = ["sonda_del_servidor", "orden_remota_con_comillas", "tunel_y_url_local", "remoto_instala_abre_tunel_y_cierra_al_salir", "remoto_sin_pcode_y_sin_instalar_explica_que_hacer"]
+
+[[tarea]]
+id = "F9.05"
+nombre = "ide-base"
+titulo = "IDE nativo sin navegador (egui + OpenGL): explorador, pestañas, resaltado, Ctrl+P, buscar, git y agente"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.02"]
+toca = ["crates/pcode-ide/", "crates/pcode-cli/src/main.rs", "docs/adr/ADR-0011-ide-nativo.md", "AGENTS.md"]
+acepta = "cargo test -p pcode-ide && cargo build -p pcode-ide"
+contexto = ["docs/ligero.md §5", "crates/pcode-protocol/src/lib.rs"]
+objetivo = '''
+Crate `pcode-ide` (binario `pcode-ide`, y `pcode ide` arranca demonio + ventana). Es un cliente más: habla JSON-RPC y SSE
+con pcoded (regla de arquitectura), así que sirve igual en local que por `pcode remoto --ide`. eframe 0.37 sin wgpu
+(solo `glow`, `x11`, `clipboard`, `default_fonts`). Repinta solo con eventos (0 % de CPU en reposo). Módulos: `rpc`
+(HTTP/1.0 sin dependencias, solo loopback), `events` (SSE en un hilo), `highlight`, `state` (pestañas, búsqueda
+difusa, árbol, memoria propia), `texts` (es/en), `app` (interfaz). Las tareas F9.07 a F9.20 lo amplían.
+'''
+firmas = '''
+// crates/pcode-ide/src/lib.rs
+pub mod app; pub mod events; pub mod highlight; pub mod rpc; pub mod state; pub mod texts;
+// crates/pcode-ide/src/app.rs
+pub enum Msg { … }                  // resultados de las peticiones (un hilo por petición)
+pub enum Bottom { Search, Problems, Terminal }
+pub struct Ide { … }
+impl Ide {
+    pub fn new(client: rpc::Client, ctx: &egui::Context) -> Ide;
+    fn spawn(&self, f: impl FnOnce(&rpc::Client) -> Msg + Send + 'static);
+    fn on_msg(&mut self, m: Msg);
+    fn on_event(&mut self, ev: &serde_json::Value);
+    fn shortcuts(&mut self, ctx: &egui::Context);
+    fn ui_explorer(&mut self, ui: &mut egui::Ui);
+    fn ui_editor(&mut self, ui: &mut egui::Ui);
+    fn ui_agent(&mut self, ui: &mut egui::Ui);
+    fn ui_bottom(&mut self, ui: &mut egui::Ui);
+    fn ui_status(&mut self, ui: &mut egui::Ui);
+}
+impl eframe::App for Ide { fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame); }
+'''
+tests = ["direccion_de_studio", "peticion_y_respuesta", "cuerpo_troceado", "llamada_contra_un_servidor_falso", "eventos_sse", "rust_basico", "python_y_toml", "cubre_todo_el_texto_y_respeta_utf8", "pestanas_abrir_cerrar_y_cambios", "busqueda_difusa", "arbol_perezoso", "idioma_segun_lang"]
+
+[[tarea]]
+id = "F9.06"
+nombre = "doctor-recursos"
+titulo = "`pcode doctor` enseña el perfil de recursos: RAM, núcleos, perfil elegido y límites LSP"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.02"]
+toca = ["crates/pcode-cli/src/doctor.rs"]
+acepta = "cargo test -p pcode-cli informe_de_recursos"
+contexto = ["crates/pcode-config/src/lib.rs (busca `pub struct Resources` y `impl ResourcesCfg`)", "crates/pcode-cli/src/doctor.rs (función `doctor`)"]
+objetivo = '''
+1. En `doctor.rs` añade la función pública `resources_report` (firma abajo). Devuelve UNA línea, exactamente con este
+   formato (sin salto final):
+   - ligero:  `✓ recursos: perfil ligero · 3,6 GB de RAM · 2 núcleos · 1 servidor LSP a la vez, se para tras 5 min sin uso`
+   - normal:  `✓ recursos: perfil normal · 31,3 GB de RAM · 16 núcleos · 4 servidores LSP a la vez, se para tras 30 min sin uso`
+   - RAM desconocida: en lugar de `3,6 GB de RAM` pon `RAM desconocida`.
+   - `lsp_idle_min == 0`: en lugar de `, se para tras N min sin uso` pon `, no se para por inactividad`.
+   Los GB salen de `mem_total_mb as f64 / 1024.0` con UN decimal y coma decimal (`format!("{:.1}", x).replace('.', ",")`).
+   «servidor» en singular si `lsp_max == 1`; «servidores» si no.
+2. En `doctor()`, justo después de la línea que comprueba la configuración, imprime con `println!` el resultado de
+   `resources_report(&cfg.resources.resolve(SystemInfo::detect()), SystemInfo::detect())` (usa el `cfg` ya cargado).
+3. Tests unitarios en `#[cfg(test)] mod tests` de `doctor.rs` con los nombres de abajo; comparan la cadena entera.
+'''
+firmas = '''
+// crates/pcode-cli/src/doctor.rs
+pub fn resources_report(r: &pcode_config::Resources, sys: pcode_config::SystemInfo) -> String;
+'''
+tests = ["informe_de_recursos_ligero", "informe_de_recursos_normal_y_sin_parada", "informe_de_recursos_sin_ram"]
+
+[[tarea]]
+id = "F9.07"
+nombre = "perfil-compilacion-ligero"
+titulo = "Perfil de compilación `ligero` para equipos modestos (menos RAM y tiempo que release con LTO)"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.01"]
+toca = ["Cargo.toml", "tools/compilar-ligero.sh"]
+acepta = "grep -q '^\\[profile.ligero\\]' Cargo.toml && sh -n tools/compilar-ligero.sh && cargo build --profile ligero -p pcode-config"
+contexto = ["Cargo.toml (sección [profile.release])", "docs/ligero.md §6"]
+objetivo = '''
+Compilar release aquí tardó 11 min con picos de 560 MB por proceso. Añade al `Cargo.toml` raíz, debajo de
+`[profile.release]`, exactamente:
+
+```toml
+# Para compilar en equipos modestos (2 núcleos, 4 GB): sin LTO y en paralelo; binario algo mayor.
+[profile.ligero]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+```
+
+Crea `tools/compilar-ligero.sh` (`#!/usr/bin/env sh`, `set -eu`, bit de ejecución) que:
+1. Si hay menos de 1500 MB disponibles (`awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo`) usa `-j 1`; si no, `-j 2`.
+2. Ejecuta `cargo build --profile ligero -p pcode-cli -p pcode-ide -j "$jobs"`.
+3. Imprime `Binarios en target/ligero/: pcode y pcode-ide`.
+'''
+tests = ["(sin tests unitarios): la aceptación compila con el perfil"]
+
+[[tarea]]
+id = "F9.08"
+nombre = "ide-numeros-de-linea"
+titulo = "IDE: números de línea en el margen y Ctrl+G para ir a una línea"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/state.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide numeros_de_linea && cargo test -p pcode-ide ir_a_linea"
+contexto = ["crates/pcode-ide/src/app.rs (función `ui_editor`)", "crates/pcode-ide/src/state.rs"]
+objetivo = '''
+1. En `state.rs` añade `gutter` y `line_to_byte` (firmas abajo). `gutter("a\nb\nc")` = `"1\n2\n3"`; un texto vacío
+   tiene 1 línea; un `\n` final añade una línea más (`"a\n"` → `"1\n2"`). Los números van alineados a la derecha con
+   el ancho del mayor (`format!("{:>w$}", n)`). `line_to_byte(text, n)` da el byte donde empieza la línea `n`
+   (1 = primera); si `n` pasa del final, `text.len()`; `n == 0` se trata como 1.
+2. En `app.rs`, `ui_editor`: dentro del `ScrollArea` del editor, pon un `ui.horizontal_top` con primero un
+   `egui::Label` monoespaciado y de color débil (`ui.visuals().weak_text_color()`) con `gutter(&tab.text)` y después
+   el `TextEdit` que ya hay. Así se desplazan juntos.
+3. Ctrl+G (en `shortcuts`) abre un cuadro pequeño `goto_line: Option<String>` en la barra de estado; al pulsar Intro
+   con un número, coloca el cursor con `egui::text::CCursor` en el carácter correspondiente a `line_to_byte` (convierte
+   bytes a caracteres con `text[..b].chars().count()`) y cierra el cuadro. Texto nuevo en `Texts`: `go_to_line` (es:
+   «Ir a la línea», en: «Go to line»).
+'''
+firmas = '''
+// crates/pcode-ide/src/state.rs
+pub fn gutter(text: &str) -> String;
+pub fn line_to_byte(text: &str, line: usize) -> usize;
+'''
+tests = ["numeros_de_linea", "numeros_de_linea_alineados", "ir_a_linea"]
+
+[[tarea]]
+id = "F9.09"
+nombre = "ide-buscar-reemplazar"
+titulo = "IDE: buscar y reemplazar en el archivo (Ctrl+F, Ctrl+H) con mayúsculas opcionales"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/find.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide find::"
+contexto = ["crates/pcode-ide/src/app.rs (funciones `shortcuts` y `ui_editor`)"]
+objetivo = '''
+1. Crea `find.rs` con `find_all` y `replace_all` (firmas abajo). `find_all` devuelve los rangos de bytes de cada
+   aparición, sin solaparse, de izquierda a derecha; con `case_sensitive = false` compara en minúsculas pero los rangos
+   son del texto original (busca sobre `text.to_lowercase()` solo si tiene la misma longitud en bytes que `text`; si no,
+   compara carácter a carácter con `char::to_lowercase`). `query` vacía → vector vacío.
+   `replace_all` devuelve el texto nuevo y cuántas sustituciones hizo.
+2. `lib.rs`: añade `pub mod find;`.
+3. `app.rs`: estado `find: Option<FindBar>` con `struct FindBar { query: String, replace: String, case: bool, current: usize }`.
+   Ctrl+F lo abre (solo buscar), Ctrl+H lo abre con reemplazar, Esc lo cierra. Muestra «n de m» y botones ↑ ↓ que
+   mueven `current` y colocan el cursor en esa aparición; «Reemplazar todo» usa `replace_all` sobre la pestaña activa.
+4. Textos nuevos en `Texts` (es/en): `find`, `replace`, `replace_all`, `match_case`, `of` («de»/«of»).
+'''
+firmas = '''
+// crates/pcode-ide/src/find.rs
+pub fn find_all(text: &str, query: &str, case_sensitive: bool) -> Vec<std::ops::Range<usize>>;
+pub fn replace_all(text: &str, query: &str, replacement: &str, case_sensitive: bool) -> (String, usize);
+'''
+tests = ["busca_todas_sin_solaparse", "busca_sin_distinguir_mayusculas_con_utf8", "reemplaza_y_cuenta", "consulta_vacia"]
+
+[[tarea]]
+id = "F9.10"
+nombre = "ide-problemas"
+titulo = "IDE: panel de Problemas con los diagnósticos del LSP (evento `diagnostics`) y saltar al error"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/problems.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide problems::"
+contexto = ["crates/pcode-protocol/src/lib.rs (enum `Event`, variante `Diagnostics`; `DiagnosticDto`)", "crates/pcode-ide/src/app.rs (`on_event`, `ui_bottom`)"]
+objetivo = '''
+1. `problems.rs`: `Problems` guarda por ruta los diagnósticos del último evento (reemplaza, no acumula). `apply` recibe
+   el JSON de un evento; si `ev["tipo"] == "diagnostics"` lee `path` e `items` (`line`, `character`, `severity`,
+   `message`, `source`) y devuelve `true`; con cualquier otro evento devuelve `false`. `items` vacío borra la ruta.
+   `counts` devuelve (errores = severity 1, avisos = severity 2). `sorted` da la lista plana ordenada por ruta y línea.
+2. `lib.rs`: `pub mod problems;`.
+3. `app.rs`: el `Ide` tiene `problems: Problems`; `on_event` llama a `apply`; la barra de estado muestra `✗ n ⚠ m`
+   (símbolos, no solo color); `ui_bottom` con `Bottom::Problems` lista `ruta:línea mensaje` y un clic abre el
+   archivo (como el explorador) y coloca el cursor en la línea.
+'''
+firmas = '''
+// crates/pcode-ide/src/problems.rs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Problem { pub path: String, pub line: u32, pub character: u32, pub severity: u8, pub message: String, pub source: String }
+#[derive(Debug, Default)]
+pub struct Problems { pub by_path: std::collections::BTreeMap<String, Vec<Problem>> }
+impl Problems {
+    pub fn apply(&mut self, ev: &serde_json::Value) -> bool;
+    pub fn counts(&self) -> (usize, usize);
+    pub fn sorted(&self) -> Vec<Problem>;
+}
+'''
+tests = ["diagnosticos_reemplazan_por_ruta", "lista_vacia_borra", "cuenta_errores_y_avisos", "otros_eventos_no_cuentan"]
+
+[[tarea]]
+id = "F9.11"
+nombre = "ide-lsp"
+titulo = "IDE: ir a la definición (F12) e información al pasar (Ctrl+K) con posiciones UTF-16"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.10"]
+toca = ["crates/pcode-ide/src/lsp_pos.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide lsp_pos::"
+contexto = ["crates/pcode-lsp/src/lib.rs (comentario inicial: posiciones en UTF-16)", "crates/pcode-server/src/server.rs (métodos `lsp.definition`, `lsp.hover`: parámetros `path`, `line`, `character`)"]
+objetivo = '''
+1. `lsp_pos.rs`: `to_lsp` convierte un índice de CARÁCTER del editor (lo que da `CCursor::index`) en (línea, carácter
+   UTF-16) contando desde 0; `from_lsp` hace lo contrario y satura al final de la línea o del texto.
+   Ejemplo: en `"añ😀b\nx"` el carácter 4 (`\n`... no: la `b`, índice 3) → (0, 4) porque 😀 ocupa 2 unidades UTF-16.
+2. `lib.rs`: `pub mod lsp_pos;`.
+3. `app.rs`: al abrir un archivo y tras cada cambio (como mucho una vez por segundo) llama a `lsp.sync` con `path` y
+   `content`; al guardar, `lsp.saved`. F12: `lsp.definition` con la posición del cursor; si devuelve
+   `[{path, line, character}]` abre el primero y coloca el cursor con `from_lsp`. Ctrl+K: `lsp.hover`; el texto se
+   muestra en un `egui::Window` pequeño que se cierra con Esc.
+'''
+firmas = '''
+// crates/pcode-ide/src/lsp_pos.rs
+pub fn to_lsp(text: &str, char_index: usize) -> (u32, u32);
+pub fn from_lsp(text: &str, line: u32, character: u32) -> usize;
+'''
+tests = ["ascii_ida_y_vuelta", "emoji_cuenta_dos_unidades", "satura_al_final"]
+
+[[tarea]]
+id = "F9.12"
+nombre = "ide-terminal"
+titulo = "IDE: terminal integrada (terminal.run) con salida por eventos y memoria acotada"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/terminal.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide terminal::"
+contexto = ["crates/pcode-protocol/src/lib.rs (eventos `terminalOutput` y `terminalExit`)", "crates/pcode-server/src/server.rs (busca `methods::TERMINAL_RUN` y `TERMINAL_KILL`: parámetros y resultado)"]
+objetivo = '''
+1. `terminal.rs`: `Terminal` guarda como mucho `MAX_LINES` (2000) líneas: al pasar, se tiran las más viejas (memoria
+   acotada en equipos modestos). `apply` procesa `terminalOutput` (añade el texto partiendo por `\n`, el último trozo
+   sin `\n` queda abierto y el siguiente evento lo continúa) y `terminalExit` (añade `[salió con N]` o `[detenida]` y
+   pone `running = None`); solo cuenta los eventos de `running`. Devuelve si cambió algo.
+2. `lib.rs`: `pub mod terminal;`.
+3. `app.rs`: pestaña `Bottom::Terminal` con la salida (monoespaciada, desplazada al final) y un campo de orden; Intro
+   llama a `terminal.run` con `{"command": orden}` y guarda el id devuelto en `running`; botón «Detener» →
+   `terminal.kill`. Ctrl+` abre la pestaña. Textos nuevos: `terminal`, `stop`, `run`.
+'''
+firmas = '''
+// crates/pcode-ide/src/terminal.rs
+pub const MAX_LINES: usize = 2000;
+#[derive(Debug, Default)]
+pub struct Terminal { pub lines: std::collections::VecDeque<String>, pub running: Option<u64>, open_line: bool }
+impl Terminal {
+    pub fn start(&mut self, id: u64, command: &str);   // añade "$ <orden>" y pone running
+    pub fn apply(&mut self, ev: &serde_json::Value) -> bool;
+    pub fn text(&self) -> String;
+}
+'''
+tests = ["salida_partida_en_varios_eventos", "salida_de_otra_orden_se_ignora", "fin_con_codigo", "memoria_acotada"]
+
+[[tarea]]
+id = "F9.13"
+nombre = "ide-git"
+titulo = "IDE: git completo en el panel (preparar, quitar, diff coloreado y commit)"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/git.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide git::"
+contexto = ["crates/pcode-server/src/server.rs (métodos `git.status`, `git.diff` {path, staged}, `git.stage`/`git.unstage` {paths}, `git.commit` {message})"]
+objetivo = '''
+1. `git.rs`: `status_label(index, worktree)` da la letra que se ve (`"M"`, `"A"`, `"D"`, `"R"`, `"?"` para `??`,
+   `"U"` para conflictos `UU`/`AA`/`DD`); `is_staged(index)` es true si `index` no es `" "` ni `"?"`;
+   `diff_lines` clasifica cada línea de un diff unificado: `+`→Added, `-`→Removed, `@@`→Hunk, `diff `/`index `/`+++`/
+   `---`→Header, resto Context.
+2. `lib.rs`: `pub mod git;`.
+3. `app.rs`: el panel de git separa «Preparados» y «Cambios»; cada archivo tiene botones `+`/`−` (stage/unstage) y un
+   clic muestra su diff en la pestaña inferior con colores por `DiffLine` (y el signo, no solo el color). Un cuadro de
+   mensaje y botón «Commit» (Ctrl+Intro). Tras cada acción se vuelve a pedir `git.status`.
+'''
+firmas = '''
+// crates/pcode-ide/src/git.rs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffLine { Added, Removed, Hunk, Header, Context }
+pub fn status_label(index: &str, worktree: &str) -> &'static str;
+pub fn is_staged(index: &str) -> bool;
+pub fn diff_lines(diff: &str) -> Vec<(DiffLine, &str)>;
+'''
+tests = ["etiquetas_de_estado", "preparado_o_no", "clasifica_un_diff"]
+
+[[tarea]]
+id = "F9.14"
+nombre = "ide-turno-del-agente"
+titulo = "IDE: tarjeta de cambios de cada turno del agente y deshacer/rehacer (checkpoint.undo/redo)"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/agent.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide agent::"
+contexto = ["crates/pcode-protocol/src/lib.rs (eventos `turnFinished` con `TurnChangeDto`, `assistantDelta`)", "crates/pcode-ide/src/app.rs (`ui_agent`)"]
+objetivo = '''
+1. `agent.rs`: `TurnCard::from_event` lee un evento `turnFinished` (`session`, `changes[]` con `path`, `added`,
+   `removed`, `created`, `deleted`) y devuelve None para cualquier otro. `summary()` da exactamente
+   `✎ 2 archivos · src/a.rs +3 −1 · b.rs nuevo +12` (singular «1 archivo»; «borrado» si `deleted`; «nuevo» si
+   `created`). `Stream` concatena los `assistantDelta` de una sesión hasta que llega su entrada `assistant` completa.
+2. `lib.rs`: `pub mod agent;`.
+3. `app.rs`: debajo de cada respuesta del agente pinta la tarjeta del turno con botones «↶ Deshacer el turno»
+   (`checkpoint.undo` con `{}`) y «↷ Rehacer» (`checkpoint.redo`); el texto en streaming se ve mientras llega.
+'''
+firmas = '''
+// crates/pcode-ide/src/agent.rs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change { pub path: String, pub added: u32, pub removed: u32, pub created: bool, pub deleted: bool }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnCard { pub session: i64, pub changes: Vec<Change> }
+impl TurnCard { pub fn from_event(ev: &serde_json::Value) -> Option<TurnCard>; pub fn summary(&self) -> String; }
+#[derive(Debug, Default)]
+pub struct Stream { pub text: std::collections::HashMap<i64, String> }
+impl Stream { pub fn apply(&mut self, ev: &serde_json::Value) -> bool; }
+'''
+tests = ["tarjeta_de_un_turno", "tarjeta_singular_y_borrados", "streaming_se_acumula_y_se_cierra"]
+
+[[tarea]]
+id = "F9.15"
+nombre = "ide-ajustes"
+titulo = "IDE: ajustes persistentes (tema, tamaño de letra, paneles) en ~/.config/pcode/ide.toml"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/settings.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/Cargo.toml"]
+acepta = "cargo test -p pcode-ide settings::"
+contexto = ["crates/pcode-config/src/lib.rs (función `user_config_path`: dónde está la carpeta de configuración)"]
+objetivo = '''
+1. `settings.rs`: `IdeSettings` con `dark: bool` (true), `font_size: f32` (14.0), `show_agent: bool` (true),
+   `explorer_width: f32` (240.0); `serde` con nombres en español (`oscuro`, `letra`, `agente`, `ancho_explorador`) y
+   `#[serde(default)]`. `parse` no falla nunca: con TOML roto devuelve los valores por defecto. `font_size` se limita
+   a 8..=32. `to_toml` serializa. `path()` = carpeta de `pcode_config::user_config_path()` + `ide.toml`.
+2. `Cargo.toml`: añade `toml.workspace = true` y `pcode-config = { path = "../pcode-config" }`.
+3. `app.rs`: carga al arrancar; al cambiar tema o tamaño (Ctrl+= / Ctrl+-) guarda (escritura atómica: archivo `.tmp` y
+   `rename`).
+'''
+firmas = '''
+// crates/pcode-ide/src/settings.rs
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct IdeSettings { pub dark: bool, pub font_size: f32, pub show_agent: bool, pub explorer_width: f32 }
+impl Default for IdeSettings { fn default() -> Self; }
+impl IdeSettings { pub fn parse(s: &str) -> IdeSettings; pub fn to_toml(&self) -> String; pub fn path() -> Option<std::path::PathBuf>; }
+'''
+tests = ["valores_por_defecto", "toml_roto_no_falla", "letra_acotada", "ida_y_vuelta"]
+
+[[tarea]]
+id = "F9.16"
+nombre = "remoto-hosts"
+titulo = "`pcode remoto --listar` y conectar desde el IDE: servidores de ~/.ssh/config"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.04", "F9.05"]
+toca = ["crates/pcode-cli/src/remote.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-cli hosts_de_ssh_config"
+contexto = ["crates/pcode-cli/src/remote.rs"]
+objetivo = '''
+1. `remote.rs`: `ssh_hosts` lee el texto de un `~/.ssh/config` y devuelve los nombres de las líneas `Host` (sin
+   distinguir mayúsculas en la palabra clave; varios nombres por línea; ignora los que tienen `*`, `?` o `!`; sin
+   repetir, en orden de aparición). Con `--listar` (nuevo `#[arg(long = "listar")] pub list: bool`; `destino` pasa a
+   `Option<String>`) imprime uno por línea y sale con 0.
+2. IDE: menú «Conectar a un servidor…» que ejecuta `pcode remoto --listar` (busca `pcode` al lado de `pcode-ide`) y,
+   al elegir uno, lanza `pcode remoto <host> --ide` como proceso aparte. Textos nuevos: `connect`, `no_hosts`.
+'''
+firmas = '''
+// crates/pcode-cli/src/remote.rs
+pub fn ssh_hosts(config: &str) -> Vec<String>;
+'''
+tests = ["hosts_de_ssh_config", "hosts_de_ssh_config_sin_comodines"]
+
+[[tarea]]
+id = "F9.17"
+nombre = "rendimiento-en-ci"
+titulo = "Presupuesto de rendimiento en la CI: arranque, Studio listo y memoria en reposo del demonio y del IDE"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = [".github/workflows/ci.yml", "tools/bench/test_rendimiento.py"]
+acepta = "python3 -m unittest tools/bench/test_rendimiento.py -v"
+contexto = ["tools/bench/rendimiento.py (subórdenes `medir`, `presupuesto`)"]
+objetivo = '''
+1. `ci.yml`, job `python`: añade `python3 -m unittest tools/bench/test_rendimiento.py -v` a la orden que ya existe.
+2. `ci.yml`, job `linux`: tras los tests, `cargo build --release -p pcode-cli` y
+   `python3 tools/bench/rendimiento.py medir --pcode target/release/pcode --salida rend.json &&
+   python3 tools/bench/rendimiento.py presupuesto --actual rend.json`.
+3. `test_rendimiento.py`: añade `test_presupuesto_lee_un_json` (escribe un JSON temporal que pasa y otro que no, y
+   comprueba que `main(["presupuesto", "--actual", ruta])` devuelve 0 y 1).
+'''
+tests = ["test_presupuesto_lee_un_json"]
+
+[[tarea]]
+id = "F9.18"
+nombre = "empaquetar-ide"
+titulo = "Release e instalador con pcode-ide al lado de pcode (Linux y Windows)"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = [".github/workflows/release.yml", "install.sh", "install.ps1"]
+acepta = "sh -n install.sh && grep -q 'pcode-ide' install.sh && grep -q 'pcode-ide' .github/workflows/release.yml"
+contexto = ["install.sh (copia de `pcode` con renombrado atómico)", ".github/workflows/release.yml (paso que empaqueta)"]
+objetivo = '''
+1. `release.yml`: compila también `-p pcode-ide` y mete `pcode-ide` (`pcode-ide.exe` en Windows) en el mismo `.tar.gz`
+   / `.zip` que `pcode`.
+2. `install.sh`: si en la carpeta descomprimida existe `pcode-ide`, lo copia igual que `pcode` (a `.pcode-ide.nuevo` y
+   `mv -f`). Si no existe, no falla. Al final imprime `IDE nativo: pcode ide` cuando lo instaló.
+3. `install.ps1`: lo mismo para `pcode-ide.exe`.
+'''
+tests = ["(sin tests unitarios): la aceptación comprueba los scripts"]
+
+[[tarea]]
+id = "F9.19"
+nombre = "extensiones-vscode-declarativas"
+titulo = "Extensiones de VS Code (solo lo declarativo): temas, fragmentos y lenguajes desde .vsix u Open VSX"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["crates/pcode-extensions/", "crates/pcode-cli/src/main.rs", "docs/adr/ADR-0012-extensiones-declarativas.md"]
+acepta = "cargo test -p pcode-extensions"
+contexto = ["tareas/F8.32-extensiones.md", "docs/ligero.md §7"]
+objetivo = '''
+Lo que hace pesado a VS Code es su anfitrión de extensiones (un Node por ventana). Aquí no hay anfitrión: de un `.vsix`
+(un zip) se lee `extension/package.json` → `contributes.themes`, `snippets`, `languages` (extensiones y comentarios) y
+`grammars` (se guardan para el futuro); lo ejecutable se ignora y se dice. Lo equivalente a las extensiones
+«de verdad» (lenguaje, depurador, tools) llega por LSP, DAP y MCP, que ya son procesos aparte y opcionales.
+`pcode extensiones instalar <archivo.vsix|editor.nombre>` (Open VSX, solo si se pide), `listar`, `quitar`. Necesita un
+lector de zip: ADR-0012 decide entre `zip` (dependencia nueva) o `unzip` del sistema.
+'''
+tests = ["lee_contributes_de_un_package_json", "ignora_lo_ejecutable_y_lo_dice", "instalar_y_quitar"]
+
+[[tarea]]
+id = "F9.20"
+nombre = "ide-fragmentos-y-temas"
+titulo = "IDE: usar los fragmentos (snippets) y temas de las extensiones instaladas"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.19", "F9.15"]
+toca = ["crates/pcode-ide/src/snippets.rs", "crates/pcode-ide/src/lib.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide snippets::"
+contexto = ["crates/pcode-extensions/src/lib.rs (dónde se guardan los snippets)"]
+objetivo = '''
+1. `snippets.rs`: `expand` convierte el cuerpo de un snippet de VS Code (`$1`, `${1:texto}`, `$0`, `\$`) en texto
+   plano y la posición (carácter) donde queda el cursor (la de `$1` o, si no hay, `$0`, o el final). `matching`
+   devuelve los snippets cuyo `prefix` empieza por la palabra antes del cursor.
+2. `app.rs`: Ctrl+Espacio con una palabra antes del cursor muestra los snippets que coinciden; Intro inserta el elegido.
+'''
+firmas = '''
+// crates/pcode-ide/src/snippets.rs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snippet { pub prefix: String, pub body: String, pub description: String }
+pub fn expand(body: &str) -> (String, usize);
+pub fn matching<'a>(snippets: &'a [Snippet], word: &str) -> Vec<&'a Snippet>;
+'''
+tests = ["expande_marcadores", "cursor_en_el_primero", "escapes", "coinciden_por_prefijo"]
+
+[[tarea]]
+id = "F9.21"
+nombre = "depurador-python"
+titulo = "Depurador en el IDE: DAP con debugpy (puntos de ruptura, pasos, variables) a través del demonio"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["crates/pcode-dap/", "crates/pcode-server/src/server.rs", "crates/pcode-protocol/src/lib.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-dap"
+contexto = ["tareas/F8.13-depurador-dap.md", "docs/ligero.md §5"]
+objetivo = '''
+Concreta F8.13 para el IDE nativo y Python primero (el usuario usa debugpy en VS Code): crate `pcode-dap` con el
+cliente DAP (mismo encuadre `Content-Length` que LSP), métodos `debug.start|setBreakpoints|continue|next|stepIn|
+stepOut|stop|variables` y eventos `debugStopped`/`debugOutput`/`debugExited`. El adaptador corre en el demonio (también
+en remoto), nunca en el cliente. Prueba con un adaptador falso en proceso; si `python3 -m debugpy` existe, prueba real.
+'''
+tests = ["dap_inicializa_y_para_en_un_punto", "dap_variables_del_marco", "dap_real_si_esta_debugpy"]
+
+[[tarea]]
+id = "F9.22"
+nombre = "ide-wayland-y-accesibilidad"
+titulo = "IDE: Wayland nativo (carga dinámica) y lector de pantalla (AccessKit) como funciones opcionales"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/Cargo.toml", "crates/pcode-ide/src/main.rs", "docs/adr/ADR-0011-ide-nativo.md"]
+acepta = "cargo build -p pcode-ide --features wayland,accesibilidad"
+contexto = ["docs/adr/ADR-0011-ide-nativo.md"]
+objetivo = '''
+La base solo compila X11 (también va en Wayland por XWayland) para gastar poco al compilar. Features `wayland`
+(eframe/wayland con `wayland-dlopen`, sin bibliotecas de desarrollo) y `accesibilidad` (eframe/accesskit). La release
+las activa; el perfil `ligero` no.
+'''
+tests = ["(sin tests unitarios): la aceptación compila con las features"]
+
+[[tarea]]
+id = "F9.23"
+nombre = "lanzador"
+titulo = "PublicCode en el menú de aplicaciones como VS Code: `pcode lanzador instalar|quitar` con icono y acciones"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["packaging/linux/pcode.desktop", "packaging/linux/pcode.svg", "crates/pcode-cli/src/launcher.rs", "crates/pcode-cli/src/main.rs", "install.sh"]
+acepta = "cargo test -p pcode-cli launcher::"
+contexto = ["packaging/linux/pcode.desktop"]
+objetivo = '''
+La entrada `.desktop` y el icono van dentro del binario (`include_str!`): una sola fuente. `pcode lanzador instalar`
+escribe `~/.local/share/applications/pcode.desktop` (con la ruta absoluta de este `pcode` en `Exec`) y
+`~/.local/share/icons/hicolor/scalable/apps/pcode.svg`; `quitar` los borra. Respeta `XDG_DATA_HOME`. En Windows y macOS
+dice que no aplica y sale con 0. `install.sh` lo llama. Acciones: abrir en el navegador (Studio) y TUI.
+'''
+firmas = '''
+// crates/pcode-cli/src/launcher.rs
+pub const DESKTOP: &str = include_str!("../../../packaging/linux/pcode.desktop");
+pub const ICON: &str = include_str!("../../../packaging/linux/pcode.svg");
+pub fn data_dir(xdg_data_home: Option<&str>, home: &str) -> std::path::PathBuf;
+pub fn desktop_entry(pcode_bin: &str) -> String;   // cambia `Exec=pcode` por la ruta absoluta entre comillas
+pub fn install(data: &std::path::Path, pcode_bin: &str) -> std::io::Result<Vec<std::path::PathBuf>>;
+pub fn uninstall(data: &std::path::Path) -> std::io::Result<usize>;
+'''
+tests = ["entrada_con_ruta_absoluta", "instala_y_quita_en_xdg_data_home"]
+
+[[tarea]]
+id = "F9.24"
+nombre = "ide-proyectos-recientes"
+titulo = "`pcode ide [ruta]`: abrir carpeta, recordar el último proyecto y lista de recientes"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.23"]
+toca = ["crates/pcode-cli/src/recent.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli recent::"
+contexto = ["crates/pcode-cli/src/main.rs (brazo `Some(Cmd::Ide { .. })`)", "crates/pcode-config/src/lib.rs (`user_config_path`)"]
+objetivo = '''
+Desde el menú de aplicaciones `pcode ide` arranca en `$HOME`, que no es un proyecto (y recorrerlo gasta). Pasos:
+1. `recent.rs`: el archivo `recientes.txt` junto a la configuración global guarda una ruta absoluta por línea, la más
+   reciente primero, sin repetir, como mucho `MAX_RECENT` (10). `push` la mueve arriba; `load` ignora líneas vacías y
+   rutas que ya no existen.
+2. `Cmd::Ide` gana `ruta: Option<PathBuf>` (posicional). Si se da: `std::env::set_current_dir(ruta)` y `push`. Si no y
+   el directorio actual es `$HOME`: el primero de `load()` (si hay) y si no, `$HOME`. Si no: el actual y `push`.
+'''
+firmas = '''
+// crates/pcode-cli/src/recent.rs
+pub const MAX_RECENT: usize = 10;
+pub fn parse(text: &str) -> Vec<std::path::PathBuf>;
+pub fn push(list: &[std::path::PathBuf], p: &std::path::Path) -> Vec<std::path::PathBuf>;
+pub fn render(list: &[std::path::PathBuf]) -> String;
+pub fn load() -> Vec<std::path::PathBuf>;            // filtra las que no existen
+pub fn save(list: &[std::path::PathBuf]) -> std::io::Result<()>;
+'''
+tests = ["recientes_sin_repetir_y_el_ultimo_primero", "recientes_como_mucho_diez", "recientes_ignora_lineas_vacias"]
+
+[[tarea]]
+id = "F9.25"
+nombre = "releases-periodicas"
+titulo = "Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.01"]
+toca = ["Cargo.toml", "CHANGELOG.md", "tools/release.sh"]
+acepta = "sh -n tools/release.sh && tools/release.sh --comprobar"
+contexto = [".github/workflows/release.yml (se dispara con etiquetas v*)", "CHANGELOG.md"]
+objetivo = '''
+Cadencia: una release menor cuando cierra un bloque de F9 (base · IDE completo · extensiones y depurador) y un parche
+cuando se corrige algo visible. `tools/release.sh X.Y.Z` comprueba que el árbol está limpio, que `cargo test
+--workspace` pasa y que `CHANGELOG.md` tiene `## X.Y.Z`; cambia `version` en `[workspace.package]`, hace commit
+`release: vX.Y.Z`, crea la etiqueta anotada y la empuja (`git push origin HEAD vX.Y.Z`). `--comprobar` solo valida que
+la versión del Cargo.toml tiene su sección en el CHANGELOG. La release la publica el workflow.
+'''
+tests = ["(sin tests unitarios): la aceptación valida el script y el CHANGELOG"]
+
+[[tarea]]
+id = "F9.26"
+nombre = "ide-sin-gpu"
+titulo = "IDE en equipos sin aceleración: aviso claro y modo software (llvmpipe) automático si OpenGL falla"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/main.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli reintento_software && cargo build -p pcode-ide"
+contexto = ["crates/pcode-cli/src/main.rs (`spawn_ide`)"]
+objetivo = '''
+1. `pcode-ide`: si `eframe::run_native` devuelve error, imprime `No se pudo abrir la ventana con OpenGL: <error>` y sale
+   con 3.
+2. `pcode` (`spawn_ide` y el brazo `Cmd::Ide`): si el IDE sale con 3 en menos de 5 s, lo relanza una vez con
+   `LIBGL_ALWAYS_SOFTWARE=1`; si vuelve a fallar, abre Studio en el navegador con el aviso
+   `Sin OpenGL: se abre Studio en el navegador`.
+3. La decisión es una función pura `should_retry_software(code: Option<i32>, elapsed: Duration, tried: bool) -> bool`
+   en `main.rs`, con su test.
+'''
+firmas = '''
+// crates/pcode-cli/src/main.rs
+fn should_retry_software(code: Option<i32>, elapsed: std::time::Duration, tried: bool) -> bool;
+'''
+tests = ["reintento_software_solo_una_vez_y_si_fallo_rapido"]
+
+[[tarea]]
+id = "F9.27"
+nombre = "medir-ide"
+titulo = "Medir el IDE nativo: arranque hasta la primera ventana y memoria en reposo, con Xvfb si no hay pantalla"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.17"]
+toca = ["tools/bench/rendimiento.py", "tools/bench/test_rendimiento.py"]
+acepta = "python3 -m unittest tools/bench/test_rendimiento.py -v"
+contexto = ["tools/bench/rendimiento.py (`medir_studio`, `memoria_arbol_mb`)"]
+objetivo = '''
+Nueva subórden `medir-ide --pcode BIN --proyecto DIR`: lanza `pcode ide` (con `xvfb-run -a` si no hay `DISPLAY` y
+existe `xvfb-run`; si no hay ninguno, imprime `sin pantalla: se salta` y sale con 0), espera 5 s, mide
+`memoria_arbol_mb` del proceso (demonio + IDE juntos) y lo termina. Añade `ide_reposo_mb` al JSON y al
+`PRESUPUESTO` con 120 MB. Test: con un `pcode` falso (script Python que duerme) la memoria sale > 0 y la clave existe.
+'''
+tests = ["test_medir_ide_con_binario_falso"]
+
+[[tarea]]
+id = "F9.28"
+nombre = "ide-pulido-visual"
+titulo = "IDE: pulido visual pendiente (command center, iconos con glifos que existen, bienvenida centrada)"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/theme.rs"]
+acepta = "cargo test -p pcode-ide && cargo build -p pcode-ide"
+contexto = ["crates/pcode-ide/src/app.rs (`ui_title`, `ui_activity`, `ui_welcome`)", "crates/pcode-ide/src/theme.rs (`file_icon`)"]
+objetivo = '''
+1. `ui_title`: el `MenuBar` se come todo el ancho y no se ven el «command center» ni los botones de la derecha. Guarda
+   `let full = ui.max_rect();` al empezar y coloca el botón del centro con `ui.put(Rect::from_center_size(full.center(),
+   vec2(420.0, 22.0)), boton)` y los tres conmutadores con `ui.put` en rectángulos de 26×22 pegados a `full.right()`.
+2. Glifos que NO existen en las fuentes (salen como cuadros): `🗐`, `ⓘ`, `⧉`, `⌕`. Cambia en `ui_activity` el
+   explorador a `❐` y la búsqueda a `⚲`; en `theme::file_icon` los `.md` a `¶`; en los avisos `ⓘ` por `●`.
+   Comprobado con PIL: existen ❐ ⚲ ⚙ ⎇ ✦ ◧ ◨ ⬓ ¶ ≡ ◆ ◈ ▶ ■ ➤ ✎ ↶ ↷ ⇆ ✗ ⚠ ● ○ ▸ ▾ › ❯.
+3. `ui_welcome`: en vez de `ui.columns(2, …)`, centra dos columnas de 260 px con `ui.horizontal` +
+   `ui.add_space((ancho - 540)/2)` y `ui.vertical(|ui| { ui.set_width(260.0); … })`, ambas alineadas a la izquierda.
+'''
+tests = ["paleta_filtra_comandos", "busqueda_agrupada_por_archivo", "migas_de_pan", "iconos_por_tipo"]
+
+[[tarea]]
+id = "F9.29"
+nombre = "modo-opencode"
+titulo = "Modo opencode: la TUI con el aspecto y los atajos de opencode, más ligera (`pcode` en la terminal)"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["crates/pcode-tui/", "crates/pcode-cli/src/chat.rs", "packaging/linux/pcode.desktop"]
+acepta = "cargo test -p pcode-tui"
+contexto = ["crates/pcode-tui/src/ (App::update, render)", "opencode 2.x instalado en este equipo para comparar"]
+objetivo = '''
+El usuario quiere abrir PublicCode «en modo opencode»: igual que opencode pero optimizado. La TUI ya existe (`pcode` /
+`pcode tui`, ratatui). Acercarla a opencode: cabecera con sesión y modelo; mensajes con su bloque de herramientas
+plegable; entrada abajo con borde y modo (Build/Plan con Tab); `/` abre la lista de órdenes; `Ctrl+X` como tecla líder
+(`n` nueva sesión, `l` sesiones, `m` modelo, `t` tema, `u`/`r` deshacer y rehacer); barra lateral opcional con archivos
+tocados y uso de contexto; tema por defecto parecido al de opencode. Medir: `opencode` ocupa ~190 MB y tarda 4,3 s en
+arrancar; el objetivo es < 20 MB y < 100 ms. Acción «Modo terminal (como opencode)» en el lanzador.
+'''
+tests = ["render_80x24_como_opencode", "tab_cambia_build_y_plan", "lider_ctrl_x_n_nueva_sesion", "barra_de_ordenes_con_barra"]

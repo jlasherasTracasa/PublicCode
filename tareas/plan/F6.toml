@@ -1,0 +1,118 @@
+# Tareas de la fase F6. Índice de fases e hitos: tareas/plan.toml. Tras editar: tools/tareas/generar.py
+
+[[tarea]]
+id = "F6.01"
+nombre = "destilador-skills"
+titulo = "Destilador de skills desde parejas fallo/acierto (a cuarentena)"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F4.09", "F2.15"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/distill.rs"]
+acepta = "cargo test -p pcode-skills distill"
+contexto = ["docs/papers.md (sección 4: Trace2Skill, SKILL-DISCO, SKILLREVISE, SkillForge, When Not to Imitate; sección 11: kernel)"]
+objetivo = '''
+1. Candidatas: tareas aceptadas con 2 o más intentos. Por cada una, la pareja (intento fallido,
+   intento aceptado) con sus relevos y diffs.
+2. `distill_prompt(pairs)`: pide al rol `destilador` (modelo fuerte) una skill con frontmatter
+   (`name`, `description`, `no_usar_cuando`, `procedencia: destilada de <ids>`), procedimiento,
+   `## Contrato` y la decisión crítica que separa fallo de acierto. También puede proponer una
+   REVISIÓN de una skill existente.
+3. `write_quarantine(skill_md)`: valida con `parse_skill_md` y `lint`, y escribe en
+   `.pcode/skills/cuarentena/<name>/SKILL.md`. Nunca en las skills activas.
+'''
+firmas = '''
+pub struct AttemptPair { pub task_id: String, pub failed_handoff: String, pub success_diff: String, pub success_summary: String }
+pub fn distill_prompt(pairs: &[AttemptPair], existing_index: &str) -> String;
+pub fn write_quarantine(repo_root: &std::path::Path, skill_md: &str) -> Result<std::path::PathBuf, SkillError>;
+'''
+tests = ["prompt_incluye_parejas_y_formato", "cuarentena_valida_y_escribe", "cuarentena_rechaza_sin_no_usar_cuando", "nunca_escribe_en_activas"]
+papers = ["Trace2Skill (EMNLP 2026)", "SKILL-DISCO (Findings EMNLP 2026)", "SkillForge (EMNLP 2026)", "SKILLREVISE (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.02"
+nombre = "puerta-regresion"
+titulo = "Puerta de regresión: una skill sale de cuarentena solo si mejora sin romper nada"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F6.01", "F3.13"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/gate.rs"]
+acepta = "cargo test -p pcode-skills gate"
+contexto = ["docs/papers.md (GRASP, Harness Updating Is Not Harness Benefit, EvoSkill Injection)"]
+objetivo = '''
+1. Subconjunto de evaluación: tareas del bench cuyos rasgos casan con la skill, más 5 tareas de
+   control no relacionadas.
+2. `decide(baseline, with_skill)`: activar solo si (a) ninguna tarea que pasaba a la primera deja de
+   pasar, (b) al menos una mejora y (c) el coste en tokens no sube más de un 15 %. Si no → rechazar
+   con el motivo.
+3. Activar = mover de `cuarentena/` a `.claude/skills/` (o a la fuente configurada) con un archivo
+   `EVIDENCIA.md` (tablas antes y después).
+'''
+firmas = '''
+#[derive(Debug, PartialEq)] pub enum GateDecision { Activate, Reject(String) }
+pub fn decide(baseline: &[BenchRowLite], with_skill: &[BenchRowLite]) -> GateDecision;
+pub struct BenchRowLite { pub id: String, pub ok_first: bool, pub tokens: u64 }
+pub fn activate(repo_root: &std::path::Path, name: &str, evidence_md: &str) -> Result<(), SkillError>;
+'''
+tests = ["activa_si_mejora_sin_regresion", "rechaza_regresion", "rechaza_coste", "rechaza_sin_mejora", "activa_mueve_y_escribe_evidencia"]
+papers = ["GRASP (EMNLP 2026)", "Harness Updating Is Not Harness Benefit (EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.03"
+nombre = "gobierno-skills"
+titulo = "Gobierno de skills y subagentes reutilizables"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F6.02"]
+toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/governance.rs"]
+acepta = "cargo test -p pcode-skills governance"
+contexto = ["docs/papers.md (SkillsVote, AgentFactory)"]
+objetivo = '''
+1. Estadísticas por skill (en SQLite): activaciones, tareas aceptadas con y sin ella y última vez usada.
+2. `recommend(task)`: skills ordenadas por utilidad observada para tareas con esos rasgos.
+3. `retire_candidates(days)`: skills sin beneficio medible en N días → propuesta de retirada (no
+   borra: mueve a `.pcode/skills/retiradas/`).
+4. Subagentes reutilizables: guardar una definición de subagente que funcionó (rol, prompt, tools,
+   política hija y skills) en `.pcode/agentes/<nombre>.toml` y cargarla por nombre.
+'''
+tests = ["recomienda_por_utilidad", "propone_retirada", "guarda_y_carga_subagente"]
+papers = ["SkillsVote (EMNLP 2026)", "AgentFactory (ACL 2026 Demo)"]
+
+[[tarea]]
+id = "F6.04"
+nombre = "regresion-nocturna"
+titulo = "Regresión nocturna de PublicBench con aviso automático"
+fase = "F6"
+ejecutor = "coordinador"
+depende = ["F3.13"]
+toca = [".github/workflows/bench-nocturno.yml", "docs/evaluacion.md"]
+acepta = "grep -q 'pcode bench' .github/workflows/bench-nocturno.yml"
+contexto = ["docs/evaluacion.md (Informes)"]
+objetivo = "Ejecución programada (runner propio con acceso a LiteLLM y a la imagen del proyecto) de `pcode bench --conjunto smoke` cada noche; compara con el último verde; si algo cae más de 3 pp, abre un issue con la tabla y las trayectorias de las tareas que empeoraron."
+tests = ["(manual): una ejecución forzada genera la tabla y, con un resultado empeorado a mano, el issue"]
+papers = ["AgentLens (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F6.05"
+nombre = "trayectorias"
+titulo = "Puntuación estructural de trayectorias y exportación de trazas"
+fase = "F6"
+ejecutor = "haiku"
+depende = ["F3.03"]
+toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/trajectory.rs"]
+acepta = "cargo test -p pcode-flow trajectory"
+contexto = ["docs/papers.md (Quality Not Just Outcome, ContextPilot, OPEN-SWE-TRACES)"]
+objetivo = '''
+1. `tqs(transcript)`: puntuación en [0, 1] en tiempo lineal y sin LLM: foco (fracción de lecturas de
+   archivos que luego se editan o citan), convergencia (si los errores disminuyen hacia el final),
+   redundancia (llamadas repetidas) y alineación intención-acción (si las tools usadas son coherentes
+   con el texto previo, por heurística simple).
+2. `export_jsonl(sessions)`: trazas en formato estable (mensajes y tool calls, incluidas las acciones
+   de `contexto`), listas para afinar un modelo propio servido por LiteLLM.
+'''
+firmas = '''
+pub struct TqsParts { pub focus: f32, pub convergence: f32, pub redundancy: f32, pub alignment: f32 }
+pub fn tqs(transcript: &[pcode_backends::TranscriptItem]) -> (f32, TqsParts);
+pub fn export_jsonl(sessions: &[(String, Vec<pcode_models::Message>)], out: &mut dyn std::io::Write) -> std::io::Result<()>;
+'''
+tests = ["tqs_trayectoria_enfocada_alta", "tqs_redundante_baja", "export_formato_estable"]
+papers = ["Quality, Not Just Outcome (Findings EMNLP 2026)", "ContextPilot (EMNLP 2026)", "OPEN-SWE-TRACES (Findings EMNLP 2026)"]

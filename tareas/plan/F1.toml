@@ -1,0 +1,1056 @@
+# Tareas de la fase F1. Índice de fases e hitos: tareas/plan.toml. Tras editar: tools/tareas/generar.py
+
+[[tarea]]
+id = "F1.01"
+nombre = "config"
+titulo = "`pcode-config`: leer `pcode.toml` con sustitución `{env:VAR}`"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F0.01"]
+toca = ["crates/pcode-config/Cargo.toml", "crates/pcode-config/src/lib.rs"]
+acepta = "cargo test -p pcode-config"
+contexto = ["README.md (sección «Configuración prevista»)", "docs/arquitectura.md (sección «Configuración»)"]
+objetivo = '''
+1. Estructuras de abajo con `serde::Deserialize`. Las claves del TOML van en español (`rename`); los
+   campos de Rust, en inglés.
+2. `expand_env(s)` sustituye cada `{env:NOMBRE}` por la variable de entorno; si no existe, devuelve
+   `ConfigError::MissingEnv(NOMBRE)`.
+3. `Config::from_str(toml)` parsea y después aplica `expand_env` a `ProviderCfg::api_key` y `url`.
+4. `Config::load(path)` lee el archivo; si no existe, devuelve `Config::default()`.
+5. Ninguna clave es obligatoria: todo con `#[serde(default)]`.
+'''
+firmas = '''
+use std::collections::BTreeMap;
+use std::path::Path;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("no se pudo leer {0}: {1}")]
+    Io(String, std::io::Error),
+    #[error("TOML inválido: {0}")]
+    Toml(#[from] toml::de::Error),
+    #[error("falta la variable de entorno {0}")]
+    MissingEnv(String),
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct Config {
+    #[serde(rename = "proyecto")] pub project: ProjectCfg,
+    #[serde(rename = "proveedores")] pub providers: BTreeMap<String, ProviderCfg>,
+    #[serde(rename = "backends")] pub backends: BTreeMap<String, BackendCfg>,
+    #[serde(rename = "roles")] pub roles: BTreeMap<String, String>,
+    #[serde(rename = "sandbox")] pub sandbox: SandboxCfg,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct ProjectCfg {
+    #[serde(rename = "instrucciones")] pub instructions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct ProviderCfg {
+    #[serde(rename = "tipo")] pub kind: String,          // "openai-compatible" | "anthropic" | "gemini"
+    pub url: String,
+    #[serde(rename = "clave")] pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct BackendCfg {
+    #[serde(rename = "tipo")] pub kind: String,          // "agente-cli" | "agente-github" | "modelo"
+    #[serde(rename = "binario")] pub binary: Option<String>,
+    #[serde(rename = "modelo")] pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
+pub struct SandboxCfg {
+    #[serde(rename = "nivel_por_defecto")] pub default_level: String,   // "N1"
+    #[serde(rename = "red")] pub network: String,                        // "denegar" | "permitir"
+}
+impl Default for SandboxCfg { /* N1, denegar */ }
+
+pub fn expand_env(s: &str) -> Result<String, ConfigError>;
+
+impl Config {
+    pub fn from_str(s: &str) -> Result<Config, ConfigError>;
+    pub fn load(path: &Path) -> Result<Config, ConfigError>;
+}
+'''
+tests = [
+  "parsea_ejemplo_del_readme: el bloque TOML del README (copiado al test) parsea y tiene 1 proveedor y 5 backends",
+  "expand_env_sustituye: con PCODE_TEST_X=abc, 'k={env:PCODE_TEST_X}' → 'k=abc'",
+  "expand_env_falta_variable: devuelve MissingEnv",
+  "load_sin_archivo_da_default",
+  "sandbox_por_defecto_es_n1_sin_red",
+]
+
+[[tarea]]
+id = "F1.02"
+nombre = "tipos-mensajes"
+titulo = "`pcode-models`: tipos de mensajes, tools y uso"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F0.01"]
+toca = ["crates/pcode-models/Cargo.toml", "crates/pcode-models/src/lib.rs", "crates/pcode-models/src/types.rs"]
+acepta = "cargo test -p pcode-models"
+contexto = ["docs/arquitectura.md (sección «Modelos»)"]
+objetivo = '''
+Tipos comunes a todos los proveedores. `lib.rs` declara `pub mod types; pub use types::*;`.
+Todo serializable con serde. Constructores de conveniencia en `Message`.
+'''
+firmas = '''
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role { System, User, Assistant, Tool }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolCall { pub id: String, pub name: String, pub arguments: serde_json::Value }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Message {
+    pub role: Role,
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl Message {
+    pub fn system(text: impl Into<String>) -> Self;
+    pub fn user(text: impl Into<String>) -> Self;
+    pub fn assistant(text: impl Into<String>) -> Self;
+    pub fn tool_result(call_id: impl Into<String>, content: impl Into<String>) -> Self;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolSpec { pub name: String, pub description: String, pub parameters: serde_json::Value }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ChatRequest {
+    pub model: String,
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolSpec>,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Usage { pub input_tokens: u64, pub output_tokens: u64, pub cached_input_tokens: u64 }
+impl Usage { pub fn add(&mut self, other: &Usage); }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StopReason { EndTurn, ToolUse, MaxTokens, Other(String) }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatResponse { pub message: Message, pub usage: Usage, pub stop_reason: StopReason }
+'''
+tests = [
+  "message_constructores: cada constructor pone el rol correcto",
+  "message_serializa_sin_campos_vacios: un Message::user no incluye tool_calls ni tool_call_id en el JSON",
+  "tool_result_lleva_id",
+  "usage_add_suma_los_tres_campos",
+  "chat_response_ida_y_vuelta_json",
+]
+
+[[tarea]]
+id = "F1.03"
+nombre = "provider-mock"
+titulo = "Trait `Provider`, errores y `MockProvider` con guion"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.02"]
+toca = ["crates/pcode-models/Cargo.toml", "crates/pcode-models/src/lib.rs", "crates/pcode-models/src/provider.rs", "crates/pcode-models/src/mock.rs"]
+acepta = "cargo test -p pcode-models"
+contexto = ["crates/pcode-models/src/types.rs"]
+objetivo = '''
+1. `provider.rs`: `ModelError` y el trait asíncrono `Provider` (con `async-trait`).
+2. `mock.rs`: `MockProvider` devuelve respuestas en orden desde un guion y guarda las peticiones que
+   recibe (para los tests del bucle). Cuando se agota el guion, devuelve `ModelError::MockExhausted`.
+3. `MockProvider::from_script_file(path)` lee un JSON con un array de `ChatResponse`. Lo usa la CLI con
+   la variable `PCODE_MOCK_SCRIPT`.
+4. Re-exporta todo en `lib.rs`.
+'''
+firmas = '''
+#[derive(Debug, thiserror::Error)]
+pub enum ModelError {
+    #[error("error HTTP: {0}")] Http(String),
+    #[error("respuesta inválida: {0}")] InvalidResponse(String),
+    #[error("límite de peticiones del proveedor")] RateLimited,
+    #[error("el guion del mock se ha agotado")] MockExhausted,
+}
+
+#[async_trait::async_trait]
+pub trait Provider: Send + Sync {
+    fn name(&self) -> &str;
+    async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, ModelError>;
+}
+
+pub struct MockProvider { /* Mutex<VecDeque<ChatResponse>>, Mutex<Vec<ChatRequest>> */ }
+impl MockProvider {
+    pub fn new(script: Vec<ChatResponse>) -> Self;
+    pub fn from_script_file(path: &std::path::Path) -> Result<Self, ModelError>;
+    pub fn requests(&self) -> Vec<ChatRequest>;
+}
+'''
+tests = [
+  "mock_devuelve_en_orden",
+  "mock_agotado_da_error",
+  "mock_guarda_peticiones",
+  "mock_desde_archivo: escribe un JSON en un tempdir y lo carga",
+]
+
+[[tarea]]
+id = "F1.04"
+nombre = "openai-formato"
+titulo = "Formato OpenAI-compatible (LiteLLM, vLLM, Ollama): petición y respuesta"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.03"]
+toca = ["crates/pcode-models/src/lib.rs", "crates/pcode-models/src/openai.rs"]
+acepta = "cargo test -p pcode-models openai"
+contexto = ["crates/pcode-models/src/types.rs", "crates/pcode-models/src/provider.rs"]
+objetivo = '''
+Funciones PURAS (sin red) de conversión al formato `/v1/chat/completions`:
+1. `to_request_body`: `messages` (los mensajes `tool` llevan `tool_call_id`; los del asistente con
+   llamadas llevan `tool_calls: [{id, type: "function", function: {name, arguments: <JSON en string>}}]`),
+   `tools: [{type: "function", function: {name, description, parameters}}]` (se omite si está vacío),
+   `max_tokens` y `temperature` si existen, y `stream: false`.
+2. `from_response_body`: toma `choices[0].message`; `content` puede ser null; parsea
+   `tool_calls[].function.arguments` (string JSON). Si no parsea, guarda `Value::String(raw)`: la
+   reparación llega en F1.07. `usage.prompt_tokens`, `usage.completion_tokens` y
+   `usage.prompt_tokens_details.cached_tokens` (opcional). `finish_reason`: stop → EndTurn,
+   tool_calls → ToolUse, length → MaxTokens, otro → Other.
+'''
+firmas = '''
+pub mod openai {
+    use crate::{ChatRequest, ChatResponse, ModelError};
+    pub fn to_request_body(req: &ChatRequest) -> serde_json::Value;
+    pub fn from_response_body(body: &serde_json::Value) -> Result<ChatResponse, ModelError>;
+}
+'''
+tests = [
+  "openai_peticion_basica: model, messages y stream:false; sin clave tools si no hay tools",
+  "openai_peticion_con_tool_calls_y_tool_result",
+  "openai_respuesta_texto: finish_reason stop → EndTurn con usage",
+  "openai_respuesta_tool_call: arguments string → Value objeto",
+  "openai_respuesta_arguments_invalidos_se_guardan_como_string",
+  "openai_respuesta_sin_choices_es_invalid_response",
+]
+
+[[tarea]]
+id = "F1.05"
+nombre = "openai-http"
+titulo = "`OpenAiCompatProvider`: cliente HTTP para LiteLLM y similares"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.04"]
+toca = ["crates/pcode-models/Cargo.toml", "crates/pcode-models/src/lib.rs", "crates/pcode-models/src/openai_http.rs"]
+acepta = "cargo test -p pcode-models openai_http"
+contexto = ["crates/pcode-models/src/openai.rs"]
+objetivo = '''
+1. `reqwest` (features `rustls-tls`, `json`; sin TLS nativo) con timeout configurable (por defecto 600 s).
+2. `chat`: POST a `{base_url}/chat/completions` (sin barras dobles si `base_url` acaba en `/`), con
+   `Authorization: Bearer <clave>` si hay clave. 429 → `RateLimited`; otro no-2xx →
+   `Http("<código>: <primeros 500 caracteres del cuerpo>")`.
+3. Tests con un servidor HTTP falso LOCAL: `tokio::net::TcpListener` en `127.0.0.1:0` que lee la
+   petición, guarda las cabeceras y contesta una respuesta fija. Nada de red externa.
+'''
+firmas = '''
+pub struct OpenAiCompatProvider { /* name, base_url, api_key, client */ }
+impl OpenAiCompatProvider {
+    pub fn new(name: impl Into<String>, base_url: impl Into<String>, api_key: Option<String>) -> Self;
+    pub fn with_timeout(self, timeout: std::time::Duration) -> Self;
+}
+#[async_trait::async_trait]
+impl Provider for OpenAiCompatProvider { /* name(), chat() */ }
+'''
+tests = [
+  "openai_http_envia_y_parsea",
+  "openai_http_cabecera_authorization",
+  "openai_http_sin_clave_no_envia_authorization",
+  "openai_http_429_es_rate_limited",
+  "openai_http_500_es_http_con_cuerpo",
+]
+
+[[tarea]]
+id = "F1.06"
+nombre = "sse"
+titulo = "Streaming: parser SSE y acumulador de deltas OpenAI"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.04"]
+toca = ["crates/pcode-models/src/lib.rs", "crates/pcode-models/src/sse.rs"]
+acepta = "cargo test -p pcode-models sse"
+contexto = ["crates/pcode-models/src/openai.rs"]
+objetivo = '''
+1. `SseParser::push` acepta trozos de bytes arbitrarios (un evento puede llegar partido) y devuelve
+   los eventos completos. Formato SSE: líneas `event:` y `data:` (varias `data:` se unen con `\n`);
+   un evento termina con una línea vacía; las líneas que empiezan por `:` son comentarios.
+2. `accumulate_openai_stream`: une los `data` JSON de chunks OpenAI (ignora `[DONE]`): concatena
+   `delta.content`; agrupa `delta.tool_calls` por `index`, concatenando `function.arguments`
+   y quedándose con `id` y `name` del primer fragmento; toma `usage` del último chunk que lo traiga
+   y `finish_reason` del último no nulo.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseEvent { pub event: Option<String>, pub data: String }
+
+#[derive(Debug, Default)]
+pub struct SseParser { /* buffer */ }
+impl SseParser {
+    pub fn new() -> Self;
+    pub fn push(&mut self, chunk: &[u8]) -> Vec<SseEvent>;
+}
+
+pub fn accumulate_openai_stream(events: &[SseEvent]) -> Result<ChatResponse, ModelError>;
+'''
+tests = [
+  "sse_evento_partido_en_dos_trozos",
+  "sse_varias_lineas_data",
+  "sse_ignora_comentarios",
+  "acumula_texto",
+  "acumula_tool_call_con_argumentos_fragmentados",
+  "acumula_ignora_done",
+]
+
+[[tarea]]
+id = "F1.07"
+nombre = "reparar-tool-calls"
+titulo = "Reparación de argumentos de tool calls mal formados (modelos abiertos)"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.04"]
+toca = ["crates/pcode-models/src/lib.rs", "crates/pcode-models/src/repair.rs", "crates/pcode-models/src/openai.rs"]
+acepta = "cargo test -p pcode-models repair && cargo test -p pcode-models openai"
+contexto = ["crates/pcode-models/src/openai.rs"]
+objetivo = '''
+`repair_json_arguments(raw)` prueba en orden y devuelve el primer resultado que sea un OBJETO JSON:
+1. parseo estricto;
+2. quitar vallas de código (```json … ``` o ``` … ```);
+3. recortar desde el primer `{` hasta el último `}`;
+4. quitar comas finales antes de `}` o `]`;
+5. si no hay comillas dobles, cambiar las simples por dobles;
+6. si el resultado es un string JSON que contiene un objeto (doble codificación), parsearlo otra vez.
+Si nada funciona, `None`. Después, en `openai::from_response_body`, usar `repair_json_arguments`
+antes de caer en `Value::String`.
+'''
+firmas = '''
+pub fn repair_json_arguments(raw: &str) -> Option<serde_json::Value>;
+'''
+tests = [
+  "repair_estricto",
+  "repair_valla_de_codigo",
+  "repair_texto_alrededor",
+  "repair_coma_final",
+  "repair_comillas_simples",
+  "repair_doble_codificacion",
+  "repair_basura_es_none",
+  "openai_usa_reparacion: una respuesta con arguments \"{'path': 'a.rs',}\" queda como objeto",
+]
+papers = ["PRFC (Findings EMNLP 2026): recuperación progresiva de errores de function calling"]
+
+[[tarea]]
+id = "F1.08"
+nombre = "tool-trait"
+titulo = "`pcode-tools`: trait `Tool`, efectos, registro por privilegio y rutas seguras"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.02"]
+toca = ["crates/pcode-tools/Cargo.toml", "crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/registry.rs"]
+acepta = "cargo test -p pcode-tools"
+contexto = ["docs/arquitectura.md (sección «Tools»)", "crates/pcode-models/src/types.rs"]
+objetivo = '''
+1. `Effect` y `privilege()`: Read = 0, Write = 1, Network = 2, Exec = 3, Irreversible = 4; el
+   privilegio de una tool es el máximo de sus efectos (0 si no tiene).
+2. `ToolRegistry`: registrar, obtener por nombre (sin duplicados: si ya existe el nombre, `register`
+   devuelve `Err`), y `specs_filtered` que devuelve solo las tools que el filtro permite, ORDENADAS
+   de menor a mayor privilegio y, a igual privilegio, por nombre.
+3. `resolve_in_root(root, p)`: une `p` a `root`, normaliza `.` y `..` sin tocar el disco y devuelve
+   `Err` si el resultado sale de `root` o si `p` es absoluta y no está bajo `root`.
+'''
+firmas = '''
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+use pcode_models::ToolSpec;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub enum Effect { Read, Write, Network, Exec, Irreversible }
+
+pub fn privilege(effects: &[Effect]) -> u8;
+
+#[derive(Debug, Clone)]
+pub struct ToolContext { pub root: PathBuf, pub timeout: Duration }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolOutput { pub content: String, pub is_error: bool }
+impl ToolOutput { pub fn ok(s: impl Into<String>) -> Self; pub fn error(s: impl Into<String>) -> Self; }
+
+#[async_trait::async_trait]
+pub trait Tool: Send + Sync {
+    fn spec(&self) -> ToolSpec;
+    fn effects(&self) -> &'static [Effect];
+    async fn call(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput;
+}
+
+#[derive(Default)]
+pub struct ToolRegistry { /* Vec<Arc<dyn Tool>> */ }
+impl ToolRegistry {
+    pub fn new() -> Self;
+    pub fn register(&mut self, tool: Arc<dyn Tool>) -> Result<(), String>;
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>>;
+    pub fn specs_filtered(&self, allow: impl Fn(&str, &[Effect]) -> bool) -> Vec<ToolSpec>;
+}
+
+pub fn resolve_in_root(root: &Path, p: &str) -> Result<PathBuf, String>;
+'''
+tests = [
+  "privilegio_es_el_maximo",
+  "registro_rechaza_duplicados",
+  "specs_ordenadas_por_privilegio",
+  "specs_filtradas_ocultan_las_no_permitidas",
+  "resolve_relativa_ok",
+  "resolve_escape_con_puntos_es_error",
+  "resolve_absoluta_fuera_es_error",
+]
+papers = ["When Lower Privileges Suffice (Findings EMNLP 2026)", "Prompts Don't Protect (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F1.09"
+nombre = "tool-leer"
+titulo = "Tool `leer`: archivo con números de línea, rango y límites"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.08"]
+toca = ["crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/read.rs"]
+acepta = "cargo test -p pcode-tools read"
+contexto = ["crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+`ReadFile` (nombre de la tool: `leer`, efectos `[Read]`). Argumentos JSON: `{"path": str,
+"offset": int?, "limit": int?}`; `offset` es la línea inicial (1-based, por defecto 1) y `limit`
+el número de líneas (por defecto 2000).
+1. Ruta con `resolve_in_root`.
+2. Salida: cada línea como `"{n:>6}\t{texto}"`; las líneas de más de 2000 caracteres se cortan con `…`.
+3. Si quedan líneas sin mostrar, añade al final `"[… N líneas más; usa offset]"`.
+4. Errores (`ToolOutput::error`): archivo inexistente, es un directorio o es binario (contiene un
+   byte NUL en los primeros 8 KiB).
+5. `spec().parameters` es un JSON Schema con `path` obligatorio.
+'''
+firmas = '''
+pub struct ReadFile;
+#[async_trait::async_trait]
+impl Tool for ReadFile { /* spec, effects, call */ }
+'''
+tests = ["read_numera_lineas", "read_offset_y_limit", "read_avisa_de_lineas_restantes", "read_binario_es_error", "read_inexistente_es_error", "read_fuera_de_root_es_error"]
+
+[[tarea]]
+id = "F1.10"
+nombre = "tool-escribir-editar"
+titulo = "Tools `escribir` y `editar` (reemplazo exacto y único)"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.08"]
+toca = ["crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/write.rs", "crates/pcode-tools/src/edit.rs"]
+acepta = "cargo test -p pcode-tools write && cargo test -p pcode-tools edit"
+contexto = ["crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+1. `WriteFile` (`escribir`, `[Write]`): `{"path", "content"}`; crea los directorios padre; responde
+   `"escrito <path> (<n> bytes)"`.
+2. `EditFile` (`editar`, `[Write]`): `{"path", "old", "new", "replace_all": bool?}`.
+   - `old` vacío → error.
+   - 0 coincidencias → error `"no se encontró el texto a reemplazar en <path>; vuelve a leer el archivo"`.
+   - Más de una coincidencia sin `replace_all` → error `"<n> coincidencias; da más contexto o usa replace_all"`.
+   - Si no hay error, escribe y responde `"editado <path> (<n> reemplazos)"`.
+'''
+firmas = '''
+pub struct WriteFile;
+pub struct EditFile;
+'''
+tests = ["write_crea_padres", "write_fuera_de_root_es_error", "edit_unico", "edit_cero_coincidencias_mensaje", "edit_varias_sin_replace_all_es_error", "edit_replace_all"]
+
+[[tarea]]
+id = "F1.11"
+nombre = "tool-buscar"
+titulo = "Tools `buscar` (regex) y `listar` (glob) ignorando .git y target"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.08"]
+toca = ["crates/pcode-tools/Cargo.toml", "crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/search.rs"]
+acepta = "cargo test -p pcode-tools search"
+contexto = ["crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+1. `Grep` (`buscar`, `[Read]`): `{"pattern", "path"?, "glob"?, "max_results"?: 200}`. Recorre
+   directorios con `std::fs` (sin dependencias nuevas salvo `regex` y `globset`), saltando `.git`,
+   `target`, `node_modules` y `.pcode`. Salta archivos binarios. Salida: `ruta:línea:texto`, con las
+   rutas relativas a root, ordenadas; si hay más de `max_results`, corta y avisa.
+2. `Glob` (`listar`, `[Read]`): `{"pattern"}` (p. ej. `crates/**/*.rs`) → rutas relativas ordenadas,
+   hasta 1000.
+'''
+firmas = '''
+pub struct Grep;
+pub struct Glob;
+'''
+tests = ["grep_encuentra_con_linea", "grep_salta_target_y_git", "grep_filtro_glob", "grep_limite_resultados", "glob_lista_ordenado", "grep_regex_invalida_es_error"]
+
+[[tarea]]
+id = "F1.12"
+nombre = "tool-bash"
+titulo = "Tool `bash` con tiempo máximo y salida recortada"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.08"]
+toca = ["crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/bash.rs"]
+acepta = "cargo test -p pcode-tools bash"
+contexto = ["crates/pcode-tools/src/registry.rs"]
+objetivo = '''
+`Bash` (`bash`, `[Exec]`): `{"command", "timeout_secs"?}`.
+1. `tokio::process::Command::new("sh").arg("-c").arg(cmd)` con `current_dir(root)`, `kill_on_drop(true)`
+   y la entrada estándar cerrada.
+2. Tiempo máximo = mínimo entre `timeout_secs` y `ctx.timeout`; si vence, mata el proceso y devuelve
+   un error `"tiempo agotado tras N s"`.
+3. Salida: `"exit=<código>\n--- stdout ---\n…\n--- stderr ---\n…"`. Cada flujo se recorta con
+   `head_tail(texto, 200, 200)`: primeras 200 y últimas 200 líneas con
+   `"[… N líneas omitidas …]"` en medio.
+4. `is_error` = código distinto de 0.
+'''
+firmas = '''
+pub struct Bash;
+pub fn head_tail(text: &str, head: usize, tail: usize) -> String;
+'''
+tests = ["bash_exit_cero", "bash_exit_no_cero_es_error", "bash_timeout", "bash_cwd_es_root", "head_tail_recorta", "head_tail_corto_intacto"]
+
+[[tarea]]
+id = "F1.13"
+nombre = "politica"
+titulo = "`pcode-policy`: capacidades, decisiones y política por capas (atenuación)"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.08"]
+toca = ["crates/pcode-policy/Cargo.toml", "crates/pcode-policy/src/lib.rs", "crates/pcode-policy/src/caps.rs"]
+acepta = "cargo test -p pcode-policy"
+contexto = ["docs/arquitectura.md (sección «Política»)", "README.md (sección «Políticas de seguridad aplicadas por el motor»)"]
+objetivo = '''
+1. `Capabilities` (deserializable desde `[politica]` del TOML) con patrones glob (`globset`).
+   - Regla general por capa: una lista de permitidos VACÍA significa «esta capa no restringe eso».
+   - Escritura: Deny si casa con algún `deny_write`; si `write` no está vacío y no casa con ninguno, Deny; si no, Allow.
+   - Lectura: Allow si `read` está vacío o casa con algún `read`.
+   - Órdenes: normaliza espacios; Deny si casa con algún `deny_commands` (glob sobre la orden
+     entera); si `allow_commands` no está vacío y no casa con ninguno, Deny; si no, Allow.
+   - Dominios (excepción: la red está cerrada por defecto): Allow solo si casa con algún `net_allow`
+     (admite `*.dominio`); con `net_allow` vacío, Deny.
+   - Una tool con efecto `Irreversible` y `ask_irreversible = true` → Ask.
+2. `Policy` = pila de capas. La decisión es la más restrictiva de todas (Deny > Ask > Allow) y el
+   motivo es el de la capa que deniega. `child(caps)` devuelve una política nueva con una capa más:
+   un subagente **nunca** puede tener más permisos que su padre.
+3. `tool_visible(name, effects)`: false si la tool está en `hidden_tools` de alguna capa o si alguna
+   capa tiene `deny_effects` que incluya alguno de sus efectos. Las tools no visibles ni siquiera se
+   anuncian al modelo.
+'''
+firmas = '''
+use pcode_tools::Effect;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision { Allow, Ask(String), Deny(String) }
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct Capabilities {
+    #[serde(rename = "leer")] pub read: Vec<String>,
+    #[serde(rename = "escribir")] pub write: Vec<String>,
+    #[serde(rename = "no_escribir")] pub deny_write: Vec<String>,
+    #[serde(rename = "denegar_ordenes")] pub deny_commands: Vec<String>,
+    #[serde(rename = "permitir_ordenes")] pub allow_commands: Vec<String>,
+    #[serde(rename = "red_permitir")] pub net_allow: Vec<String>,
+    #[serde(rename = "preguntar_irreversibles")] pub ask_irreversible: bool,
+    #[serde(rename = "tools_ocultas")] pub hidden_tools: Vec<String>,
+    #[serde(rename = "efectos_denegados")] pub deny_effects: Vec<Effect>,
+}
+
+impl Capabilities {
+    pub fn check_read(&self, rel_path: &str) -> Decision;
+    pub fn check_write(&self, rel_path: &str) -> Decision;
+    pub fn check_command(&self, command: &str) -> Decision;
+    pub fn check_domain(&self, host: &str) -> Decision;
+    pub fn check_effects(&self, effects: &[Effect]) -> Decision;
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Policy { layers: Vec<Capabilities> }
+impl Policy {
+    pub fn new(base: Capabilities) -> Self;
+    pub fn child(&self, caps: Capabilities) -> Policy;
+    pub fn check_read(&self, rel_path: &str) -> Decision;
+    pub fn check_write(&self, rel_path: &str) -> Decision;
+    pub fn check_command(&self, command: &str) -> Decision;
+    pub fn check_domain(&self, host: &str) -> Decision;
+    pub fn check_effects(&self, effects: &[Effect]) -> Decision;
+    pub fn tool_visible(&self, name: &str, effects: &[Effect]) -> bool;
+}
+'''
+tests = [
+  "write_permitida_y_denegada: escribir=['**'] y no_escribir=['docs/**']",
+  "capa_vacia_no_restringe_escritura: Policy con una capa hija por defecto sigue permitiendo escribir src/a.rs",
+  "deny_commands_git_stash",
+  "allow_commands_restringe",
+  "dominio_comodin",
+  "irreversible_pregunta",
+  "politica_hijo_no_amplia: el padre deniega red y el hijo la permite → Deny",
+  "deny_gana_a_ask",
+  "tool_oculta_no_visible",
+  "deserializa_desde_toml_del_readme",
+]
+papers = ["Prompts Don't Protect (EMNLP 2026 Industry)", "Delegated Misalignment (EMNLP 2026)", "Trust Cascade (EMNLP 2026)"]
+
+[[tarea]]
+id = "F1.14"
+nombre = "analisis-shell"
+titulo = "Análisis de órdenes de shell: separar órdenes compuestas, `bash -c`, `sudo`, `env`"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-policy/Cargo.toml", "crates/pcode-policy/src/lib.rs", "crates/pcode-policy/src/shell.rs", "crates/pcode-policy/src/caps.rs"]
+acepta = "cargo test -p pcode-policy"
+contexto = ["crates/pcode-policy/src/caps.rs"]
+objetivo = '''
+Que `bash -c 'git stash'` o `true && git push` no esquiven la política.
+1. `simple_commands(cmd)` devuelve las órdenes simples que ejecutaría la línea:
+   - parte por `&&`, `||`, `;`, `|`, `&` y saltos de línea, respetando comillas (usa `shell-words`
+     para tokenizar cada trozo);
+   - extrae el contenido de `$( … )` y de las comillas invertidas, y lo analiza recursivamente;
+   - si la orden es `sh|bash|zsh -c "<script>"`, analiza `<script>` recursivamente;
+   - quita los prefijos `sudo`, `env VAR=x …`, `VAR=x`, `nohup`, `time`, `command` y `exec`;
+   - devuelve cada orden simple normalizada (palabras unidas por un espacio).
+   - Profundidad máxima de recursión: 4. Si se supera, devuelve la orden tal cual y `check_command`
+     da Deny ("orden demasiado anidada").
+2. `Capabilities::check_command` aplica las reglas a CADA orden simple; basta una denegada.
+'''
+firmas = '''
+pub fn simple_commands(cmd: &str) -> Result<Vec<String>, String>;
+'''
+tests = [
+  "separa_and_or_punto_y_coma",
+  "bash_c_recursivo: \"bash -c 'git stash'\" → ['git stash']",
+  "subshell_dolar_parentesis",
+  "quita_sudo_y_env",
+  "respeta_comillas: \"echo 'a && b'\" es una sola orden",
+  "check_command_detecta_git_push_tras_and",
+  "anidamiento_excesivo_deniega",
+]
+papers = ["SABER (EMNLP 2026): seguridad operativa en espacios de trabajo con estado"]
+
+[[tarea]]
+id = "F1.15"
+nombre = "auditoria"
+titulo = "Auditoría append-only con hash encadenado y procedencia"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-policy/Cargo.toml", "crates/pcode-policy/src/lib.rs", "crates/pcode-policy/src/audit.rs"]
+acepta = "cargo test -p pcode-policy audit"
+contexto = ["docs/arquitectura.md (sección «Política»)"]
+objetivo = '''
+1. Archivo JSONL; cada línea es un `AuditEntry`.
+2. `hash` = sha256 en hex de `prev_hash + "\n" + JSON canónico de la entrada sin el campo hash`
+   (JSON canónico = `serde_json::to_string` de un `BTreeMap` con las claves ordenadas). La primera
+   entrada usa `prev_hash = "0" * 64`.
+3. `open` lee el archivo existente (si lo hay) para continuar `seq` y `last_hash`.
+4. `verify` recorre el archivo, recalcula y devuelve el número de entradas o el primer `seq` roto.
+5. `provenance` dice de dónde viene la acción: `"usuario"`, `"agente:<id>"`,
+   `"subagente:<padre>/<id>"` o `"tool:<nombre>"`.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AuditEntry {
+    pub seq: u64, pub ts_ms: u64, pub actor: String, pub provenance: String,
+    pub action: String, pub detail: serde_json::Value, pub decision: String,
+    pub prev_hash: String, pub hash: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuditError {
+    #[error("E/S: {0}")] Io(#[from] std::io::Error),
+    #[error("entrada {0} corrupta o manipulada")] Broken(u64),
+}
+
+pub struct AuditLog { /* path, seq, last_hash */ }
+impl AuditLog {
+    pub fn open(path: &std::path::Path) -> Result<AuditLog, AuditError>;
+    pub fn append(&mut self, actor: &str, provenance: &str, action: &str,
+                  detail: serde_json::Value, decision: &str) -> Result<AuditEntry, AuditError>;
+    pub fn verify(path: &std::path::Path) -> Result<u64, AuditError>;
+}
+'''
+tests = ["audit_encadena", "audit_continua_tras_reabrir", "audit_verify_ok", "audit_detecta_manipulacion: cambiar un campo de la línea 2 → Broken(2)", "audit_detecta_linea_borrada"]
+papers = ["Trust Cascade through Provenance Erasure (EMNLP 2026)", "WeClawArena (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F1.16"
+nombre = "bucle"
+titulo = "`pcode-core`: bucle del agente con política, auditoría y presupuestos"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.03", "F1.08", "F1.13", "F1.15"]
+toca = ["crates/pcode-core/Cargo.toml", "crates/pcode-core/src/lib.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core agent"
+contexto = ["docs/arquitectura.md (sección «Bucle»)", "crates/pcode-models/src/provider.rs", "crates/pcode-tools/src/registry.rs", "crates/pcode-policy/src/caps.rs"]
+objetivo = '''
+`Agent::run(task)`:
+1. `messages = [system(cfg.system_prompt), user(task)]`.
+2. Bucle mientras queden pasos y tokens:
+   a. `tools` = `registry.specs_filtered(|n, e| policy.tool_visible(n, e))`.
+   b. `provider.chat(ChatRequest{model, messages, tools, ..})`; suma el uso; añade el mensaje del asistente.
+   c. Sin `tool_calls` → `Outcome::Done { final_message }`.
+   d. Por cada llamada: si la tool no existe → resultado de error `"tool desconocida: X"`. Si no,
+      decide con la política: `check_effects(effects)`; si tiene Write y hay `args.path` →
+      `check_write(path)`; si tiene Exec y hay `args.command` → `check_command(command)`.
+      Deny → resultado `"denegado por la política: <motivo>"`; Ask → resultado
+      `"requiere aprobación humana: <motivo>"` (en F1 no se ejecuta; la aprobación llega en F5).
+      Allow → ejecuta la tool.
+   e. Audita cada llamada (actor = `cfg.agent_id`, provenance = `"agente:<id>"`, action = nombre de
+      la tool, detail = args, decision).
+   f. Añade `Message::tool_result(call.id, contenido)`.
+3. Si se agotan los pasos o los tokens → `Outcome::BudgetExhausted`. Un error del proveedor →
+   `Outcome::Failed(msg)`.
+'''
+firmas = '''
+use std::sync::Arc;
+use pcode_models::{Message, Provider, Usage};
+use pcode_policy::{AuditLog, Policy};
+use pcode_tools::{ToolContext, ToolRegistry};
+
+#[derive(Debug, Clone)]
+pub struct Budget { pub max_steps: u32, pub max_input_tokens: u64, pub max_output_tokens: u64 }
+impl Default for Budget { /* 50 pasos, 2_000_000 de entrada, 200_000 de salida */ }
+
+#[derive(Debug, Clone)]
+pub struct AgentConfig { pub agent_id: String, pub model: String, pub system_prompt: String, pub budget: Budget }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Outcome { Done { final_message: String }, BudgetExhausted, Stuck(String), Failed(String) }
+
+#[derive(Debug, Clone)]
+pub struct RunReport { pub outcome: Outcome, pub usage: Usage, pub steps: u32, pub transcript: Vec<Message> }
+
+pub struct Agent { /* provider, tools, policy, audit, cfg, ctx */ }
+impl Agent {
+    pub fn new(provider: Arc<dyn Provider>, tools: ToolRegistry, policy: Policy,
+               audit: Option<AuditLog>, cfg: AgentConfig, ctx: ToolContext) -> Self;
+    pub async fn run(&mut self, task: &str) -> RunReport;
+}
+'''
+tests = [
+  "agente_termina_sin_tools: MockProvider con una respuesta de texto → Done",
+  "agente_ejecuta_tool_y_sigue: llamada a escribir y después texto → el archivo existe",
+  "agente_politica_deniega_escritura: no_escribir=['docs/**'] → el resultado de la tool contiene 'denegado'",
+  "agente_tool_desconocida",
+  "agente_presupuesto_de_pasos: el guion siempre pide tools; max_steps=3 → BudgetExhausted",
+  "agente_no_anuncia_tools_ocultas: la petición al mock no incluye la tool oculta",
+  "agente_audita_cada_llamada: AuditLog::verify da el número de llamadas",
+]
+papers = ["Beyond Max Tokens (EMNLP 2026): presupuestos impuestos por el motor", "ToFu (EMNLP 2026 Demos): arnés de caja blanca"]
+
+[[tarea]]
+id = "F1.17"
+nombre = "compresion-salidas"
+titulo = "Compresión de salidas de compilador y tests antes de devolverlas al modelo"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.16"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/compress.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core compress"
+contexto = ["crates/pcode-core/src/agent.rs"]
+objetivo = '''
+1. `compress_cargo(text, max_errors)`: conserva los bloques de diagnóstico de rustc (desde una línea
+   `error[` / `error:` / `warning:` hasta la siguiente línea vacía), los primeros `max_errors`
+   errores (los warnings solo si no hay errores), y elimina los diagnósticos duplicados (misma
+   primera línea). Conserva siempre las líneas de resumen `error: could not compile`,
+   `test result:`, `failures:` y los nombres de tests fallidos (`---- x stdout ----`).
+2. `compress_tool_output(command, text)`: si la orden empieza por `cargo` →
+   `compress_cargo(text, 5)`; si no, `head_tail` de pcode-tools con 150 y 150.
+3. En `agent.rs`, aplica `compress_tool_output` a la salida de la tool `bash` antes de añadirla.
+'''
+firmas = '''
+pub fn compress_cargo(text: &str, max_errors: usize) -> String;
+pub fn compress_tool_output(command: &str, text: &str) -> String;
+'''
+tests = ["compress_cargo_deduplica", "compress_cargo_limita_errores", "compress_cargo_conserva_resumen_de_tests", "compress_cargo_warnings_solo_sin_errores", "compress_otros_usa_head_tail"]
+papers = ["Context Compression for LLM Agents: A Survey (EMNLP 2026)"]
+
+[[tarea]]
+id = "F1.18"
+nombre = "hook-parada"
+titulo = "Hook de parada: no hay «terminado» sin la aceptación en verde y la lista de restricciones"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.17"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/stop_hook.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core stop_hook"
+contexto = ["crates/pcode-core/src/agent.rs", "crates/pcode-core/src/compress.rs"]
+objetivo = '''
+1. `AgentConfig` gana `stop_hook: Option<StopHook>`.
+2. Cuando el modelo termina (sin tool calls) y hay hook:
+   a. Si `checklist` no está vacía, el mensaje final debe contener `- [x] <item>` para cada item. Si
+      falta alguno → mensaje de usuario `"Faltan restricciones por confirmar: …"` y se sigue.
+   b. Ejecuta `command` (sh -c, cwd = root, timeout). Si sale con 0 → `Done`.
+   c. Si falla → mensaje de usuario: `"La aceptación falló (ronda r/max). Salida:\n<compress_tool_output>\nCorrige y vuelve a intentarlo."`, y se sigue.
+   d. Tras `max_rounds` fallos → `Outcome::Failed("aceptación no superada tras N rondas")`.
+3. `RunReport` gana `acceptance_output: Option<String>` (la última salida real), para que el informe
+   no pueda afirmar lo que `acepta` no comprobó.
+'''
+firmas = '''
+#[derive(Debug, Clone)]
+pub struct StopHook { pub command: String, pub max_rounds: u32, pub timeout: std::time::Duration, pub checklist: Vec<String> }
+
+pub async fn run_acceptance(command: &str, root: &std::path::Path, timeout: std::time::Duration) -> (bool, String);
+'''
+tests = ["stop_hook_pasa_a_la_primera", "stop_hook_falla_y_reintenta: el mock arregla el archivo en la segunda ronda", "stop_hook_agota_rondas", "stop_hook_checklist_incompleta", "run_acceptance_timeout"]
+papers = ["Polished but Unresolved (EMNLP 2026)", "How Coding Agents Fail Their Users (EMNLP 2026)", "Scaffolded Execution for SLMs (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F1.19"
+nombre = "store"
+titulo = "`pcode-store`: sesiones y eventos en SQLite"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F0.01"]
+toca = ["crates/pcode-store/Cargo.toml", "crates/pcode-store/src/lib.rs"]
+acepta = "cargo test -p pcode-store"
+contexto = ["docs/arquitectura.md (sección «Almacenamiento»)"]
+objetivo = '''
+1. `rusqlite` con `bundled`. Esquema versionado con `PRAGMA user_version`:
+   `sessions(id INTEGER PK, created_ms, model TEXT, task TEXT, outcome TEXT NULL)` y
+   `events(id INTEGER PK, session_id REF, ts_ms, kind TEXT, payload TEXT /* JSON */)`.
+2. `open` crea el archivo y migra; `open_in_memory` para tests.
+3. API síncrona (el bucle la usará con `spawn_blocking`).
+'''
+firmas = '''
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError { #[error("sqlite: {0}")] Sql(#[from] rusqlite::Error), #[error("json: {0}")] Json(#[from] serde_json::Error) }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Event { pub id: i64, pub session_id: i64, pub ts_ms: i64, pub kind: String, pub payload: serde_json::Value }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionRow { pub id: i64, pub created_ms: i64, pub model: String, pub task: String, pub outcome: Option<String> }
+
+pub struct Store { /* conn */ }
+impl Store {
+    pub fn open(path: &std::path::Path) -> Result<Store, StoreError>;
+    pub fn open_in_memory() -> Result<Store, StoreError>;
+    pub fn create_session(&self, model: &str, task: &str) -> Result<i64, StoreError>;
+    pub fn finish_session(&self, id: i64, outcome: &str) -> Result<(), StoreError>;
+    pub fn append_event(&self, session_id: i64, kind: &str, payload: &serde_json::Value) -> Result<i64, StoreError>;
+    pub fn events(&self, session_id: i64) -> Result<Vec<Event>, StoreError>;
+    pub fn sessions(&self, limit: u32) -> Result<Vec<SessionRow>, StoreError>;
+}
+'''
+tests = ["store_crea_y_lista_sesiones", "store_eventos_en_orden", "store_finish_session", "store_reabrir_conserva_datos (archivo en tempdir)", "store_migracion_idempotente"]
+
+[[tarea]]
+id = "F1.20"
+nombre = "cli-run"
+titulo = "`pcode run`: une configuración, proveedor, tools, política, bucle, hook y almacenamiento"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.01", "F1.05", "F1.09", "F1.10", "F1.11", "F1.12", "F1.14", "F1.18", "F1.19"]
+toca = ["crates/pcode-cli/Cargo.toml", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/tests/run.rs"]
+acepta = "cargo test -p pcode-cli"
+contexto = ["crates/pcode-core/src/agent.rs", "crates/pcode-config/src/lib.rs"]
+objetivo = '''
+Subcomando `pcode run <TAREA> [--modelo M] [--proveedor P] [--acepta CMD] [--max-pasos N] [--config RUTA]`:
+1. Carga `pcode.toml` (o `--config`). Política: `[politica]` del TOML (añade a `Config` en este
+   mismo crate con un `#[derive(Deserialize)] struct CliToml { politica: Capabilities }` si hace
+   falta; no toques pcode-config).
+2. Proveedor: si existe la variable `PCODE_MOCK_SCRIPT` → `MockProvider::from_script_file`; si no,
+   el proveedor `--proveedor` (o el primero) de tipo `openai-compatible`.
+3. Registra las tools `leer`, `escribir`, `editar`, `buscar`, `listar` y `bash` con root = directorio actual.
+4. Audita en `.pcode/audit.jsonl` y guarda la sesión y los eventos en `.pcode/pcode.db`.
+5. Imprime el mensaje final y un resumen de una línea (`resultado`, pasos, tokens de entrada y salida).
+6. Código de salida: 0 = Done, 2 = Failed, 3 = BudgetExhausted, 4 = Stuck.
+'''
+firmas = '''
+// crates/pcode-cli/src/run.rs
+#[derive(Debug, clap::Args)]
+pub struct RunArgs {
+    pub task: String,
+    #[arg(long = "modelo")] pub model: Option<String>,
+    #[arg(long = "proveedor")] pub provider: Option<String>,
+    #[arg(long = "acepta")] pub accept: Option<String>,
+    #[arg(long = "max-pasos", default_value_t = 50)] pub max_steps: u32,
+    #[arg(long = "config", default_value = "pcode.toml")] pub config: std::path::PathBuf,
+}
+pub async fn run(args: RunArgs) -> anyhow::Result<i32>;
+'''
+tests = [
+  "run_con_mock_escribe_archivo (assert_cmd en un tempdir con PCODE_MOCK_SCRIPT)",
+  "run_con_acepta_que_falla_sale_con_2",
+  "run_crea_audit_y_db",
+  "run_politica_deniega_y_lo_dice",
+]
+
+[[tarea]]
+id = "F1.21"
+nombre = "detector-atasco"
+titulo = "Detector de atasco, pistas por fallo típico y parada temprana"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.18"]
+toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/stuck.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core stuck"
+contexto = ["crates/pcode-core/src/agent.rs"]
+objetivo = '''
+1. `StuckDetector::observe(call, output)` devuelve una señal cuando:
+   - la misma llamada (nombre + args en JSON canónico) se repite `max_repeats` veces seguidas;
+   - el mismo error (primeras 200 letras de una salida con `is_error`) se repite `max_repeats` veces;
+   - pasan `max_steps_without_write` pasos sin ninguna tool con efecto Write.
+2. `hint_for(output)`: tabla de pistas por fallo típico, por ejemplo:
+   - "no se encontró el texto a reemplazar" → "Vuelve a leer el archivo con `leer` antes de editar.";
+   - "rustfmt" o "cargo fmt" → "Ejecuta `cargo fmt --all`.";
+   - "unresolved import" → "Revisa el `use` y que el módulo esté declarado en lib.rs.";
+   - "denegado por la política" → "Esa acción no está permitida; busca otra forma o explica el bloqueo en el informe."
+3. En el bucle: la primera señal añade un mensaje de usuario con la pista; la segunda termina con
+   `Outcome::Stuck(motivo)`.
+'''
+firmas = '''
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StuckSignal { RepeatedCall(String), RepeatedError(String), NoProgress(u32) }
+
+pub struct StuckDetector { /* window state */ }
+impl StuckDetector {
+    pub fn new(max_repeats: u32, max_steps_without_write: u32) -> Self;
+    pub fn observe(&mut self, call: &pcode_models::ToolCall, wrote: bool, output: &pcode_tools::ToolOutput) -> Option<StuckSignal>;
+}
+pub fn hint_for(output: &str) -> Option<&'static str>;
+'''
+tests = ["stuck_llamada_repetida", "stuck_error_repetido", "stuck_sin_progreso", "stuck_se_reinicia_al_escribir", "hint_editar", "agente_para_con_stuck_tras_dos_senales"]
+papers = ["EET (Findings ACL 2026): terminación temprana", "PRFC (Findings EMNLP 2026)", "FAMA (Findings ACL 2026): contexto contra fallos típicos"]
+
+[[tarea]]
+id = "F1.22"
+nombre = "anthropic"
+titulo = "Proveedor Anthropic (Messages API): formato y cliente HTTP"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.05"]
+toca = ["crates/pcode-models/src/lib.rs", "crates/pcode-models/src/anthropic.rs"]
+acepta = "cargo test -p pcode-models anthropic"
+contexto = ["crates/pcode-models/src/openai.rs", "crates/pcode-models/src/openai_http.rs"]
+objetivo = '''
+1. Funciones puras `to_request_body` y `from_response_body`. El `system` va aparte (concatena los
+   mensajes System); el contenido son bloques (`text`, `tool_use{id,name,input}`,
+   `tool_result{tool_use_id,content}`); los mensajes `tool` se envían como `user` con bloques
+   `tool_result`; `tools: [{name, description, input_schema}]`; `max_tokens` obligatorio
+   (por defecto 8192); `stop_reason`: end_turn → EndTurn, tool_use → ToolUse,
+   max_tokens → MaxTokens; `usage`: `input_tokens`, `output_tokens` y `cache_read_input_tokens`.
+2. `AnthropicProvider`: POST `{base_url}/v1/messages` con cabeceras `x-api-key` y
+   `anthropic-version: 2023-06-01`. Tests con servidor falso local, como en F1.05.
+'''
+firmas = '''
+pub mod anthropic {
+    pub fn to_request_body(req: &crate::ChatRequest) -> serde_json::Value;
+    pub fn from_response_body(body: &serde_json::Value) -> Result<crate::ChatResponse, crate::ModelError>;
+}
+pub struct AnthropicProvider { /* name, base_url, api_key, client */ }
+impl AnthropicProvider { pub fn new(name: impl Into<String>, base_url: impl Into<String>, api_key: String) -> Self; }
+'''
+tests = ["anthropic_system_aparte", "anthropic_tool_result_como_user", "anthropic_respuesta_tool_use", "anthropic_usage_cache", "anthropic_http_cabeceras"]
+
+[[tarea]]
+id = "F1.23"
+nombre = "gemini"
+titulo = "Proveedor Gemini (generateContent): formato y cliente HTTP"
+fase = "F1"
+ejecutor = "haiku"
+depende = ["F1.05"]
+toca = ["crates/pcode-models/src/lib.rs", "crates/pcode-models/src/gemini.rs"]
+acepta = "cargo test -p pcode-models gemini"
+contexto = ["crates/pcode-models/src/openai.rs", "crates/pcode-models/src/openai_http.rs"]
+objetivo = '''
+1. Funciones puras: `contents: [{role: "user"|"model", parts: [{text} | {functionCall{name,args}} |
+   {functionResponse{name, response:{content}}}]}]`, `systemInstruction`,
+   `tools: [{functionDeclarations: [...]}]`. Respuesta: `candidates[0].content.parts`; ids de tool
+   call sintéticos (`call_<n>`) si no vienen; `usageMetadata.promptTokenCount`,
+   `candidatesTokenCount` y `cachedContentTokenCount`.
+2. `GeminiProvider`: POST `{base_url}/v1beta/models/{model}:generateContent` con cabecera
+   `x-goog-api-key`. Tests con servidor falso local.
+'''
+firmas = '''
+pub mod gemini {
+    pub fn to_request_body(req: &crate::ChatRequest) -> serde_json::Value;
+    pub fn from_response_body(body: &serde_json::Value) -> Result<crate::ChatResponse, crate::ModelError>;
+}
+pub struct GeminiProvider { /* name, base_url, api_key, client */ }
+impl GeminiProvider { pub fn new(name: impl Into<String>, base_url: impl Into<String>, api_key: String) -> Self; }
+'''
+tests = ["gemini_roles_user_model", "gemini_function_call_y_response", "gemini_ids_sinteticos", "gemini_usage", "gemini_http_cabecera_y_ruta"]
+
+[[tarea]]
+id = "F1.24"
+nombre = "shell-portable"
+titulo = "Shell portable (sh en Linux, cmd en Windows) y política que entra en cmd y PowerShell"
+fase = "F1"
+ejecutor = "coordinador"
+depende = ["F1.12", "F1.14"]
+toca = ["crates/pcode-tools/src/bash.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-policy/src/shell.rs", "crates/pcode-core/src/stop_hook.rs", "crates/pcode-flow/src/accept.rs"]
+acepta = "cargo test -p pcode-tools shell_argv && cargo test -p pcode-policy cmd_y_powershell"
+contexto = ["crates/pcode-tools/src/bash.rs", "crates/pcode-policy/src/shell.rs"]
+objetivo = '''
+1. `shell_argv(cmd)` devuelve `["cmd", "/C", cmd]` en Windows y `["sh", "-c", cmd]` en el resto;
+   `shell_command(cmd)` construye el `tokio::process::Command`. La tool `bash`, el hook de parada y
+   la aceptación de flujos los usan en lugar de `sh -c` fijo.
+2. `simple_commands` descompone también `cmd /C …` y `powershell|pwsh -Command|-c …`, para que la
+   política vea las órdenes de dentro.
+'''
+firmas = '''
+// crates/pcode-tools/src/bash.rs
+pub fn shell_argv(cmd: &str) -> Vec<String>;
+pub fn shell_command(cmd: &str) -> tokio::process::Command;
+'''
+tests = ["shell_argv_segun_plataforma", "cmd_y_powershell_recursivos: `cmd /C 'git push'` y `pwsh -Command 'git push'` contienen `git push`"]
+
+[[tarea]]
+id = "F1.25"
+nombre = "streaming"
+titulo = "Streaming de texto en los proveedores y en el agente"
+fase = "F1"
+ejecutor = "coordinador"
+depende = ["F1.06", "F1.22", "F1.23"]
+toca = ["crates/pcode-models/src/provider.rs", "crates/pcode-models/src/stream.rs", "crates/pcode-models/src/sse.rs", "crates/pcode-models/src/openai_http.rs", "crates/pcode-models/src/anthropic.rs", "crates/pcode-models/src/gemini.rs", "crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-models stream && cargo test -p pcode-core observador"
+contexto = ["crates/pcode-models/src/sse.rs", "crates/pcode-models/src/provider.rs"]
+objetivo = '''
+1. `Provider::chat_stream(req, on_text)`: por defecto llama a `chat` y entrega el texto entero.
+2. OpenAI-compatible (`stream` + `include_usage`), Anthropic (`AnthropicStream`: `text_delta` e
+   `input_json_delta`) y Gemini (`GeminiStream`, `streamGenerateContent?alt=sse`) leen el SSE por trozos.
+3. El agente emite `AgentEvent::TextDelta` por cada trozo y `AgentEvent::Text` al completar el mensaje.
+'''
+tests = ["openai_http_stream_entrega_trozos_y_une_la_respuesta", "anthropic_stream_acumula_texto_y_tool_use", "anthropic_http_stream", "gemini_stream_une_texto_y_llamadas", "gemini_http_stream_usa_alt_sse", "observador_recibe_texto_y_tools"]
+
+[[tarea]]
+id = "F1.26"
+nombre = "robustez"
+titulo = "Robustez para el uso diario: reintentos, caché de prompt, compactación, política segura y configuración global"
+fase = "F1"
+ejecutor = "coordinador"
+depende = ["F1.25", "F5.29"]
+toca = ["crates/pcode-models/src/retry.rs", "crates/pcode-models/src/anthropic.rs", "crates/pcode-core/src/agent.rs", "crates/pcode-policy/src/caps.rs", "crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-models retry && cargo test -p pcode-core compacta && cargo test -p pcode-policy interactivo && cargo test -p pcode-config merge"
+contexto = ["crates/pcode-core/src/agent.rs", "crates/pcode-policy/src/caps.rs"]
+objetivo = '''
+1. `RetryProvider`: 4 intentos con espera exponencial ante 429, 5xx, 408 y fallos de red; en streaming
+   solo si aún no se entregó texto.
+2. Anthropic: `cache_control` en sistema, última tool y último mensaje.
+3. `Budget::max_context_tokens` y `Agent::compact`: resumen con el propio modelo, conservando sistema y
+   últimos mensajes sin separar llamadas de sus resultados; `/compactar` en la TUI y en el chat.
+4. `Capabilities::interactive_defaults` y `preguntar_ordenes`: deniega lo catastrófico y pregunta lo
+   destructivo; la configuración del usuario solo endurece.
+5. Configuración global (`user_config_path`, `Config::merge`, `[preferencias]`) y raíces TLS del sistema.
+'''
+tests = ["reintenta_429_y_5xx_hasta_acertar", "no_reintenta_un_400_ni_pasa_del_maximo", "compacta_cuando_se_supera_el_limite_sin_romper_pares_de_tools", "interactivo_pregunta_lo_destructivo_y_deniega_lo_catastrofico", "merge_proyecto_manda_y_global_rellena", "load_layered_lee_pcode_config", "anthropic_peticion_separa_system_y_agrupa_resultados"]

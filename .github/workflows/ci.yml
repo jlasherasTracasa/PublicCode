@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m unittest tools/minisandbox/test_minisandbox.py -v && python3 -m unittest tools/bench/test_reglas.py -v && python3 -m unittest tools/bench/test_rendimiento.py -v
+      - run: python3 -m unittest tools/minisandbox/test_minisandbox.py -v && python3 -m unittest tools/bench/test_reglas.py -v && python3 -m unittest tools/bench/test_rendimiento.py -v && python3 -m unittest tools/tareas/test_generar.py -v
 
   plan:
     name: Plan de tareas

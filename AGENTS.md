@@ -45,8 +45,9 @@ lógica, falta un método en la API: dilo en el informe.
 
 ## 2. Flujo obligatorio de una tarea
 
-0. **Dependencias**: comprueba que existe `informes/<dep>.md` para cada `depende` de la tarea. Si
-   falta alguno, no empieces: escríbelo en el informe y para.
+0. **Dependencias**: ejecuta `tools/tareas/generar.py --tarea <id>`. Si el estado no es `lista` (alguna
+   dependencia sigue abierta, o la tarea es un esbozo o está sustituida), no empieces: escríbelo en el
+   informe y para.
 1. **Lee la tarea entera**. Anota tres cosas: `acepta`, la lista **Toca** y las listas **Firmas** y **Tests**.
 2. **Lee solo lo que cite la tarea en Contexto.** No explores el repo: cuesta contexto y no hace
    falta. Si necesitas ver una API ya hecha, abre solo ese archivo.
@@ -65,7 +66,7 @@ lógica, falta un método en la API: dilo en el informe.
    repo (en sus propias sandboxes) y el integrador depende de commits limpios.
 2. **Alcance**: no toques archivos fuera de *Toca*. En particular, nunca toques `AGENTS.md`,
    `CLAUDE.md`, `docs/`, `tareas/` ni `.claude/` si la tarea no los pone en *Toca*.
-3. **Archivos generados** (nunca a mano): `tareas/*.md` (salen de `tareas/plan.toml`),
+3. **Archivos generados** (nunca a mano): `tareas/*.md` (salen de `tareas/plan.toml` y `tareas/plan/`),
    `apps/ui/src/protocol/` (sale de `crates/pcode-protocol`), las secciones entre marcadores
    `<!-- …:inicio -->` / `<!-- …:fin -->`, `GEMINI.md` y `.github/copilot-instructions.md`.
 4. **Secretos**: ni claves ni tokens en archivos, tests, fixtures ni logs. La configuración usa
@@ -87,10 +88,12 @@ lógica, falta un método en la API: dilo en el informe.
 | Núcleo Rust | `crates/pcode-*` (salvo TUI) | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test -p <crate>` |
 | Terminal: CLI | `crates/pcode-cli` | lo anterior; tests de integración con `assert_cmd`; comprobar `--formato json` si la tarea lo toca |
 | Terminal: TUI | `crates/pcode-tui` | lo anterior; render con `ratatui::backend::TestBackend` a **80×24** y a 120×40; snapshots por igualdad de texto |
-| UI web y escritorio | `apps/ui` | `npm ci` · `npm run -w apps/ui lint` · `npm run -w apps/ui typecheck` · `npm run -w apps/ui test` · `npm run -w apps/ui build` |
-| Escritorio (Tauri) | `apps/desktop` | `cargo clippy -p pcode-desktop -- -D warnings` · `cargo test -p pcode-desktop`. El empaquetado (`tauri build`) lo hace la CI o el coordinador, no tú |
+| UI React (sin uso hoy: F5.12 sustituida) | `apps/ui` | `npm ci` · `npm run -w apps/ui lint` · `npm run -w apps/ui typecheck` · `npm run -w apps/ui test` · `npm run -w apps/ui build` |
+| Escritorio Tauri (sin uso hoy: F5.18 sustituida) | `apps/desktop` | `cargo clippy -p pcode-desktop -- -D warnings` · `cargo test -p pcode-desktop`. El empaquetado (`tauri build`) lo hace la CI o el coordinador, no tú |
+| Studio | `crates/pcode-server/web/`, `crates/pcode-server/src/` | lo del núcleo Rust; `node --test crates/pcode-server/web/studio/test/` si tocas un módulo JS |
+| IDE nativo | `crates/pcode-ide` | lo del núcleo Rust; la lógica va en módulos puros con tests, `app.rs` solo cablea |
 | Tools Python | `tools/` | `python3 -m unittest <test> -v` |
-| Plan | `tareas/plan.toml` | `tools/tareas/generar.py --comprobar` |
+| Plan | `tareas/plan.toml`, `tareas/plan/` | `tools/tareas/generar.py --comprobar` · `python3 -m unittest tools/tareas/test_generar.py -v` |
 
 Las tareas de sandbox que necesitan namespaces de usuario **se saltan solas** si el sistema no los
 permite: no lo consideres un fallo tuyo, pero dilo en el informe.
@@ -103,18 +106,21 @@ crates/
   pcode-tools      tools nativas         pcode-policy    capacidades, shell, auditoría
   pcode-core       bucle del agente      pcode-store     SQLite (sesiones y eventos)
   pcode-sandbox    mini sandbox N1       pcode-backends  Claude Code, Copilot, Gemini, opencode, modelo
-  pcode-skills     skills e instrucciones pcode-flow     tareas, DAG, integración, CI, bench
-  pcode-memory     facetas, búsqueda, episodios
-  pcode-mcp        servidor MCP          pcode-protocol  tipos de la API (fuente del TS generado)
-  pcode-server     demonio pcoded        pcode-client    cliente Rust del demonio
-  pcode-tui        terminal interactiva  pcode-acp       servidor ACP para IDEs
+  pcode-skills     skills e instrucciones pcode-flow     tareas, DAG, integración, CI
+  pcode-spec       desarrollo con specs  pcode-protocol  tipos de la API (fuente del TS generado)
+  pcode-server     demonio y Studio      pcode-lsp       cliente de servidores de lenguaje
+  pcode-tui        terminal interactiva  pcode-dap       cliente del depurador (DAP)
+  pcode-ide        IDE nativo (egui)     pcode-extensions extensiones declarativas de VS Code
   pcode-cli        binario `pcode`
+  (previstos, los crea su tarea: pcode-memory, pcode-acp)
+crates/pcode-server/web/
+  index.html       Studio: la interfaz web (un archivo, sin dependencias)
+  studio/          módulos JS nuevos de Studio y sus tests (`node --test`), desde F8.01
 apps/
-  ui/              React + TypeScript + Vite: interfaz común para web y escritorio
-  desktop/         Tauri 2: aplicación de escritorio (carga apps/ui y lanza pcoded como sidecar)
-  vscode/          extensión fina de VS Code (opcional)
+  ui/src/protocol/ tipos TypeScript generados desde pcode-protocol (no hay aplicación React)
+  android/         APK que carga Studio
 tools/             prototipos y utilidades en Python (minisandbox, papers, bench, tareas)
-tareas/            plan.toml (fuente) y una tarea .md por archivo (generadas)
+tareas/            plan.toml (fases e hitos), plan/F<n>.toml (fuente de las tareas) y una tarea .md por archivo (generadas)
 informes/          un informe por tarea (lo escribe el agente)
 docs/              plan, arquitectura, interfaces, backends, sandboxes, evaluación, papers, ADRs
 .claude/skills/    skills del repo (formato SKILL.md)
@@ -262,11 +268,15 @@ git add <archivos de Toca> informes/<id>.md && git commit -m "<id>: <resumen en 
 - `tools/minisandbox/minisandbox.py ejecutar -- <orden>`: prueba algo sin tocar el repo (skill `mini-sandbox`).
 - `tools/papers/buscar_papers.py`: papers de ACL/EMNLP. Nunca cites uno que no salga de aquí (skill `papers-acl-emnlp`).
 - `tools/bench/reglas.py` (lo crea F0.06): cumplimiento de reglas. El banco PublicBench lo monta la skill `banco` (F0.04).
-- `tools/tareas/generar.py`: regenerar y validar el plan (solo el coordinador cambia `plan.toml`).
+- `tools/tareas/generar.py`: regenerar y validar el plan (solo el coordinador cambia `tareas/plan*`). `--siguiente`
+  dice qué tarea lista toca; `--tarea <id>` dice qué bloquea a una.
 
 ## 12. Para el coordinador (no aplica a agentes de tarea)
 
-- Cambiar el plan: editar `tareas/plan.toml` y ejecutar `tools/tareas/generar.py`; la CI exige `--comprobar`.
+- Cambiar el plan: editar `tareas/plan/F<n>.toml` siguiendo [docs/tareas-guia.md](docs/tareas-guia.md) y ejecutar
+  `tools/tareas/generar.py`; la CI exige `--comprobar`, que también rechaza las tareas abiertas que no son aptas
+  para un modelo pequeño (sin pasos, sin firmas, tests sin descripción, más de 4 archivos…).
+- Una tarea grande se parte en subtareas (`F8.14a`, `F8.14b`…); la madre queda como cierre.
 - Revisar cada informe antes de lanzar las tareas que dependen de él; ajustar el formato de tarea si
   Haiku tropieza siempre en lo mismo.
 - Este archivo solo lo cambia el coordinador. Después hay que regenerar las instrucciones derivadas

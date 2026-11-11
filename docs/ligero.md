@@ -74,7 +74,6 @@ con debugpy real, extensiones declarativas, lanzador en el menú, `pcode doctor`
 | Panel de depuración en el IDE (el cliente DAP ya está en `pcode-dap`) y métodos `debug.*` en el demonio | F9.21 |
 | Wayland nativo y AccessKit | F9.22 |
 | Primera release v1.2.0 con `tools/release.sh 1.2.0` (necesita permiso de push de etiquetas) | F9.25 |
-| Informes `informes/F9.xx.md` de las tareas hechas | — |
 
 Nota de este equipo: el DRI3 del servidor X dejó de responder durante la sesión (GLX se cuelga y `glxinfo` también). El
 IDE ya no depende de GLX (solo EGL), pero mientras DRI3 falle la ventana sale negra en la sesión actual: **cerrar

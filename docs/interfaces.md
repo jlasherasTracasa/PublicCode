@@ -1,5 +1,17 @@
 # Interfaces: terminal, escritorio, web, IDE, móvil y GitHub
 
+> **Estado real (11 nov 2026).** Este documento describe el diseño de partida. Lo construido difiere en
+> tres puntos, y el plan vigente ([PLAN.md](PLAN.md) §2 y §5.3) los da por buenos:
+>
+> | Diseño de partida | Lo que existe | Tareas |
+> |---|---|---|
+> | TUI y CLI como clientes del demonio | la TUI y el chat ejecutan el agente **en proceso** (ADR-0007) | F5.30, F5.34 |
+> | UI común en React (`apps/ui`) | **Studio**: un `index.html` sin dependencias servido por el demonio | F5.32 |
+> | Escritorio con Tauri 2 | **IDE nativo** `pcode-ide` (egui), cliente del demonio (ADR-0011) | F9.05 |
+> | PWA para el móvil | APK de Android que carga Studio (ADR-0006) | F5.28 |
+>
+> Lo que sigue en pie: toda la lógica en el núcleo, la API de `pcode-protocol`, ACP para editores y GitHub.
+
 ## Principio: un núcleo, muchos clientes
 
 Toda la lógica vive en el demonio **`pcoded`**: flujos, backends, sandboxes, política, skills y

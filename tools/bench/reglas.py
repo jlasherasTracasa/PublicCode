@@ -48,7 +48,7 @@ def toca_de_tarea(md):
 
 
 def _id_de_tarea(md):
-    m = re.search(r"^#\s+(F\d\.\d\d)\b", md, re.M)
+    m = re.search(r"^#\s+(F\d+\.\d\d[a-z]?)\b", md, re.M)
     return m.group(1) if m else None
 
 

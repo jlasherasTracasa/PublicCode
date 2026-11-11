@@ -1,9 +1,10 @@
-# Plan de implementación desgranado (para Claude Haiku 5.5)
+# Plan de implementación desgranado (para modelos pequeños)
 
 Este documento convierte el [PLAN](PLAN.md) en **tareas pequeñas que un modelo pequeño puede hacer
-solo**. La fuente de verdad es [`tareas/plan.toml`](../tareas/plan.toml). De ahí,
-[`tools/tareas/generar.py`](../tools/tareas/generar.py) genera un archivo por tarea en
-[`tareas/`](../tareas/) y la tabla del final de este documento.
+solo**. La fuente de verdad es [`tareas/plan.toml`](../tareas/plan.toml) (fases e hitos) más un archivo
+por fase en [`tareas/plan/`](../tareas/plan/). De ahí, [`tools/tareas/generar.py`](../tools/tareas/generar.py)
+genera un archivo por tarea en [`tareas/`](../tareas/) y las secciones «Estado del plan» y «Tabla de
+tareas» de este documento. Cómo se escribe una tarea: [tareas-guia.md](tareas-guia.md).
 
 ## Por qué tan desgranado
 
@@ -14,105 +15,122 @@ ganancia en modelos pequeños (*Rethinking Scale*, ACL 2026 Industry). Y la guí
 modelo fuerte mejora a uno débil, no al revés (*GRASP*, EMNLP 2026). Por eso:
 
 * **El modelo fuerte desgrana y el pequeño ejecuta.** Las tareas las diseña el coordinador
-  (Claude Opus o una persona); las ejecuta **Haiku 5.5**.
-* **Cada tarea cabe en una sesión corta**: de 1 a 4 archivos, firmas Rust exactas, tests con nombre
-  y **una** orden de aceptación.
-* **Sin decisiones de arquitectura en la tarea.** Si algo no encaja, Haiku lo dice en el informe y
-  para (regla 8 de [AGENTS.md](../AGENTS.md)).
+  (un modelo fuerte o una persona); las ejecuta **Haiku 5.5** o GLM.
+* **Cada tarea cabe en una sesión corta**: de 1 a 4 archivos, pasos numerados, firmas exactas, un
+  ejemplo, tests con nombre y descripción, y **una** orden de aceptación.
+* **Sin decisiones en la tarea.** Nombres, formatos, valores por defecto y casos límite los fija quien
+  desgrana. Si algo no encaja, el ejecutor lo dice en el informe y para ([AGENTS.md](../AGENTS.md) §9).
+* **Una tarea grande se parte**: subtareas `F8.14a`, `F8.14b`… (lógica pura primero, cableado después) y
+  la tarea madre queda como cierre.
 
-## Reglas de tamaño de una tarea
+## Reglas de tamaño de una tarea (las comprueba `generar.py`)
 
 | Regla | Valor |
 |---|---|
-| Archivos que toca | ≤ 4 (lo comprueba `generar.py`) |
-| Tiempo estimado | 30–90 min de agente |
-| API pública nueva | solo la de la sección *Firmas* |
-| Tests | nombrados en la tarea; deterministas, sin red, de segundos |
-| Aceptación | una orden; la mayoría `cargo test -p <crate>` más alguna comprobación con `grep` |
-| Dependencias | completas antes de empezar (las marca la tabla) |
+| Archivos que toca | ≤ 4, y cada uno nombrado en el objetivo o en las firmas |
+| Talla | `S` (≤ 30 min de agente) o `M` (30–90 min); más grande, se parte |
+| Objetivo | pasos numerados (≥ 2); con firmas, ejemplo y notas no pasa de 7000 caracteres |
+| API pública nueva | solo la de la sección *Firmas* (obligatoria si toca código) |
+| Tests | `nombre: qué entra y qué se espera`; deterministas, sin red, de segundos |
+| Contexto | qué archivo y qué función leer; las rutas citadas existen o las crea una dependencia |
+| Aceptación | una línea, específica de la tarea |
+| Dependencias | cerradas antes de empezar; nunca un esbozo |
+
+Las tareas ya cerradas (hechas, sustituidas o descartadas) conservan su redacción original: las reglas se
+exigen a las **abiertas**.
+
+## Estados
+
+| Estado | Significado | Quién lo fija |
+|---|---|---|
+| `hecha` | existe `informes/<id>-<nombre>.md` | el ejecutor, al escribir el informe |
+| `lista` | pendiente y con todas sus dependencias cerradas: **se puede empezar** | se calcula |
+| `bloqueada` | pendiente y con alguna dependencia abierta | se calcula |
+| `sustituida` | otra tarea ya cubre lo mismo (`por`, `motivo`) | el coordinador, en el plan |
+| `descartada` | ya no se hará (`motivo`) | el coordinador, en el plan |
+| `esbozo` | se quiere, pero falta desgranarla: nadie debe empezarla | el coordinador, en el plan |
 
 ## Ejecutores
 
 | Ejecutor | Quién | Cuándo |
 |---|---|---|
-| `haiku` | Claude Haiku 5.5 vía Claude Code (o GLM vía opencode o `pcode`) | código con firmas cerradas |
-| `coordinador` | Claude Opus 5.5 o una persona | tareas que necesitan CLIs instalados, credenciales, decisiones o juicio |
+| `haiku` | Claude Haiku 5.5 vía Claude Code (o GLM vía opencode o `pcode`) | todo lo que tenga firmas cerradas y se pruebe sin servicios externos |
+| `coordinador` | un modelo fuerte o una persona | solo lo que exige credenciales, servicios externos, hardware o una decisión del propietario (cada tarea dice por qué en `motivo_coordinador`) |
 
 ## Cómo ejecutar una tarea
+
+Qué toca ahora (tareas listas, por orden de hito y de cuántas desbloquean):
+
+```bash
+tools/tareas/generar.py --siguiente 5 --ejecutor haiku
+```
 
 Con Claude Code y Haiku 5.5, desde la raíz del repo:
 
 ```bash
-claude --model claude-haiku-5-5 -p "Usa la skill tarea-haiku para ejecutar tareas/F1.01-config.md"
+claude --model claude-haiku-5-5 -p "Usa la skill tarea-haiku para ejecutar tareas/F8.10a-git-blame-nucleo.md"
 ```
 
-Varias tareas sin dependencias entre sí, en paralelo y aisladas: cada una en su mini sandbox, y se
-aplica la que pase su aceptación.
+Varias tareas listas en paralelo, cada una en su mini sandbox; se aplica la que pase su aceptación:
 
 ```bash
-tools/minisandbox/minisandbox.py ejecutar --red --escribible ~/.cargo --estado /tmp/t-F1.02 -- claude --model claude-haiku-5-5 -p "Usa la skill tarea-haiku para ejecutar tareas/F1.02-tipos-mensajes.md"
+tools/minisandbox/minisandbox.py ejecutar --red --escribible ~/.cargo --estado /tmp/t-F8.10a -- claude --model claude-haiku-5-5 -p "Usa la skill tarea-haiku para ejecutar tareas/F8.10a-git-blame-nucleo.md"
 ```
 
-Las cabeceras `<!-- acepta -->`, `<!-- modo -->` y `<!-- depende -->` de cada tarea las lee `pcode flow`.
-Desde F3, PublicCode se construye a sí mismo:
+Las cabeceras `<!-- acepta -->`, `<!-- modo -->` y `<!-- depende -->` de cada tarea las lee `pcode flow`:
 
 ```bash
 pcode flow run --tareas tareas/ --backend haiku=claude-code:claude-haiku-5-5
 ```
 
-## Ruta crítica y paralelismo
+Otras consultas:
 
-```
-F0.01 ─► F1.01 config ─────────────────────────────┐
-     └─► F1.02 tipos ─► F1.03 Provider ─► F1.04/05/06/07 (LiteLLM, SSE, reparación) ─┐
-     └─► F1.08 Tool ─► F1.09–F1.12 (tools nativas, en paralelo) ─────────────────────┤
-     └─► F1.13 política ─► F1.14 shell ─► F1.15 auditoría ───────────────────────────┤
-                                                                                     ▼
-                         F1.16 bucle ─► F1.17 compresión ─► F1.18 hook ─► F1.20 `pcode run`
-                                                                                     │
-  F2: sandbox (F2.01–05) ∥ backends (F2.06–12) ∥ skills (F2.13–15) ∥ MCP (F2.16) ◄───┘
-                                                                                     │
-  F3: flujos (hito: PublicCode se construye a sí mismo) ─► F4 ─► F6 ─► F7 ◄──────┘
-  F5 (en paralelo desde F2.18): protocolo ─► demonio ─► cliente ─┬─► terminal (CLI, TUI)
-                                                                ├─► UI común ─► escritorio Tauri
-                                                                └─► web, PWA, ACP, VS Code
+```bash
+tools/tareas/generar.py --estado          # resumen por fase e hito
+tools/tareas/generar.py --tarea F8.14     # estado de una tarea y qué la bloquea
 ```
 
-Dentro de cada fase, las tareas que solo dependen de algo ya hecho pueden ir en paralelo: tools
-nativas, proveedores, backends y exportadores de skills.
+## Orden de trabajo: hitos
 
-## Hitos de fase (los comprueba el coordinador)
+Las fases agrupan por tema; los **hitos** dicen en qué entrega entra cada tarea abierta y marcan la
+prioridad (`--siguiente` ofrece primero el hito más temprano). Están definidos en `tareas/plan.toml`.
 
-| Fase | Hito | Cómo se comprueba |
+| Hito | Qué entrega | Cómo se comprueba |
 |---|---|---|
-| F0 | workspace, CI, línea base y banco smoke listos | CI en verde; `bench/linea-base.json` y `bench/smoke.jsonl` existen |
-| F1 | `pcode run` resuelve tareas aisladas con GLM vía LiteLLM | 3 de 5 tareas TP del smoke en verde |
-| F2 | la misma tarea corre con Claude Code, Copilot, Gemini, opencode y modelo propio, cada una en mini sandbox | `pcode run --backend X` con los 5 backends sobre una tarea de prueba |
-| F3 | `pcode flow` ejecuta el plan del propio repo | una semana de uso real sin integraciones fallidas por lockfiles ni falsos rojos de CI |
-| F4 | +12 puntos de aceptación a la primera y −30 % de tokens frente a la línea base medida en F0 | PublicBench completo |
-| F5 | uso diario desde terminal (TUI), escritorio (Linux y Windows), web, móvil e IDE | paquetes de escritorio instalables en Linux y Windows; la misma sesión se abre en la TUI y en el escritorio; aprobación resuelta desde el móvil |
-| F6 | skills aprendidas sin regresiones | regresión nocturna verde 7 días |
-| F7 | release firmada y red teaming superado | checklist de F7.03 |
-| F9 | uso diario en un equipo de 2 núcleos y 4 GB: IDE nativo, LSP acotado y trabajo remoto por SSH | `rendimiento.py medir` y `medir-ide` dentro del presupuesto (demonio < 60 MB, IDE < 120 MB); `pcode remoto --instalar` contra un servidor real; release con `pcode-ide` |
+| **1.2** | lo empezado, cerrado: IDE nativo pulido, depurador, remoto desde el IDE, modo opencode | `rendimiento.py medir` y `medir-ide` dentro del presupuesto; depurar un script de Python desde el IDE; release 1.2.0 |
+| **1.3** | agente al nivel de los mejores: hooks, lista de pendientes, segundo plano, permisos persistentes, órdenes y agentes propios, coste, TUI completa | las evals de reglas e inyección siguen en verde; una sesión real usa hooks, pendientes y subagentes |
+| **1.4** | planificación y flujos medidos: PublicBench, `pcode bench`, lint y desglose de tareas, revisión cruzada, flujos en el demonio | línea base medida con opencode; `pcode flow comprobar` valida este mismo plan |
+| **1.5** | seguridad: Landlock, seccomp, red filtrada, secretos, política gestionada, llavero | red teaming de skills superado; ningún secreto en auditoría ni transcripciones |
+| **1.6** | Studio e IDE completos: plegado, vista dividida, LSP (formato, completado, renombrar), git completo, tests, depurador | una semana de trabajo sin abrir VS Code |
+| **1.7** | contexto, memoria y aprendizaje: compactación con prefijo estable, facetas, búsqueda híbrida, router, skills aprendidas | +12 puntos de aceptación a la primera y −30 % de tokens en PublicBench |
+| **1.8** | plataformas e integraciones: instaladores nativos, ARM64, APK con avisos y TLS, ACP, extensiones, servidor MCP, GitHub | paquetes instalables; la misma tarea desde un editor con ACP |
+| **despues** | esbozos sin desgranar | — |
 
 ## Cómo cambiar el plan
 
-1. Edita `tareas/plan.toml`. Nunca toques los `tareas/*.md` a mano.
-2. Regenera:
+1. Edita `tareas/plan/F<n>.toml` (o `tareas/plan.toml` para fases e hitos) siguiendo
+   [tareas-guia.md](tareas-guia.md). Nunca toques los `tareas/*.md` a mano.
+2. Un borrador se valida sin escribir nada: `tools/tareas/generar.py --lint borrador.toml`.
+3. Regenera:
 
 ```bash
 tools/tareas/generar.py
 ```
 
-3. La CI comprueba que todo está al día:
+4. La CI comprueba que todo es válido y está al día:
 
 ```bash
 tools/tareas/generar.py --comprobar
 ```
 
+## Estado del plan
+
+<!-- resumen:inicio (generado por tools/tareas/generar.py; no editar a mano) -->
+<!-- resumen:fin -->
+
 ## Tabla de tareas
 
-El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.md`.
+El estado se calcula solo (ver «Estados»).
 
 <!-- tabla:inicio (generado por tools/tareas/generar.py; no editar a mano) -->
 ### F0

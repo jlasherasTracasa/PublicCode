@@ -23,15 +23,19 @@ por tarea y nada de pegamento escrito a mano alrededor.
 * Skills (formato único exportado a cada agente) y tools propias (nativas, MCP y WASM).
 * Contexto, memoria y caché pensados para modelos pequeños.
 * Evaluación continua (PublicBench) y telemetría.
-* Interfaces sobre un demonio único: **terminal** (CLI para scripts y TUI interactiva), **aplicación
-  de escritorio** (Tauri 2 en Linux y Windows), **web**, **PWA móvil** de aprobaciones,
-  **IDE** (ACP, VS Code y MCP) y **GitHub** ([interfaces.md](interfaces.md)).
+* Interfaces: **terminal** (CLI para scripts y TUI interactiva, con el agente en proceso), **Studio**
+  (editor web servido por el demonio), **IDE nativo** ligero (`pcode-ide`, egui), **APK de Android**,
+  **editores** por ACP y MCP, y **GitHub** ([interfaces.md](interfaces.md), [ligero.md](ligero.md)).
+* Planificación para modelos pequeños: lint de tareas, desglose asistido y tablero de estado, primero
+  como herramienta del repo (`tools/tareas/generar.py`) y después como parte del producto (`pcode flow`).
 
 **Fuera (no-objetivos)**
 
 * Entrenar modelos propios. Se dejan trazas listas para hacerlo (F6.05), nada más.
-* Un IDE propio (la app de escritorio es un centro de control de agentes, no un editor: abre los
-  archivos en tu editor).
+* Una aplicación de escritorio con webview (Tauri) y una tercera interfaz en React: las sustituyen
+  Studio y el IDE nativo, que caben en un equipo de 4 GB (ADR-0011). Las tareas F5.12–F5.23 quedan
+  cerradas como sustituidas o descartadas.
+* Ejecutar extensiones de VS Code: solo se lee lo declarativo (temas, fragmentos, lenguajes; ADR-0012).
 * Reimplementar los 75+ proveedores de opencode: LiteLLM ya lo hace; aquí van nativos solo
   OpenAI-compatible, Anthropic y Gemini.
 * Un servicio en la nube. PublicCode es local-first: un demonio en tu máquina o en tu servidor.
@@ -75,6 +79,13 @@ coordinando y agentes (Haiku 5.5 o GLM) implementando.
 | **F6** Aprendizaje | 3 | destilador de skills, puerta de regresión, gobierno, regresión nocturna, calidad de trayectorias | skills aprendidas sin regresiones |
 | **F7** Endurecimiento | 2 | red teaming de skills y tools, evals de inyección y envenenamiento, release firmada | release 1.0 |
 | **F8** 1.x: crecer | continua | editor (plegado, multicursor, vista dividida, vista previa), LSP completo (formato, completado, renombrar, tools para el agente), git (blame, ramas, conflictos), depurador DAP y explorador de tests, agente (deshacer, órdenes y agentes propios, coste, memoria, web, imágenes, modelos locales, exportar), TUI (selectores, diff del turno, ratón), plataforma (winget/msi/deb/rpm, ARM64, notificaciones y TLS para el APK, varios proyectos), extensiones, GitHub, rendimiento, accesibilidad e idiomas | sustituir del todo a VS Code y opencode en el día a día |
+| **F9** Equipos modestos | hecha en su mayor parte | `[recursos]`, LSP acotado, `pcode remoto` por SSH, IDE nativo, depurador DAP, extensiones declarativas | uso diario en 2 núcleos y 4 GB |
+| **F10** Agente al nivel de los mejores | 3–4 | hooks del usuario, lista de pendientes, órdenes en segundo plano, permisos persistentes, modelo de respaldo, `pcode init`, notebooks, MCP remoto, sesiones bifurcables, estadísticas; órdenes y ergonomía de la TUI | nada que envidiar a Claude Code u opencode en el día a día |
+| **F11** Planificación y flujos | 2–3 | `pcode flow comprobar/siguiente/estado/desglosar`, `toca` impuesto por el motor, flujos reanudables con presupuesto e informe, acción de GitHub | el producto planifica para modelos pequeños igual que este repo |
+| **F12** Seguridad, gobierno y operación | 2 | detector y censura de secretos, política gestionada, verificación de la auditoría, modo sin red | apto para un equipo con política central |
+
+Las fases agrupan por tema. **El orden de trabajo lo dan los hitos** (sección 5.3): cada tarea abierta
+pertenece a uno y `tools/tareas/generar.py --siguiente` ofrece primero las del hito más temprano.
 
 Total: unas 26–30 semanas (F5 se solapa con F3–F4). Si se usan varios agentes en paralelo (tareas independientes en
 mini sandboxes), la F1 y la F2 pueden comprimirse a la mitad.
@@ -100,10 +111,9 @@ todos los días, probado y documentado. Lo demás va a la 1.x (F8) sin bloquearl
 
 | Queda para la 1.x | Por qué no bloquea |
 |---|---|
-| App de escritorio Tauri, UI React común (F5.12–F5.21) | Studio ya cubre la interfaz gráfica en el navegador |
-| Landlock, seccomp y proxy de red (F2.04, F2.05, F2.19, F2.20) | N1 ya aísla disco y red; esto lo endurece |
-| Memoria, router y contexto avanzados (F4), aprendizaje de skills (F6) | mejoran resultados, no habilitan el uso |
-| El resto de F8 | crecimiento continuo |
+| Landlock, seccomp y proxy de red (F2.04, F2.05, F2.19, F2.20) | N1 ya aísla disco y red; esto lo endurece (hito 1.5) |
+| Memoria, router y contexto avanzados (F4), aprendizaje de skills (F6) | mejoran resultados, no habilitan el uso (hito 1.7) |
+| El resto de F8 | crecimiento continuo (hitos 1.3, 1.6 y 1.8) |
 
 ## 5.2 La 1.1: un agente que localiza, pregunta, recuerda y comprueba
 
@@ -121,6 +131,29 @@ Todo vive en el núcleo, así que llega a la vez a la TUI, el chat, Studio y el 
 
 Siguientes candidatos, por orden: la tool `contexto` (F4.01), las tools del LSP para el agente (F8.09), la búsqueda de
 tools cuando hay muchas (F4.10) y la revisión por archivo en la TUI (F8.25).
+
+## 5.3 Hoja de ruta: hitos de la 1.2 a la 1.8
+
+El estado real del código se auditó el 11 nov 2026 tarea a tarea. De ahí salieron tres correcciones: las
+tareas de F9 hechas sin informe se verificaron con su aceptación y ya constan como hechas; las de F5 que
+Studio, la TUI local o el IDE nativo hacían innecesarias se cerraron como sustituidas; y **todas las
+abiertas se reescribieron** para que un modelo pequeño pueda ejecutarlas (pasos, firmas reales, ejemplo,
+tests descritos), partiendo las grandes en subtareas. Los números al día están en
+[implementacion.md](implementacion.md#estado-del-plan).
+
+| Hito | Qué entrega | Fases que toca |
+|---|---|---|
+| **1.2** | Cerrar lo empezado: pulido del IDE nativo, depurador en el demonio y en el IDE, conectar a servidores desde el IDE, Open VSX, modo opencode, release 1.2.0 | F9, F8 |
+| **1.3** | Agente al nivel de los mejores: hooks, pendientes, segundo plano, permisos persistentes, respaldo de modelo, órdenes y agentes propios, coste, tool `web`, imágenes, tools del LSP, TUI completa | F10, F8, F4, F5 |
+| **1.4** | Planificación y flujos medidos: PublicBench y `pcode bench`, lint y desglose de tareas en `pcode flow`, revisión cruzada, planificador, flujos en el demonio y en Studio | F0, F3, F11, F5 |
+| **1.5** | Seguridad: Landlock, seccomp, proxy de salida y red filtrada, red teaming de skills, secretos, política gestionada, llavero | F2, F7, F12, F5 |
+| **1.6** | Studio e IDE completos: módulos y tests de Studio, plegado, vista dividida, vista previa, formato, completado, renombrar, blame, ramas, conflictos, tests, depurador, accesibilidad, idiomas | F8, F9 |
+| **1.7** | Contexto, memoria y aprendizaje: compactación con prefijo estable, facetas, tree-sitter, búsqueda híbrida, contexto por rol, router, memoria episódica, destilador y gobierno de skills | F4, F6 |
+| **1.8** | Plataformas e integraciones: instaladores nativos, ARM64, avisos y TLS en la APK, ACP, WSL, extensiones con manifiesto, servidor MCP, PR y checks de GitHub | F8, F5, F2 |
+
+Cómo se trabaja cada hito: `tools/tareas/generar.py --siguiente` da las tareas listas; cada una se ejecuta
+con la skill `tarea-haiku` en una mini sandbox; al aceptar, informe, commit y push. El coordinador solo
+interviene en las tareas marcadas `coordinador`, que dicen por qué.
 
 ## 6. Métricas de éxito
 
@@ -150,7 +183,10 @@ objetivos son mejoras sobre ella:
 | Haiku se sale del guion (toca archivos de más) | media | bajo | eval de reglas (F0.06), `toca` en cada tarea y revisión de la integración |
 | Diferencias entre webviews (WebKitGTK y WebView2) | media | medio | CI de empaquetado con prueba de humo en Linux y Windows (F5.21); UI sin APIs exóticas |
 | Dos pilas (Rust y TypeScript) | alta | bajo | AGENTS.md fija convenciones y comprobaciones por área; tipos de la API generados desde Rust (`ts-rs`) |
-| Dependencia de un solo coordinador humano | media | medio | tareas `coordinador` mínimas (3 en F0–F1); el resto, autónomas |
+| Dependencia de un solo coordinador humano | media | medio | las tareas `coordinador` abiertas justifican por qué lo son (`motivo_coordinador`); el resto, autónomas |
+| El plan se desfasa del código (tareas hechas sin informe, rutas que ya no existen) | alta | medio | `generar.py` rechaza contextos que citan rutas inexistentes; auditoría del estado al cerrar cada hito; una tarea solo está hecha con informe |
+| Tareas demasiado abiertas para el modelo pequeño | alta | alto | lint de calidad en la CI ([tareas-guia.md](tareas-guia.md)); las grandes se parten en subtareas de lógica pura y de cableado |
+| Tres interfaces gráficas que mantener | media | medio | decidido: Studio (web) e IDE nativo; Tauri y React fuera (sección 2) |
 
 ## 8. Decisiones abiertas
 
@@ -161,11 +197,12 @@ objetivos son mejoras sobre ella:
 | Repo público | desde F3 | confirmación |
 | Planificador por defecto | Claude Code (Opus) | presupuesto de API |
 | Copilot coding agent | sí, para tareas `aislado` asíncronas | plan de Copilot con coding agent habilitado |
+| Extensión de VS Code (F5.25) | esbozo: antes ACP (F5.24), que sirve a más editores | decidir si compensa mantenerla |
 
-## 9. Primeros pasos (esta semana)
+## 9. Siguientes pasos
 
-1. Coordinador: F0.03 (verificar CLIs) y F0.04 (banco PublicBench y línea base con opencode).
-2. Haiku 5.5: F0.01 → F0.02 → F0.06, y después F1.01, F1.02, F1.08 y F1.19 en paralelo (no dependen
-   entre sí más allá de F0.01).
-3. Revisar el primer informe de Haiku y ajustar el formato de tarea si hace falta, antes de lanzar
-   el resto de F1.
+1. Modelo pequeño: las tareas listas del hito 1.2, en el orden de `tools/tareas/generar.py --siguiente`.
+2. Coordinador: publicar la 1.2.0 (F9.25) y, para abrir el hito 1.4, F0.03 (verificar CLIs) y F0.04
+   (PublicBench y línea base con opencode): sin línea base no se puede demostrar ninguna mejora.
+3. Al cerrar cada hito: auditar el estado real, regenerar el plan y revisar si el formato de tarea
+   necesita ajustes (¿en qué tropieza siempre el modelo pequeño?).

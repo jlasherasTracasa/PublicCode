@@ -9,9 +9,9 @@ Pensada para Claude Haiku 5.5, pero vale para cualquier modelo. Sigue los pasos 
 
 ## 0. Elegir la tarea (solo si no te han dado una)
 
-1. Abre `docs/implementacion.md`, que tiene la tabla de tareas con su estado.
-2. Elige la primera tarea con estado `pendiente` cuyas `depende` estén todas `hecha`
-   (comprueba que existe `informes/<dep>.md` de cada una).
+1. Ejecuta `tools/tareas/generar.py --siguiente 1 --ejecutor haiku`. La última columna es el archivo de la tarea.
+2. Si te han dado una tarea, comprueba que se puede empezar: `tools/tareas/generar.py --tarea <id>` debe decir
+   `estado: lista`. Si dice otra cosa (`bloqueada`, `esbozo`, `sustituida`…), no empieces y dilo.
 
 ## 1. Leer
 
@@ -20,6 +20,9 @@ Pensada para Claude Haiku 5.5, pero vale para cualquier modelo. Sigue los pasos 
   - `toca`: los archivos que puedes tocar (ninguno más);
   - la lista **Firmas** y la lista **Tests**.
 - Lee solo los archivos que cite la tarea en **Contexto**.
+- Si la tarea trae **Ejemplo**, es la referencia: tu código debe dar exactamente esa salida.
+- Si trae **No hagas**, son los errores habituales: no cometas ninguno.
+- Si es una tarea de cierre (lista **Subtareas** y no toca archivos), solo ejecuta `acepta` y escribe el informe.
 
 ## 2. Implementar
 
@@ -84,4 +87,6 @@ Escribe `informes/<id>.md`:
 git add <archivos de toca> informes/<id>.md && git commit -m "<id>: <resumen>"
 ```
 
-Nunca `git add -A`, `git add .`, `stash`, `reset --hard`, `clean`, `rebase` ni `push`.
+Después, `git push origin HEAD` (nunca forzado; si falla, anótalo en *Pendiente*).
+
+Nunca `git add -A`, `git add .`, `stash`, `reset --hard`, `clean`, `rebase` ni `push --force`.
