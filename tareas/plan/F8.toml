@@ -4967,66 +4967,814 @@ no_hagas = [
 [[tarea]]
 id = "F8.27"
 nombre = "instaladores-nativos"
-titulo = "Instaladores nativos: winget, .msi, .deb y .rpm"
+titulo = "Instaladores nativos: winget, .msi, .deb y .rpm (cierre)"
 fase = "F8"
-ejecutor = "coordinador"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
 depende = ["F7.03"]
-toca = [".github/workflows/release.yml", "packaging/winget/", "packaging/linux/", "docs/usuario.md"]
-acepta = "test -d packaging/winget && test -d packaging/linux"
-contexto = ["install.ps1", "install.sh"]
+toca = []
+acepta = "python3 -m unittest packaging/linux/test_empaquetar.py packaging/winget/test_manifiesto.py packaging/windows/test_wxs.py && grep -q 'empaquetar.py' .github/workflows/release.yml"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-Manifiesto de winget (`winget install PublicCode.pcode`), .msi con WiX en la release, .deb y .rpm con `pcode` en
-`/usr/bin`; todos verificados en la CI con instalación limpia.
+1. Ejecuta `acepta`: pasan los tests de los tres generadores y la release los usa.
+2. Comprueba que existen los informes de F8.27a, F8.27b, F8.27c y F8.27d (esta última la hace el coordinador).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["(CI) instalar y ejecutar pcode --version en cada formato"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.27a"
+nombre = "paquetes-deb-rpm"
+titulo = "Linux: generador del paquete .deb y de la especificación .rpm a partir de los binarios compilados"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F7.03"]
+toca = ["packaging/linux/empaquetar.py", "packaging/linux/test_empaquetar.py"]
+acepta = "python3 -m unittest packaging/linux/test_empaquetar.py -v"
+lenguaje = "python"
+contexto = [
+  "packaging/linux/pcode.desktop (entrada del menú que se instala en /usr/share/applications; `packaging/linux/pcode.svg` es el icono)",
+  "tools/bench/test_rendimiento.py (cabecera: cómo un test importa el módulo de su misma carpeta con `sys.path.insert`)",
+]
+objetivo = '''
+1. Crea `empaquetar.py` (ejecutable, `#!/usr/bin/env python3`, solo biblioteca estándar, `argparse`, docstring de
+   uso) con las funciones de *Firmas*, y `test_empaquetar.py` con `unittest`.
+2. `arquitectura(maquina)`: `x86_64` o `amd64` → `("amd64", "x86_64")`; `aarch64` o `arm64` → `("arm64",
+   "aarch64")` (nombre para .deb, nombre para .rpm). Otra cosa: `ValueError`.
+3. `control_deb(version, arch_deb)`: el texto exacto del *Ejemplo* (acaba en salto de línea).
+4. `arbol(bin_dir, destino)`: crea en `destino` el árbol del paquete y devuelve la lista ordenada de rutas
+   relativas creadas: `usr/bin/pcode` (obligatorio: si no existe `bin_dir/pcode`, `FileNotFoundError`),
+   `usr/bin/pcode-ide` (solo si existe en `bin_dir`), `usr/share/applications/pcode.desktop` y
+   `usr/share/icons/hicolor/scalable/apps/pcode.svg` (copiados de la carpeta de este script). Binarios con modo
+   `0o755`; el resto `0o644`.
+5. `spec_rpm(version, arch_rpm, arbol_dir, archivos)`: el texto del *Ejemplo*, con una línea por archivo en
+   `%files` (cada ruta con `/` delante).
+6. `construir_deb(bin_dir, version, arch_deb, salida)`: crea un directorio temporal, llama a `arbol`, escribe
+   `DEBIAN/control` y, si `shutil.which("dpkg-deb")` existe, ejecuta
+   `dpkg-deb --build --root-owner-group <árbol> <salida>/pcode_<version>_<arch_deb>.deb` (con `timeout=120`) y
+   devuelve esa ruta. Si no hay `dpkg-deb`, devuelve `None`.
+7. `construir_rpm(bin_dir, version, arch_rpm, salida)`: llama a `arbol`, escribe `pcode.spec` con `spec_rpm` y, si
+   existe `rpmbuild`, ejecuta `rpmbuild -bb --target <arch_rpm> --define "_rpmdir <salida>" pcode.spec` (con
+   `timeout=300`) y devuelve `salida`; si no hay `rpmbuild`, devuelve `None`.
+8. `main(argv)`: `empaquetar.py {deb|rpm} --bin-dir DIR --version X.Y.Z [--maquina x86_64] --salida DIR`. Imprime la
+   ruta creada y sale con 0; si falta la herramienta, imprime `falta dpkg-deb` (o `falta rpmbuild`) y sale con 3.
+'''
+firmas = '''
+# packaging/linux/empaquetar.py
+def arquitectura(maquina):
+    """(arquitectura para .deb, arquitectura para .rpm) de un `uname -m`."""
+def control_deb(version, arch_deb):
+    """Texto de DEBIAN/control."""
+def arbol(bin_dir, destino):
+    """Crea el árbol de archivos del paquete en `destino`; devuelve las rutas relativas creadas, ordenadas."""
+def spec_rpm(version, arch_rpm, arbol_dir, archivos):
+    """Texto del .spec de rpmbuild que empaqueta `arbol_dir` tal cual."""
+def construir_deb(bin_dir, version, arch_deb, salida):
+    """Construye el .deb con dpkg-deb; devuelve su ruta o None si no hay dpkg-deb."""
+def construir_rpm(bin_dir, version, arch_rpm, salida):
+    """Construye el .rpm con rpmbuild; devuelve la carpeta de salida o None si no hay rpmbuild."""
+def main(argv=None):
+    """Punto de entrada; devuelve el código de salida."""
+'''
+ejemplo = '''
+control_deb("1.2.0", "amd64") ->
+Package: pcode
+Version: 1.2.0
+Architecture: amd64
+Maintainer: PublicCode <noreply@publiccode.dev>
+Section: devel
+Priority: optional
+Description: PublicCode: programacion agentica con varios agentes
+ CLI, TUI e IDE ligero que orquestan agentes de codigo con mini sandboxes.
+
+spec_rpm("1.2.0", "x86_64", "/tmp/a", ["usr/bin/pcode"]) ->
+Name: pcode
+Version: 1.2.0
+Release: 1
+Summary: PublicCode: programacion agentica con varios agentes
+License: Apache-2.0
+BuildArch: x86_64
+AutoReqProv: no
+
+%description
+CLI, TUI e IDE ligero que orquestan agentes de codigo con mini sandboxes.
+
+%install
+mkdir -p %{buildroot}
+cp -a /tmp/a/usr %{buildroot}/
+
+%files
+/usr/bin/pcode
+'''
+tests = [
+  "test_arquitectura: x86_64 da (amd64, x86_64), arm64 da (arm64, aarch64) y «mips» lanza ValueError",
+  "test_control_deb: el texto para 1.2.0 y amd64 es exactamente el del ejemplo",
+  "test_arbol_con_y_sin_ide: con un bin_dir temporal que solo tiene pcode, arbol crea usr/bin/pcode ejecutable, el .desktop y el icono; al añadir pcode-ide aparece usr/bin/pcode-ide",
+  "test_arbol_sin_pcode_falla: un bin_dir vacío lanza FileNotFoundError",
+  "test_spec_rpm_lista_los_archivos: el spec contiene «BuildArch: x86_64» y una línea «/usr/bin/pcode» en %files",
+  "test_construir_deb_si_hay_dpkg: si shutil.which(«dpkg-deb») existe, el .deb se crea y pesa más de 0 bytes; si no existe, el test se salta con skipTest",
+]
+no_hagas = [
+  "No uses paquetes de fuera de la biblioteca estándar",
+  "No escribas fuera de los directorios temporales y de `--salida`",
+  "No toques `.github/workflows/release.yml`: lo conecta el coordinador en F8.27d",
+  "No ejecutes `sudo` ni instales el paquete",
+]
+
+[[tarea]]
+id = "F8.27b"
+nombre = "manifiesto-winget"
+titulo = "Windows: generador de los manifiestos de winget (PublicCode.pcode) a partir de la versión y la suma SHA-256"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F7.03"]
+toca = ["packaging/winget/manifiesto.py", "packaging/winget/test_manifiesto.py"]
+acepta = "python3 -m unittest packaging/winget/test_manifiesto.py -v"
+lenguaje = "python"
+contexto = [
+  ".github/workflows/release.yml (paso «Empaquetar (Windows)»: el zip se llama `pcode-<etiqueta>-x86_64-pc-windows-msvc.zip` y dentro hay una carpeta con ese mismo nombre que contiene `pcode.exe`)",
+  "tools/bench/test_rendimiento.py (cabecera: cómo un test importa el módulo de su misma carpeta con `sys.path.insert`)",
+]
+objetivo = '''
+1. Crea `manifiesto.py` (ejecutable, `#!/usr/bin/env python3`, solo biblioteca estándar, `argparse`, docstring de
+   uso) y `test_manifiesto.py`. winget instala el `.zip` que ya publica la release como aplicación portátil: no hace
+   falta un instalador.
+2. `url_zip(repo, version)`:
+   `https://github.com/<repo>/releases/download/v<version>/pcode-v<version>-x86_64-pc-windows-msvc.zip`.
+3. `manifiestos(version, sha256, repo)`: devuelve un diccionario `{nombre de archivo: texto}` con los tres archivos
+   del *Ejemplo*, sustituyendo versión, URL y suma. La suma va en MAYÚSCULAS. Si `version` no tiene la forma
+   `N.N.N` o `sha256` no son 64 cifras hexadecimales, `ValueError`.
+4. `main(argv)`: `manifiesto.py --version X.Y.Z --sha256 HEX --salida DIR [--repo dueño/nombre]` (por defecto
+   `jlasherasTracasa/PublicCode`). Escribe los tres archivos en `DIR/manifests/p/PublicCode/pcode/<version>/` (crea
+   las carpetas), imprime esa ruta y sale con 0. Con datos no válidos imprime el error y sale con 2.
+'''
+firmas = '''
+# packaging/winget/manifiesto.py
+ID = "PublicCode.pcode"
+def url_zip(repo, version):
+    """URL del zip de Windows de una release."""
+def manifiestos(version, sha256, repo="jlasherasTracasa/PublicCode"):
+    """{nombre de archivo: texto YAML} de los tres manifiestos de winget (esquema 1.6.0)."""
+def main(argv=None):
+    """Punto de entrada; devuelve el código de salida."""
+'''
+ejemplo = '''
+manifiestos("1.2.0", "ab" * 32) devuelve estas tres entradas:
+
+"PublicCode.pcode.yaml":
+PackageIdentifier: PublicCode.pcode
+PackageVersion: 1.2.0
+DefaultLocale: es-ES
+ManifestType: version
+ManifestVersion: 1.6.0
+
+"PublicCode.pcode.installer.yaml":
+PackageIdentifier: PublicCode.pcode
+PackageVersion: 1.2.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: pcode-v1.2.0-x86_64-pc-windows-msvc\pcode.exe
+  PortableCommandAlias: pcode
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/jlasherasTracasa/PublicCode/releases/download/v1.2.0/pcode-v1.2.0-x86_64-pc-windows-msvc.zip
+  InstallerSha256: ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB
+ManifestType: installer
+ManifestVersion: 1.6.0
+
+"PublicCode.pcode.locale.es-ES.yaml":
+PackageIdentifier: PublicCode.pcode
+PackageVersion: 1.2.0
+PackageLocale: es-ES
+Publisher: PublicCode
+PackageName: pcode
+License: Apache-2.0
+ShortDescription: Plataforma de programación agéntica que orquesta varios agentes de código.
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
+
+'''
+tests = [
+  "test_url_del_zip: url_zip(«a/b», «1.2.0») acaba en /a/b/releases/download/v1.2.0/pcode-v1.2.0-x86_64-pc-windows-msvc.zip",
+  "test_tres_manifiestos: manifiestos devuelve exactamente los tres nombres de archivo del ejemplo y los tres contienen «PackageVersion: 1.2.0»",
+  "test_suma_en_mayusculas: con una suma en minúsculas, el manifiesto del instalador la lleva en mayúsculas",
+  "test_datos_no_validos: la versión «1.2» y una suma de 10 caracteres lanzan ValueError",
+  "test_main_escribe_los_archivos: main con --salida a un directorio temporal crea manifests/p/PublicCode/pcode/1.2.0/ con tres archivos y devuelve 0",
+]
+no_hagas = [
+  "No uses una biblioteca de YAML: el texto se escribe con plantillas de cadena",
+  "No hagas ninguna petición de red (ni a GitHub ni a winget)",
+  "No envíes el manifiesto a `microsoft/winget-pkgs`: eso lo hace el coordinador en F8.27d",
+]
+
+[[tarea]]
+id = "F8.27c"
+nombre = "fuente-msi"
+titulo = "Windows: generador de la fuente WiX (.wxs) del instalador .msi"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F7.03"]
+toca = ["packaging/windows/wxs.py", "packaging/windows/test_wxs.py"]
+acepta = "python3 -m unittest packaging/windows/test_wxs.py -v"
+lenguaje = "python"
+contexto = [
+  ".github/workflows/release.yml (paso «Empaquetar (Windows)»: los binarios son `pcode.exe` y `pcode-ide.exe` en `target/<target>/release/`)",
+  "tools/bench/test_rendimiento.py (cabecera: cómo un test importa el módulo de su misma carpeta con `sys.path.insert`)",
+]
+objetivo = '''
+1. Crea `wxs.py` (ejecutable, `#!/usr/bin/env python3`, solo biblioteca estándar, `argparse`, docstring de uso) y
+   `test_wxs.py`. El `.msi` lo construye después `wix build` en la CI (F8.27d); aquí solo se genera su fuente.
+2. `wxs(version, bin_dir, con_ide)`: devuelve el XML del *Ejemplo* con la versión y la carpeta sustituidas. Si
+   `con_ide` es `False`, no aparece la línea `<File Source="…pcode-ide.exe" />`. La versión debe tener la forma
+   `N.N.N`; si no, `ValueError`. `UPGRADE_CODE` es una constante fija: no puede cambiar nunca entre versiones.
+3. `main(argv)`: `wxs.py --version X.Y.Z --bin-dir DIR --salida pcode.wxs`. `con_ide` es `True` si existe
+   `DIR/pcode-ide.exe`. Escribe el archivo en UTF-8, imprime su ruta y sale con 0; con una versión no válida, sale
+   con 2.
+'''
+firmas = '''
+# packaging/windows/wxs.py
+UPGRADE_CODE = "6F1E2B7A-3C4D-4E5F-9A8B-0C1D2E3F4A5B"   # fijo para siempre: identifica el producto al actualizar
+def wxs(version, bin_dir, con_ide=True):
+    """Fuente WiX v4 del instalador .msi: pcode.exe (y pcode-ide.exe) en Archivos de programa y en el PATH."""
+def main(argv=None):
+    """Punto de entrada; devuelve el código de salida."""
+'''
+ejemplo = '''
+wxs("1.2.0", "C:/b") ->
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="PublicCode" Manufacturer="PublicCode" Version="1.2.0" UpgradeCode="6F1E2B7A-3C4D-4E5F-9A8B-0C1D2E3F4A5B" Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="Ya hay instalada una versión más nueva de PublicCode." />
+    <MediaTemplate EmbedCab="yes" />
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="PublicCode">
+        <Component Id="Binarios" Guid="*">
+          <File Source="C:/b/pcode.exe" KeyPath="yes" />
+          <File Source="C:/b/pcode-ide.exe" />
+          <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" Permanent="no" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Principal">
+      <ComponentRef Id="Binarios" />
+    </Feature>
+  </Package>
+</Wix>
+'''
+tests = [
+  "test_xml_bien_formado: xml.etree.ElementTree.fromstring del resultado (codificado en UTF-8) no lanza y la raíz se llama Wix en el espacio de nombres de WiX v4",
+  "test_version_y_upgrade_code: el elemento Package lleva Version = 1.2.0 y UpgradeCode = wxs.UPGRADE_CODE",
+  "test_con_y_sin_ide: con_ide=True da dos elementos File; con_ide=False da uno, el de pcode.exe",
+  "test_anade_al_path: hay un elemento Environment con Name = PATH y Part = last",
+  "test_version_no_valida: wxs(«1.2», «C:/b») lanza ValueError",
+]
+no_hagas = [
+  "No cambies `UPGRADE_CODE`: si cambia, Windows deja de reconocer las actualizaciones",
+  "No intentes ejecutar `wix` ni `candle`: no están en Linux",
+  "No uses paquetes de fuera de la biblioteca estándar",
+]
+
+[[tarea]]
+id = "F8.27d"
+nombre = "instaladores-en-la-release"
+titulo = "Release: construir .deb, .rpm y .msi, probar su instalación en la CI y publicar en winget"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "coordinador"
+motivo_coordinador = "Solo se puede comprobar publicando una release real (runners de GitHub con dpkg, rpmbuild y WiX) y enviar el manifiesto a winget exige una cuenta de GitHub que abra el PR en microsoft/winget-pkgs en nombre del proyecto"
+depende = ["F8.27a", "F8.27b", "F8.27c"]
+toca = [".github/workflows/release.yml", "docs/usuario.md"]
+acepta = "grep -q 'empaquetar.py' .github/workflows/release.yml && grep -q 'wxs.py' .github/workflows/release.yml && grep -q winget docs/usuario.md"
+contexto = [
+  ".github/workflows/release.yml (jobs `build`, `publish` y `verify-install`)",
+  "packaging/linux/empaquetar.py (lo crea F8.27a: `empaquetar.py deb|rpm --bin-dir DIR --version X.Y.Z --salida DIR`)",
+  "packaging/winget/manifiesto.py (lo crea F8.27b) y packaging/windows/wxs.py (lo crea F8.27c)",
+]
+objetivo = '''
+1. `release.yml`, job `build`, Linux: tras «Empaquetar (Linux)», instala `rpm` (`sudo apt-get install -y rpm`) y
+   ejecuta `python3 packaging/linux/empaquetar.py deb …` y `… rpm …` con `--bin-dir target/<target>/release`,
+   `--version ${TAG#v}` y `--salida .`; renombra a `pcode-$TAG-<arch>.deb` y `.rpm` y añádelos al artefacto.
+2. `release.yml`, job `build`, Windows: `dotnet tool install --global wix`, `python packaging/windows/wxs.py …` y
+   `wix build pcode.wxs -o pcode-$TAG-x86_64.msi`; añádelo al artefacto.
+3. `release.yml`, job `verify-install`: en Linux, `sudo dpkg -i` del `.deb` descargado y `pcode --version`; en
+   Windows, `msiexec /i … /qn` y `pcode --version` en una consola nueva.
+4. Publica una release de prueba (etiqueta de parche) y comprueba que los cuatro pasos pasan.
+5. Genera el manifiesto con `packaging/winget/manifiesto.py --version … --sha256 <suma del zip en SHA256SUMS>` y abre
+   el PR en `microsoft/winget-pkgs`. Cuando lo acepten, comprueba `winget install PublicCode.pcode`.
+6. `docs/usuario.md`: sección de instalación con las cuatro vías (winget, .msi, .deb, .rpm) además de los scripts.
+'''
+tests = ["(CI) instalar y ejecutar `pcode --version` con el .deb y con el .msi en el job verify-install"]
 
 [[tarea]]
 id = "F8.28"
 nombre = "arm64"
-titulo = "Binarios para Linux aarch64 y Windows ARM64"
+titulo = "Binarios para Linux aarch64 y Windows ARM64 (cierre)"
 fase = "F8"
-ejecutor = "coordinador"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
 depende = ["F7.03"]
-toca = [".github/workflows/release.yml", ".github/workflows/ci.yml", "crates/pcode-cli/src/update.rs"]
-acepta = "grep -q aarch64-unknown-linux-gnu .github/workflows/release.yml && cargo test -p pcode-cli update"
-contexto = ["crates/pcode-cli/src/update.rs (asset_suffix)"]
+toca = []
+acepta = "grep -q aarch64-unknown-linux-gnu .github/workflows/release.yml && cargo test -p pcode-cli update::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-Compilar en runners ARM (o cruzado), añadir los archivos a la release y a `SHA256SUMS`, y que `pcode actualizar` e
-`install.sh`/`install.ps1` elijan el de la arquitectura.
+1. Ejecuta `acepta`: la release compila para ARM64 y `pcode actualizar` sabe elegir ese archivo.
+2. Comprueba que existen los informes de F8.28a y F8.28b (esta última la hace el coordinador).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["asset_suffix_para_aarch64_y_arm64"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.28a"
+nombre = "arm64-eleccion-de-archivo"
+titulo = "ARM64: que `pcode actualizar`, install.sh e install.ps1 elijan el archivo de la arquitectura"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F7.03"]
+toca = ["crates/pcode-cli/src/update.rs", "install.sh", "install.ps1"]
+acepta = "cargo test -p pcode-cli update:: && sh -n install.sh && grep -q 'aarch64|arm64)' install.sh && grep -q ARM64 install.ps1"
+contexto = [
+  "crates/pcode-cli/src/update.rs (función `asset_suffix` y su test `elige_el_archivo_de_la_plataforma`)",
+  "install.sh (el `case \"$(uname -m)\"` y la línea `name=\"pcode-$tag-x86_64-unknown-linux-gnu.tar.gz\"`)",
+  "install.ps1 (la línea `$name = \"pcode-$Version-x86_64-pc-windows-msvc.zip\"`)",
+]
+objetivo = '''
+1. `update.rs`, `asset_suffix`: añade dos casos: `("linux", "aarch64")` →
+   `"-aarch64-unknown-linux-gnu.tar.gz"` y `("windows", "aarch64")` → `"-aarch64-pc-windows-msvc.zip"`. Lo demás
+   (por ejemplo macOS) sigue dando `None`. Añade el test `asset_suffix_para_aarch64_y_arm64`.
+2. `install.sh`: el `case "$(uname -m)"` pasa a fijar una variable: `x86_64|amd64) arch=x86_64;;` y
+   `aarch64|arm64) arch=aarch64;;`; el caso `*)` sigue dando el mismo error. La línea del nombre pasa a
+   `name="pcode-$tag-$arch-unknown-linux-gnu.tar.gz"`. Cambia el comentario de la línea 2 a
+   `# Instala o actualiza pcode en Linux (x86_64 y aarch64), por usuario y sin sudo.`
+3. `install.ps1`: justo antes de la línea de `$name`, añade
+   `$arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "aarch64" } else { "x86_64" }` y cambia el nombre a
+   `$name = "pcode-$Version-$arch-pc-windows-msvc.zip"`.
+'''
+firmas = '''
+// crates/pcode-cli/src/update.rs (la firma no cambia)
+/// Sufijo del archivo de la release para esta plataforma.
+pub fn asset_suffix(os: &str, arch: &str) -> Option<&'static str>;
+'''
+ejemplo = '''
+asset_suffix("linux", "aarch64")   -> Some("-aarch64-unknown-linux-gnu.tar.gz")
+asset_suffix("windows", "aarch64") -> Some("-aarch64-pc-windows-msvc.zip")
+asset_suffix("linux", "x86_64")    -> Some("-x86_64-unknown-linux-gnu.tar.gz")   (igual que antes)
+asset_suffix("macos", "aarch64")   -> None
+'''
+tests = [
+  "asset_suffix_para_aarch64_y_arm64: linux y windows con aarch64 dan los dos sufijos del ejemplo; macos con aarch64 y linux con riscv64 dan None",
+]
+no_hagas = [
+  "No toques `.github/workflows/release.yml`: compilar para ARM64 es F8.28b",
+  "No cambies la lógica de sumas SHA-256 ni las rutas de instalación de los scripts",
+  "No cambies el test `elige_el_archivo_de_la_plataforma`",
+]
+notas = '''
+Hasta que F8.28b publique binarios ARM64, en un equipo ARM la descarga dará un 404: es lo esperado; dilo en el informe.
+'''
+
+[[tarea]]
+id = "F8.28b"
+nombre = "arm64-release"
+titulo = "Release: compilar y publicar los binarios de Linux aarch64 y Windows ARM64"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "coordinador"
+motivo_coordinador = "Necesita runners ARM de GitHub Actions (que el plan de la cuenta los ofrezca) y solo se comprueba publicando una release real e instalándola en un equipo ARM64"
+depende = ["F8.28a"]
+toca = [".github/workflows/release.yml", ".github/workflows/ci.yml"]
+acepta = "grep -q aarch64-unknown-linux-gnu .github/workflows/release.yml && grep -q aarch64-pc-windows-msvc .github/workflows/release.yml"
+contexto = [".github/workflows/release.yml (job `build`: la `matrix.include` con `os`, `target` y `exe`)"]
+objetivo = '''
+1. `release.yml`, job `build`, `matrix.include`: añade `{ os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu,
+   exe: pcode }` y `{ os: windows-11-arm, target: aarch64-pc-windows-msvc, exe: pcode.exe }`. Si la cuenta no tiene
+   esos runners, compila cruzado desde x86_64 (`rustup target add` + enlazador `aarch64-linux-gnu-gcc`) y quita la
+   «Prueba de humo» solo para esos dos.
+2. `ci.yml`: un job semanal (no en cada push) que compile `pcode-cli` para `aarch64-unknown-linux-gnu`.
+3. Publica una release de prueba y comprueba que `SHA256SUMS` lista los cuatro archivos y que `install.sh` instala
+   en un equipo aarch64 (una Raspberry Pi o una máquina virtual ARM).
+'''
+tests = ["(CI) la release publica los cuatro archivos y `pcode --version` funciona en el runner ARM"]
 
 [[tarea]]
 id = "F8.29"
 nombre = "notificaciones-apk"
-titulo = "APK: notificaciones cuando el agente pide aprobación o termina"
+titulo = "APK: notificaciones cuando el agente pide aprobación o termina (cierre)"
 fase = "F8"
-ejecutor = "coordinador"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
 depende = ["F5.33"]
-toca = ["apps/android/app/src/main/java/dev/publiccode/app/", "apps/android/app/src/main/AndroidManifest.xml", "crates/pcode-server/src/server.rs"]
-acepta = "gradle -p apps/android -q testDebugUnitTest assembleRelease"
-contexto = ["apps/android/app/src/main/java/dev/publiccode/app/MainActivity.java"]
+toca = []
+acepta = "sh apps/android/probar-jvm.sh EventosTest && grep -q POST_NOTIFICATIONS apps/android/app/src/main/AndroidManifest.xml"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-Servicio en primer plano opcional que escucha `/eventos` y notifica `approvalRequested` y el fin de las sesiones; acciones
-«Permitir»/«Denegar» en la propia notificación; permiso `POST_NOTIFICATIONS` pedido al activarlo.
+1. Ejecuta `acepta`: pasan los tests de la lógica pura y el manifiesto pide el permiso de notificaciones.
+2. Comprueba que existen los informes de F8.29a y F8.29b (esta última la hace el coordinador).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["(JUnit) parser de eventos SSE", "(JUnit) acciones de la notificación llaman a approvals.decide"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.29a"
+nombre = "apk-eventos-nucleo"
+titulo = "APK: leer los eventos SSE del demonio y decidir qué se notifica (Java puro, probado en la JVM)"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.33"]
+toca = ["apps/android/app/src/main/java/dev/publiccode/app/Eventos.java", "apps/android/app/src/test/java/dev/publiccode/app/EventosTest.java", "apps/android/probar-jvm.sh"]
+acepta = "sh apps/android/probar-jvm.sh EventosTest && sh apps/android/probar-jvm.sh ConexionTest"
+lenguaje = "java"
+contexto = [
+  "apps/android/app/src/main/java/dev/publiccode/app/Conexion.java (ejemplo de clase de lógica pura, sin `import android`, con Javadoc en español)",
+  "apps/android/app/src/test/java/dev/publiccode/app/ConexionTest.java (ejemplo de test JUnit 4)",
+  "crates/pcode-ide/src/events.rs (`SseParser::line`: la misma lectura de SSE, en Rust, para copiar la lógica)",
+]
+objetivo = '''
+1. Crea `probar-jvm.sh` con el contenido exacto del *Ejemplo* y dale permiso de ejecución (`chmod +x`). Compila las
+   clases de la app que no importan `android` junto con los tests y los ejecuta con JUnit 4 en la JVM, sin el SDK
+   de Android (el SDK no está en los equipos de los agentes; la CI sigue usando gradle).
+2. Crea `Eventos.java` (clase `final`, constructor privado, sin `import android`, sin bibliotecas de JSON) con lo de
+   *Firmas*.
+3. `Eventos.Sse.linea(l)`: quita un `\r` final. Línea vacía: si hay datos acumulados, los devuelve unidos con `\n`
+   y vacía el acumulador; si no hay, devuelve `null`. Línea que empieza por `data:`: acumula lo que sigue (quitando
+   UN espacio inicial si lo hay) y devuelve `null`. Cualquier otra línea (comentarios `:`, `event:`…): `null`.
+4. `Eventos.texto(json, clave)`: busca la PRIMERA aparición de `"clave":` seguida, tras espacios opcionales, de una
+   cadena entre comillas; devuelve su contenido deshaciendo los escapes `\"`, `\\`, `\/`, `\n`, `\t`, `\r` y
+   `\uXXXX`. Si no está o el valor no es una cadena, `null`.
+5. `Eventos.numero(json, clave, porDefecto)`: lo mismo para un entero (cifras con `-` opcional); si no, `porDefecto`.
+6. `Eventos.aviso(json)`: con `tipo = texto(json, "tipo")`:
+   - `approvalRequested` → `new Aviso("aprobacion", numero(json, "id", -1), texto(json, "action"))`
+     (el primer `"id"` del evento es el de la aprobación).
+   - `sessionUpdated` con `texto(json, "state")` igual a `done`, `failed` o `stuck` →
+     `new Aviso("fin", numero(json, "id", -1), estado)`.
+   - cualquier otro caso (incluido `json` nulo) → `null`.
+7. `EventosTest.java` con los tests de la lista.
+'''
+firmas = '''
+// apps/android/app/src/main/java/dev/publiccode/app/Eventos.java
+package dev.publiccode.app;
+
+/** Eventos del demonio (SSE en /eventos): lectura y decisión de qué se notifica. Lógica pura, sin Android. */
+public final class Eventos {
+    /** Acumula líneas SSE y devuelve el contenido de `data:` cuando el evento termina. */
+    public static final class Sse {
+        /** Procesa una línea (sin el salto); devuelve los datos del evento completo o null. */
+        public String linea(String l);
+    }
+    /** Lo que hay que notificar. */
+    public static final class Aviso {
+        /** "aprobacion" o "fin". */
+        public final String tipo;
+        /** Id de la aprobación o de la sesión. */
+        public final long id;
+        /** Acción pendiente o estado final. */
+        public final String texto;
+        public Aviso(String tipo, long id, String texto);
+    }
+    /** Valor de cadena de la primera aparición de la clave, o null. */
+    public static String texto(String json, String clave);
+    /** Valor entero de la primera aparición de la clave, o porDefecto. */
+    public static long numero(String json, String clave, long porDefecto);
+    /** Aviso que corresponde a un evento, o null si no se notifica. */
+    public static Aviso aviso(String json);
+}
+'''
+ejemplo = '''
+#!/usr/bin/env sh
+# Ejecuta en la JVM, sin el SDK de Android, los tests JUnit de las clases puras de la app.
+# Uso: apps/android/probar-jvm.sh NombreDelTest [OtroTest…]
+set -eu
+raiz="$(cd "$(dirname "$0")" && pwd)"
+[ $# -ge 1 ] || { echo "uso: probar-jvm.sh NombreDelTest…" >&2; exit 2; }
+buscar() {
+  for d in ${JUNIT_DIR:-} /opt/gradle*/lib "$HOME"/.gradle/wrapper/dists/*/*/*/lib /usr/share/java; do
+    for f in "$d"/$1; do [ -f "$f" ] && { echo "$f"; return 0; }; done
+  done
+  return 1
+}
+junit="$(buscar 'junit-4*.jar')" && hamcrest="$(buscar 'hamcrest-core*.jar')" || {
+  echo "no se encuentra JUnit 4: pon JUNIT_DIR=<carpeta con junit-4*.jar y hamcrest-core*.jar>" >&2; exit 3; }
+out="$(mktemp -d)"
+trap 'rm -rf "$out"' EXIT
+main="$raiz/app/src/main/java/dev/publiccode/app"
+test="$raiz/app/src/test/java/dev/publiccode/app"
+puras="$(grep -L '^import android' "$main"/*.java)"
+javac -d "$out" -cp "$junit" $puras "$test"/*.java
+clases=""
+for t in "$@"; do clases="$clases dev.publiccode.app.$t"; done
+java -cp "$out:$junit:$hamcrest" org.junit.runner.JUnitCore $clases
+
+Eventos.aviso("{\"tipo\":\"approvalRequested\",\"approval\":{\"id\":3,\"session\":1,\"action\":\"bash: rm x\",\"reason\":\"\"}}")
+   -> Aviso(tipo = "aprobacion", id = 3, texto = "bash: rm x")
+Eventos.aviso("{\"tipo\":\"sessionUpdated\",\"session\":{\"id\":7,\"title\":\"t\",\"state\":\"done\"}}") -> Aviso("fin", 7, "done")
+Eventos.aviso("{\"tipo\":\"sessionUpdated\",\"session\":{\"id\":7,\"state\":\"running\"}}")               -> null
+'''
+tests = [
+  "sseDevuelveLosDatosAlTerminarElEvento: las líneas «data: {\"a\":1}» y «» devuelven null y luego {\"a\":1}; dos líneas data seguidas se unen con un salto",
+  "sseIgnoraComentariosYLineasVaciasSueltas: «: latido», «event: x» y una línea vacía sin datos devuelven null",
+  "textoDeshaceEscapes: de {\"a\":\"l1\\nl2 \\\"x\\\" \\u00f1\"} sale la cadena con salto de línea, comillas y ñ; una clave que no está da null",
+  "numeroLeeEnterosYUsaElValorPorDefecto: de {\"id\": 42} sale 42, de {\"id\":\"x\"} y de una clave ausente sale el valor por defecto",
+  "avisoDeAprobacion: el primer ejemplo da tipo aprobacion, id 3 y texto «bash: rm x»",
+  "avisoDeFinSoloEnEstadosFinales: done, failed y stuck dan aviso de tipo fin; running, waitingApproval y cancelled dan null",
+  "otrosEventosNoAvisan: un evento transcript, la cadena vacía y null dan null",
+]
+no_hagas = [
+  "No importes nada de `android.*` ni de `org.json` en `Eventos.java`: tiene que compilar con `javac` a secas",
+  "No toques `MainActivity.java`, el manifiesto ni `build.gradle`: el servicio de notificaciones es F8.29b",
+  "No añadas dependencias a gradle",
+  "No cambies `Conexion.java` ni `ConexionTest.java`",
+]
+notas = '''
+Los nombres de los tests van en camelCase porque así están los de `ConexionTest.java` (convención de Java del repo).
+'''
+
+[[tarea]]
+id = "F8.29b"
+nombre = "apk-servicio-de-avisos"
+titulo = "APK: servicio en primer plano que escucha /eventos y muestra notificaciones con Permitir y Denegar"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "coordinador"
+motivo_coordinador = "Necesita el SDK de Android para compilar y un teléfono (o emulador) para comprobar el permiso POST_NOTIFICATIONS, el servicio en primer plano y las acciones de la notificación; nada de eso se puede verificar en el equipo de un agente"
+depende = ["F8.29a"]
+toca = ["apps/android/app/src/main/java/dev/publiccode/app/ServicioAvisos.java", "apps/android/app/src/main/java/dev/publiccode/app/MainActivity.java", "apps/android/app/src/main/AndroidManifest.xml"]
+acepta = "grep -q POST_NOTIFICATIONS apps/android/app/src/main/AndroidManifest.xml && grep -q ServicioAvisos apps/android/app/src/main/AndroidManifest.xml"
+contexto = [
+  "apps/android/app/src/main/java/dev/publiccode/app/Eventos.java (lo crea F8.29a: `Eventos.Sse`, `Eventos.aviso`)",
+  "apps/android/app/src/main/java/dev/publiccode/app/MainActivity.java (dónde se guarda el origen del demonio)",
+  "crates/pcode-server/src/server.rs (ruta `/eventos` y método `approvals.decide {id, allowed}`)",
+]
+objetivo = '''
+1. `ServicioAvisos`: servicio en primer plano opcional (interruptor en el formulario de `MainActivity`) que abre
+   `<origen>/eventos` con `HttpURLConnection` y la cookie de la sesión, pasa cada línea a `Eventos.Sse` y, si
+   `Eventos.aviso` devuelve algo, muestra una notificación. Reconexión con espera creciente y tope de 60 s.
+2. Notificación de aprobación: acciones «Permitir» y «Denegar» que llaman a `approvals.decide` por `/rpc`.
+3. `AndroidManifest.xml`: permisos `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE` y `FOREGROUND_SERVICE_DATA_SYNC`, y la
+   declaración del servicio. El permiso se pide al activar el interruptor (Android 13+).
+4. Prueba en un teléfono: aprobación pendiente → notificación → «Permitir» → el agente sigue.
+'''
+tests = ["(manual, en un teléfono) aprobar desde la notificación y recibir el aviso de fin de sesión", "(CI) `gradle -p apps/android testDebugUnitTest lintDebug assembleRelease` sigue pasando"]
 
 [[tarea]]
 id = "F8.30"
 nombre = "tls-qr"
-titulo = "Acceso remoto seguro: TLS autofirmado y emparejamiento por QR"
+titulo = "Acceso remoto seguro: TLS autofirmado y emparejamiento por QR (cierre)"
 fase = "F8"
-ejecutor = "coordinador"
-depende = ["F8.29"]
-toca = ["crates/pcode-server/src/tls.rs", "crates/pcode-cli/src/main.rs", "apps/android/app/src/main/java/dev/publiccode/app/Conexion.java", "docs/adr/ADR-0009-acceso-remoto.md"]
-acepta = "cargo test -p pcode-server tls"
-contexto = ["docs/adr/ADR-0006-apk-android.md"]
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.29a"]
+toca = []
+acepta = "cargo test -p pcode-cli pairing:: && cargo test -p pcode-cli --test emparejar && sh apps/android/probar-jvm.sh ConexionTest && test -f docs/adr/ADR-0009-acceso-remoto.md"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-`pcode daemon --escuchar 0.0.0.0` genera un certificado autofirmado y muestra un QR (en la terminal) con la URL, el token y la
-huella del certificado; el APK fija esa huella (certificate pinning) y deja de necesitar HTTP en claro.
+1. Ejecuta `acepta`: el enlace de emparejamiento se genera en la CLI, la app lo entiende y el ADR del TLS existe.
+2. Comprueba que existen los informes de F8.30a, F8.30b, F8.30c y F8.30d (esta última la hace el coordinador).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["certificado_persistente_por_proyecto", "qr_contiene_huella", "apk_rechaza_otra_huella"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.30a"
+nombre = "emparejamiento-nucleo"
+titulo = "Emparejamiento: enlace `pcode://emparejar`, huella SHA-256 de un certificado y orden del QR (lógica pura)"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.33"]
+toca = ["crates/pcode-cli/src/pairing.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli pairing::"
+contexto = [
+  "crates/pcode-cli/src/update.rs (uso de `sha2::{Digest, Sha256}` y `hex::encode`; ejemplo de módulo de la CLI con funciones puras y tests)",
+  "crates/pcode-cli/src/main.rs (la lista de `mod …;` del principio; el brazo `Some(Cmd::Daemon { puerto, escuchar })` imprime `pcoded: http://<host>:<puerto>/?t=<token>`)",
+]
+objetivo = '''
+1. Crea `pairing.rs` con las funciones de *Firmas* y sus tests. En `main.rs` añade `mod pairing;` (orden alfabético,
+   entre `launcher` y `provider`) con `#[allow(dead_code)] // lo usa la orden «emparejar» (F8.30b)` encima.
+2. `percent_encode`: deja igual letras ASCII, cifras y `-`, `.`, `_`, `~`; cada otro BYTE (UTF-8) pasa a `%XX` en
+   mayúsculas.
+3. `parse_daemon_url(url)`: acepta `http://…` o `https://…` con un parámetro `t=` en la consulta. Devuelve
+   `(origen, token)`: el origen es esquema + `://` + host[:puerto], sin ruta ni barra final. Si falta el esquema, el
+   host o el token (o el token está vacío), `None`. No uses crates de URL: corta por `://`, por la primera `/` o `?`
+   y busca `t=` entre los `&` de la consulta.
+4. `pairing_uri(origin, token, fingerprint)`: `pcode://emparejar?u=<percent_encode(origin)>&t=<percent_encode(token)>`
+   y, si `fingerprint` es `Some(h)` no vacío, añade `&h=<h>`.
+5. `pem_to_der(pem)`: toma las líneas entre `-----BEGIN CERTIFICATE-----` y `-----END CERTIFICATE-----` (el primer
+   bloque), las une sin espacios y decodifica base64 estándar (alfabeto `A–Z a–z 0–9 + /`, relleno `=`) con un
+   decodificador escrito a mano. Si no hay bloque o hay un carácter no válido, `None`.
+6. `fingerprint(der)`: SHA-256 de los bytes en hexadecimal minúsculas (64 caracteres).
+7. `qr_command(uri)`: `["qrencode", "-t", "ANSIUTF8", "-m", "2", uri]`.
+'''
+firmas = '''
+// crates/pcode-cli/src/pairing.rs
+//! Emparejar el móvil con el demonio: enlace `pcode://emparejar`, huella del certificado y código QR.
+
+/// Codificación por ciento de un texto para usarlo como valor de un parámetro de URL.
+pub fn percent_encode(s: &str) -> String;
+/// (origen, token) de la URL que imprime `pcode daemon` (`http://host:puerto/?t=TOKEN`).
+pub fn parse_daemon_url(url: &str) -> Option<(String, String)>;
+/// Enlace de emparejamiento que entiende la app.
+pub fn pairing_uri(origin: &str, token: &str, fingerprint: Option<&str>) -> String;
+/// Bytes DER del primer certificado de un PEM.
+pub fn pem_to_der(pem: &str) -> Option<Vec<u8>>;
+/// Huella SHA-256 (hexadecimal en minúsculas) de un certificado en DER.
+pub fn fingerprint(der: &[u8]) -> String;
+/// Orden que dibuja el enlace como código QR en la terminal.
+pub fn qr_command(uri: &str) -> Vec<String>;
+'''
+ejemplo = '''
+percent_encode("http://a:1/ñ")  -> "http%3A%2F%2Fa%3A1%2F%C3%B1"
+parse_daemon_url("http://192.168.1.10:7878/?t=abc123") -> Some(("http://192.168.1.10:7878", "abc123"))
+parse_daemon_url("http://192.168.1.10:7878/")          -> None
+pairing_uri("http://192.168.1.10:7878", "abc123", None)
+   -> "pcode://emparejar?u=http%3A%2F%2F192.168.1.10%3A7878&t=abc123"
+pairing_uri("https://h:1", "t", Some("ab12")) -> "pcode://emparejar?u=https%3A%2F%2Fh%3A1&t=t&h=ab12"
+pem_to_der("-----BEGIN CERTIFICATE-----\naG9sYQ==\n-----END CERTIFICATE-----\n") -> Some(b"hola".to_vec())
+fingerprint(b"hola") -> "b221d9dbb083a7f33428d7c2a3c3198ae925614d70210e28716ccaa7cd4ddb79"
+'''
+tests = [
+  "codifica_por_ciento: el ejemplo de percent_encode; «abc-._~» queda igual",
+  "lee_la_url_del_demonio: el ejemplo con token da origen y token; sin t=, con t vacío o sin esquema dan None; https con otros parámetros (?x=1&t=zz) da el token zz",
+  "enlace_de_emparejamiento: los dos ejemplos de pairing_uri, con y sin huella; Some(«») no añade h",
+  "pem_a_der: el ejemplo da los bytes de «hola»; un PEM sin bloque y uno con el carácter «*» dan None",
+  "huella_sha256: fingerprint de «hola» es la cadena del ejemplo (64 caracteres en minúsculas)",
+  "orden_del_qr: qr_command(«x») es [qrencode, -t, ANSIUTF8, -m, 2, x]",
+]
+no_hagas = [
+  "No añadas dependencias (ni `base64` ni `url`): `sha2` y `hex` ya están en el Cargo.toml de la CLI",
+  "No ejecutes `qrencode` en esta tarea: solo se construye la orden",
+  "No generes certificados ni toques `crates/pcode-server`",
+]
+
+[[tarea]]
+id = "F8.30b"
+nombre = "emparejar-orden"
+titulo = "`pcode emparejar <url>`: enseña el enlace de emparejamiento y su código QR en la terminal"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.30a"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/emparejar.rs"]
+acepta = "cargo test -p pcode-cli --test emparejar"
+contexto = [
+  "crates/pcode-cli/src/main.rs (enum `Cmd`: imita una orden sencilla como `Extensiones`; el `match` de `main`; el brazo `Cmd::Daemon`, que imprime la URL con el token)",
+  "crates/pcode-cli/src/pairing.rs (lo crea F8.30a: `parse_daemon_url`, `pairing_uri`, `pem_to_der`, `fingerprint`, `qr_command`)",
+  "crates/pcode-cli/tests/remoto.rs (ejemplo de test de integración con `assert_cmd`)",
+]
+objetivo = '''
+1. `main.rs`, enum `Cmd`: variante nueva `Emparejar` con su `///` («Enseña el enlace y el código QR para emparejar
+   el móvil con un demonio en marcha») y estos campos: `url: String` (posicional: la URL que imprime `pcode
+   daemon`), `#[arg(long = "certificado")] cert: Option<std::path::PathBuf>` (PEM del certificado TLS, para incluir
+   su huella) y `#[arg(long = "sin-qr")] no_qr: bool`.
+2. Brazo nuevo en el `match` de `main`: con `pairing::parse_daemon_url(&url)`; si da `None`, imprime en stderr
+   `URL no válida: se esperaba http://host:puerto/?t=TOKEN` y sale con 2. Si hay `--certificado`: lee el archivo,
+   `pem_to_der` y `fingerprint`; si no se puede leer o no es un PEM, stderr `certificado no válido: <ruta>` y sale
+   con 2.
+3. Imprime en stdout el enlace de `pairing::pairing_uri(...)` en una línea. Después, si no se pasó `--sin-qr` y
+   stdout es una terminal (`std::io::IsTerminal`), ejecuta `pairing::qr_command(&enlace)` con
+   `std::process::Command` (hereda la salida); si `qrencode` no está instalado, imprime en stderr
+   `Instala qrencode para ver el código QR, o pega el enlace en la app.` Sale con 0.
+4. Quita el `#[allow(dead_code)]` que F8.30a puso sobre `mod pairing;`.
+5. `Cmd::Daemon`: después de la línea que imprime `pcoded: http://…`, añade
+   `eprintln!("móvil: pcode emparejar 'http://{host}:{puerto}/?t={token}'");`.
+6. `tests/emparejar.rs`: los tests de la lista, con `assert_cmd` (stdout no es una terminal, así que no hay QR).
+'''
+firmas = '''
+// crates/pcode-cli/src/main.rs — variante nueva de `Cmd`
+/// Enseña el enlace y el código QR para emparejar el móvil con un demonio en marcha.
+Emparejar {
+    /// URL que imprime `pcode daemon` (`http://host:puerto/?t=TOKEN`).
+    url: String,
+    /// Certificado TLS del demonio (PEM), para incluir su huella en el enlace.
+    #[arg(long = "certificado")]
+    cert: Option<std::path::PathBuf>,
+    /// No dibujar el código QR.
+    #[arg(long = "sin-qr")]
+    no_qr: bool,
+},
+'''
+ejemplo = '''
+$ pcode emparejar 'http://192.168.1.10:7878/?t=abc123' --sin-qr
+pcode://emparejar?u=http%3A%2F%2F192.168.1.10%3A7878&t=abc123
+$ pcode emparejar 'http://192.168.1.10:7878/'          (código de salida 2)
+URL no válida: se esperaba http://host:puerto/?t=TOKEN
+'''
+tests = [
+  "emparejar_imprime_el_enlace: con la URL del ejemplo y --sin-qr, stdout es exactamente el enlace del ejemplo más un salto de línea y el código de salida es 0",
+  "emparejar_url_sin_token_falla: sin t= sale con 2 y stderr contiene «URL no válida»",
+  "emparejar_con_certificado_anade_la_huella: con un PEM temporal cuyo contenido base64 es aG9sYQ==, stdout acaba en &h=b221d9dbb083a7f33428d7c2a3c3198ae925614d70210e28716ccaa7cd4ddb79",
+  "emparejar_certificado_roto_falla: con un archivo que no es PEM sale con 2 y stderr contiene «certificado no válido»",
+]
+no_hagas = [
+  "No arranques el demonio en los tests",
+  "No imprimas el token en ningún otro sitio (ni en registros ni en archivos)",
+  "No dibujes el QR a mano: se delega en `qrencode` si está instalado",
+]
+
+[[tarea]]
+id = "F8.30c"
+nombre = "apk-emparejamiento"
+titulo = "APK: aceptar el enlace `pcode://emparejar` al conectar (Java puro)"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.29a", "F8.30a"]
+toca = ["apps/android/app/src/main/java/dev/publiccode/app/Conexion.java", "apps/android/app/src/test/java/dev/publiccode/app/ConexionTest.java"]
+acepta = "sh apps/android/probar-jvm.sh ConexionTest && grep -q emparejar apps/android/app/src/test/java/dev/publiccode/app/ConexionTest.java"
+lenguaje = "java"
+contexto = [
+  "apps/android/app/src/main/java/dev/publiccode/app/Conexion.java (método `parse` y el privado `parametro`)",
+  "apps/android/probar-jvm.sh (lo crea F8.29a: ejecuta los tests JUnit en la JVM sin el SDK de Android)",
+]
+objetivo = '''
+1. `Conexion.java`: campo nuevo `private final String huella;` (cadena vacía si no hay) y su acceso
+   `public String huella()`. El constructor privado pasa a recibir `(origen, token, huella)`; `parse` sigue creando
+   conexiones con huella vacía para las URL `http(s)://…`.
+2. `Conexion.java`: nuevo método público `parseEmparejamiento(String texto)`. Acepta
+   `pcode://emparejar?u=<origen codificado>&t=<token codificado>[&h=<huella>]` (el esquema y `emparejar` sin
+   distinguir mayúsculas). Decodifica `u` y `t` con `java.net.URLDecoder.decode(valor, "UTF-8")`. El origen
+   decodificado se valida reutilizando `parse(origen + "/?t=" + token)`: si eso da `null`, devuelve `null`. La
+   huella, si viene, debe ser hexadecimal de 64 caracteres (se guarda en minúsculas); si viene y no lo es, `null`.
+3. `parse(texto)`: si el texto (tras `trim`) empieza por `pcode://` (sin distinguir mayúsculas), devuelve
+   `parseEmparejamiento(texto)`. Así el formulario de la app acepta las dos formas sin tocar `MainActivity`.
+4. `ConexionTest.java`: añade los tests de la lista sin cambiar los que hay.
+'''
+firmas = '''
+// apps/android/app/src/main/java/dev/publiccode/app/Conexion.java
+/** Huella SHA-256 del certificado TLS del demonio (64 cifras hexadecimales) o cadena vacía. */
+public String huella();
+/** Interpreta un enlace pcode://emparejar?u=…&t=…[&h=…]; devuelve null si no es válido. */
+public static Conexion parseEmparejamiento(String texto);
+'''
+ejemplo = '''
+Conexion c = Conexion.parse("pcode://emparejar?u=http%3A%2F%2F192.168.1.10%3A7878&t=abc123");
+c.origen() -> "http://192.168.1.10:7878"     c.token() -> "abc123"     c.huella() -> ""
+Conexion.parse("pcode://emparejar?u=https%3A%2F%2Fh%3A1&t=t&h=" + "AB".repeat(32)).huella() -> "ab" repetido 32 veces
+Conexion.parse("pcode://emparejar?u=ftp%3A%2F%2Fx&t=t") -> null
+Conexion.parse("pcode://emparejar?u=https%3A%2F%2Fh&t=t&h=xyz") -> null
+'''
+tests = [
+  "emparejarConEnlace: el primer ejemplo da el origen http://192.168.1.10:7878, el token abc123 y la huella vacía",
+  "emparejarConHuella: una huella de 64 cifras hexadecimales en mayúsculas se guarda en minúsculas",
+  "emparejarRechazaLoNoValido: un origen ftp, una huella «xyz», un enlace sin t y «pcode://otra?u=x&t=y» dan null",
+  "parseDeUrlNormalTieneHuellaVacia: Conexion.parse(«http://192.168.1.10:7878/?t=abc123»).huella() es la cadena vacía",
+]
+no_hagas = [
+  "No importes nada de `android.*` en `Conexion.java`",
+  "No toques `MainActivity.java`: ya llama a `Conexion.parse`",
+  "No cambies los tests que ya existen en `ConexionTest.java`",
+  "No uses la huella todavía para validar conexiones: fijar el certificado es F8.30d",
+]
+
+[[tarea]]
+id = "F8.30d"
+nombre = "tls-autofirmado"
+titulo = "Demonio con TLS autofirmado, huella fijada en la app y lectura del QR con la cámara"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "coordinador"
+motivo_coordinador = "Servir TLS y generar el certificado exige decidir dependencias que no están en AGENTS.md §7 (servidor rustls para axum y generación de certificados, o un proxy externo) y un lector de QR para Android; es una decisión del propietario (ADR-0009) y hay que probarlo con un teléfono real"
+depende = ["F8.30b", "F8.30c"]
+toca = ["docs/adr/ADR-0009-acceso-remoto.md", "crates/pcode-server/src/tls.rs", "crates/pcode-cli/src/main.rs", "apps/android/app/src/main/java/dev/publiccode/app/MainActivity.java"]
+acepta = "test -f docs/adr/ADR-0009-acceso-remoto.md && cargo test -p pcode-server tls"
+contexto = [
+  "docs/adr/ADR-0006-apk-android.md (decisiones de la app y por qué hoy va por HTTP en claro)",
+  "crates/pcode-cli/src/pairing.rs (lo crea F8.30a: `fingerprint`, `pairing_uri`) y la orden `pcode emparejar --certificado` (F8.30b)",
+  "apps/android/app/src/main/res/xml/network_security_config.xml (hoy permite HTTP en claro)",
+]
+objetivo = '''
+1. ADR-0009: decidir cómo sirve TLS el demonio. Opciones: (a) `tokio-rustls` + `rcgen` (dos dependencias nuevas en
+   la lista de AGENTS.md §7); (b) certificado generado con `openssl` del sistema y TLS con `tokio-rustls`; (c) no
+   servir TLS y documentar un proxy inverso o un túnel (WireGuard, Tailscale). Anotar la decisión y actualizar §7.
+2. Si se sirve TLS: `tls.rs` con el certificado persistente por proyecto (`.pcode/tls/`), `pcode daemon --tls`, y
+   que `pcode daemon` imprima `pcode emparejar … --certificado <ruta>`.
+3. App: fijar la huella (`Conexion.huella()`) en el `WebViewClient` (`onReceivedSslError` compara la huella SHA-256
+   del certificado presentado) y quitar el HTTP en claro cuando hay huella.
+4. App: leer el QR con la cámara (decidir biblioteca en el ADR) o, si no se quiere dependencia, registrar el
+   esquema `pcode://` en el manifiesto para que el lector de QR del sistema abra la app.
+5. Probar con un teléfono en la red local: emparejar con el QR, y comprobar que otra huella se rechaza.
+'''
+tests = ["certificado_persistente_por_proyecto: dos arranques en el mismo proyecto dan la misma huella", "(manual, en un teléfono) la app rechaza un certificado con otra huella"]
 
 [[tarea]]
 id = "F8.31"
@@ -5360,19 +6108,337 @@ queda oculto. Limitación asumida: LSP, terminal, agente y puntos de control sol
 [[tarea]]
 id = "F8.32"
 nombre = "extensiones"
-titulo = "Extensiones: plugins con manifiesto (MCP local o WASM) y capacidades declaradas"
+titulo = "Extensiones: plugins con manifiesto (MCP local o WASM) y capacidades declaradas (cierre)"
 fase = "F8"
-ejecutor = "coordinador"
-depende = ["F2.22", "F8.17"]
-toca = ["crates/pcode-plugins/", "docs/adr/ADR-0010-extensiones.md", "docs/extensiones.md", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-plugins"
-contexto = ["crates/pcode-tools/src/mcp.rs", "docs/adr/ADR-0004-skills-formato-unico.md"]
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.22"]
+toca = []
+acepta = "cargo test -p pcode-extensions plugin:: && cargo test -p pcode-cli --test extensiones && cargo test -p pcode-cli plugin_servers"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-`pcode extensiones instalar <git-url|carpeta>`: manifiesto con nombre, versión, órdenes, tools (MCP local o módulo WASM
-sin red ni disco salvo lo declarado), temas para Studio y la TUI; firma opcional; cuarentena hasta que el usuario aprueba
-las capacidades.
+1. Ejecuta `acepta`. Una extensión es una carpeta con `pcode-extension.toml` que declara servidores MCP, órdenes y
+   skills, y las capacidades que necesita; se instala solo si el usuario aprueba esas capacidades.
+2. Comprueba que existen los informes de F8.32a, F8.32b, F8.32c y F8.32d.
+3. Escribe el informe con la salida de `acepta`. Los módulos WASM quedan fuera (esbozo F9.44).
 '''
-tests = ["manifiesto_valido", "capacidad_no_declarada_se_deniega", "desinstalar_limpia"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.32a"
+nombre = "extension-manifiesto"
+titulo = "Extensiones: leer y validar `pcode-extension.toml` (servidores MCP, órdenes, skills y capacidades)"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.22"]
+toca = ["crates/pcode-extensions/src/plugin.rs", "crates/pcode-extensions/src/lib.rs"]
+toca_extra = ["crates/pcode-extensions/Cargo.toml"]
+acepta = "cargo test -p pcode-extensions plugin::"
+contexto = [
+  "crates/pcode-extensions/src/lib.rs (enum `ExtError`: cómo se declaran los errores; el resto del archivo son las extensiones declarativas de VS Code, que no se tocan)",
+  "crates/pcode-config/src/lib.rs (struct `McpCfg`: mismo formato `orden` y `entorno` que usa `[mcp.<nombre>]` en pcode.toml)",
+]
+objetivo = '''
+1. `crates/pcode-extensions/Cargo.toml`: en `[dependencies]` añade `toml.workspace = true`. En `lib.rs` añade
+   `pub mod plugin;` y, en `enum ExtError`, la variante `Plugin(String)` con
+   `#[error("pcode-extension.toml no válido: {0}")]` y su `///`.
+2. Crea `plugin.rs` con lo de *Firmas* y sus tests. El manifiesto es un TOML como el del *Ejemplo*; las claves van
+   en español con `#[serde(rename = "…")]`: `id`, `version`, `descripcion`, `capacidades`, `ordenes`, `skills` y
+   las tablas `[mcp.<nombre>]` con `orden` y `entorno`. Todo menos `id` y `version` es opcional
+   (`#[serde(default)]`). Claves desconocidas: error (`#[serde(deny_unknown_fields)]`).
+3. `parse_manifest(text)`: lee el TOML y valida, devolviendo `ExtError::Plugin(mensaje)` en el primer fallo:
+   - `id` con la forma `editor.nombre`: dos partes separadas por un punto, cada una de 1 a 60 caracteres ASCII
+     alfanuméricos, `-` o `_` → si no, `id no válido: <id>`.
+   - `version` vacía → `falta la versión`.
+   - una capacidad que no esté en `CAPABILITIES` → `capacidad desconocida: <c>`.
+   - una ruta de `ordenes` o `skills` vacía, absoluta (empieza por `/` o `\` o tiene `:`), o con algún componente
+     `..` → `ruta no válida: <ruta>`. Las de `ordenes` deben acabar en `.md` → si no, `la orden debe ser un .md: <ruta>`.
+   - un nombre de servidor MCP que no sea de 1 a 30 caracteres `a–z`, `0–9` o `-` → `nombre de servidor no válido: <n>`;
+     con `orden` vacía → `el servidor <n> no tiene orden`.
+   - cada capacidad de `required_capabilities` debe estar declarada → si falta, `falta declarar la capacidad «<c>»`.
+4. `required_capabilities(m)`: `["mcp"]` si declara algún servidor MCP; si no, vacío. (Las órdenes y las skills son
+   solo texto: no piden capacidad.)
+5. `missing_approval(m, approved)`: capacidades declaradas en el manifiesto que no están en `approved`, en el orden
+   del manifiesto y sin repetir.
+'''
+firmas = '''
+// crates/pcode-extensions/src/plugin.rs
+//! Extensiones de PublicCode: una carpeta con `pcode-extension.toml` que declara servidores MCP, órdenes y skills,
+//! y las capacidades que necesita. Aquí solo se lee y se valida el manifiesto.
+use crate::ExtError;
+use std::collections::BTreeMap;
+
+/// Nombre del archivo de manifiesto.
+pub const MANIFEST_FILE: &str = "pcode-extension.toml";
+/// Capacidades que una extensión puede pedir.
+pub const CAPABILITIES: &[&str] = &["mcp", "red", "shell", "escribir"];
+
+/// Un servidor MCP que la extensión arranca en local.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct McpDecl {
+    #[serde(rename = "orden")]
+    pub command: Vec<String>,
+    #[serde(rename = "entorno")]
+    pub env: BTreeMap<String, String>,
+}
+
+/// Manifiesto de una extensión.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginManifest {
+    pub id: String,
+    pub version: String,
+    #[serde(default, rename = "descripcion")]
+    pub description: String,
+    #[serde(default, rename = "capacidades")]
+    pub capabilities: Vec<String>,
+    #[serde(default, rename = "ordenes")]
+    pub commands: Vec<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub mcp: BTreeMap<String, McpDecl>,
+}
+
+/// Lee y valida un manifiesto.
+pub fn parse_manifest(text: &str) -> Result<PluginManifest, ExtError>;
+/// Capacidades que el contenido del manifiesto obliga a declarar.
+pub fn required_capabilities(m: &PluginManifest) -> Vec<String>;
+/// Capacidades declaradas que el usuario aún no ha aprobado.
+pub fn missing_approval(m: &PluginManifest, approved: &[String]) -> Vec<String>;
+'''
+ejemplo = '''
+id = "ana.herramientas"
+version = "1.0.0"
+descripcion = "Revisión de SQL y acceso a GitHub"
+capacidades = ["mcp", "red"]
+ordenes = ["ordenes/revisar-sql.md"]
+skills = ["skills/sql"]
+
+[mcp.github]
+orden = ["npx", "-y", "@modelcontextprotocol/server-github"]
+entorno = { GITHUB_TOKEN = "{env:GITHUB_TOKEN}" }
+
+parse_manifest(ese texto) -> Ok(PluginManifest { id: "ana.herramientas", capabilities: ["mcp", "red"], mcp: {"github": …}, … })
+missing_approval(&m, &["mcp".into()]) -> ["red"]
+el mismo texto sin "mcp" en capacidades -> Err(Plugin("falta declarar la capacidad «mcp»"))
+'''
+tests = [
+  "manifiesto_valido: el TOML del ejemplo se lee con su id, dos capacidades, una orden, una skill y el servidor github con su orden y su entorno",
+  "manifiesto_minimo: solo id y version da listas y mapa vacíos y required_capabilities vacío",
+  "id_y_version_no_validos: id «sinpunto», id «a.b.c» y version vacía dan Plugin con «id no válido» o «falta la versión»",
+  "capacidad_desconocida: capacidades = [«root»] da «capacidad desconocida: root»",
+  "rutas_no_validas: una orden «../x.md», una skill «/etc» y una orden «a.txt» dan «ruta no válida» o «la orden debe ser un .md»",
+  "capacidad_no_declarada_se_deniega: un servidor MCP sin la capacidad mcp da «falta declarar la capacidad «mcp»»",
+  "falta_por_aprobar: missing_approval con [mcp] aprobado devuelve [red]; con las dos aprobadas, vacío",
+  "clave_desconocida: una clave «main = \"x.js\"» en el manifiesto da error",
+]
+no_hagas = [
+  "No toques las funciones de extensiones de VS Code (`parse_package_json`, `install`, `list`…)",
+  "No lances ningún proceso ni leas archivos: `parse_manifest` recibe el texto",
+  "No añadas más dependencias que `toml`",
+  "No aceptes valores de `entorno` con secretos escritos: no hay forma de saberlo aquí, pero no pongas ninguno en los tests (usa `{env:VAR}`)",
+  "Pon `///` en cada campo público (en *Firmas* se han omitido por espacio)",
+]
+
+[[tarea]]
+id = "F8.32b"
+nombre = "extension-instalar"
+titulo = "Extensiones: instalar solo con las capacidades aprobadas, listar y sacar sus servidores MCP"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.32a"]
+toca = ["crates/pcode-extensions/src/plugin.rs"]
+acepta = "cargo test -p pcode-extensions plugin:: && grep -q 'pub fn install_plugin' crates/pcode-extensions/src/plugin.rs && grep -q 'fn desinstalar_limpia' crates/pcode-extensions/src/plugin.rs"
+contexto = [
+  "crates/pcode-extensions/src/plugin.rs (lo crea F8.32a: `PluginManifest`, `McpDecl`, `MANIFEST_FILE`, `parse_manifest`, `missing_approval`)",
+  "crates/pcode-extensions/src/lib.rs (función `copy_declarative`: cómo se copian archivos con errores `ExtError::Io`; `uninstall(root, id)`: borra `root/<id>` y vale también para estas extensiones; test `instalar_y_quitar`: cómo se usa `tempfile`)",
+]
+objetivo = '''
+1. En `plugin.rs`, añade `install_plugin`, `list_plugins` y `mcp_servers` (firmas abajo) con sus tests.
+2. `install_plugin(source, root, approved)`: lee `source/pcode-extension.toml` con `parse_manifest`. Si
+   `missing_approval(&m, approved)` no está vacío, NO copia nada y devuelve
+   `ExtError::Plugin("faltan por aprobar las capacidades: mcp, red")` (las que falten, separadas por coma y espacio).
+   Si está todo aprobado: borra `root/<id>` si existía; copia el manifiesto, cada archivo de `ordenes` y cada
+   carpeta de `skills` (recursivo, solo archivos y carpetas normales; los enlaces simbólicos se saltan) conservando
+   sus rutas relativas; y escribe `root/<id>/aprobado.txt` con las capacidades del manifiesto, una por línea.
+   Si una orden o skill declarada no existe en `source`, error `ExtError::Plugin("no existe <ruta>")` y no deja
+   nada a medias (borra `root/<id>`).
+3. `list_plugins(root)`: manifiestos de las subcarpetas de `root` que tienen `pcode-extension.toml` válido Y
+   `aprobado.txt`; ordenados por `id`. Las carpetas cuyo nombre empieza por `.` se ignoran.
+4. `mcp_servers(root)`: para cada extensión de `list_plugins` cuyo `aprobado.txt` contiene la línea `mcp`, una
+   entrada por servidor: nombre `<id con el punto cambiado por guion>-<nombre>` y su `McpDecl`. Ordenado por nombre.
+'''
+firmas = '''
+// crates/pcode-extensions/src/plugin.rs
+use std::path::Path;
+
+/// Archivo que guarda las capacidades aprobadas al instalar.
+pub const APPROVED_FILE: &str = "aprobado.txt";
+
+/// Instala la extensión de la carpeta `source` en `root/<id>` si `approved` cubre todas sus capacidades.
+pub fn install_plugin(source: &Path, root: &Path, approved: &[String]) -> Result<PluginManifest, ExtError>;
+/// Extensiones instaladas y aprobadas, por id.
+pub fn list_plugins(root: &Path) -> Vec<PluginManifest>;
+/// Servidores MCP de las extensiones aprobadas: (nombre único, declaración).
+pub fn mcp_servers(root: &Path) -> Vec<(String, McpDecl)>;
+'''
+ejemplo = '''
+source/pcode-extension.toml = el manifiesto «ana.herramientas» con capacidades ["mcp", "red"] y [mcp.github]
+install_plugin(source, root, &[])                          -> Err(Plugin("faltan por aprobar las capacidades: mcp, red")); root queda vacío
+install_plugin(source, root, &["mcp".into(), "red".into()]) -> Ok(m); existen root/ana.herramientas/pcode-extension.toml,
+                                                              root/ana.herramientas/ordenes/revisar-sql.md y root/ana.herramientas/aprobado.txt ("mcp\nred\n")
+list_plugins(root)  -> [m]
+mcp_servers(root)   -> [("ana-herramientas-github", McpDecl { command: ["npx", "-y", "…"], env: {GITHUB_TOKEN: "{env:GITHUB_TOKEN}"} })]
+crate::uninstall(root, "ana.herramientas") -> Ok(true); list_plugins(root) -> []
+'''
+tests = [
+  "instalar_sin_aprobar_no_copia_nada: con approved vacío devuelve el error «faltan por aprobar las capacidades: mcp, red» y root no tiene la carpeta de la extensión",
+  "instalar_aprobada_copia_lo_declarado: con las dos capacidades aprobadas existen el manifiesto, la orden, la skill y aprobado.txt; un archivo no declarado de source (p. ej. extra.sh) no se copia",
+  "instalar_con_archivo_declarado_que_falta: si la orden declarada no existe en source, da «no existe» y no queda la carpeta",
+  "instalar_lista_y_servidores: tras instalar, list_plugins devuelve la extensión y mcp_servers el servidor ana-herramientas-github",
+  "desinstalar_limpia: tras crate::uninstall, list_plugins y mcp_servers quedan vacíos",
+  "instalar_sin_marca_de_aprobacion_no_cuenta: una carpeta en root con manifiesto pero sin aprobado.txt no sale en list_plugins",
+]
+no_hagas = [
+  "No ejecutes nada de la extensión al instalarla",
+  "No sigas enlaces simbólicos al copiar",
+  "No copies archivos que el manifiesto no declara",
+  "No cambies `parse_manifest` ni sus tests",
+]
+notas = '''
+`tempfile` ya es dependencia de desarrollo de este crate.
+'''
+
+[[tarea]]
+id = "F8.32c"
+nombre = "extension-cli"
+titulo = "`pcode extensiones instalar <carpeta>`: enseñar las capacidades y pedir aprobación"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.32b", "F9.19"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/extensiones.rs"]
+acepta = "cargo test -p pcode-cli --test extensiones"
+contexto = [
+  "crates/pcode-cli/src/main.rs (enum `ExtCmd`, función `ext_cmd` y el brazo `Some(Cmd::Extensiones(c))` de `main`)",
+  "crates/pcode-extensions/src/plugin.rs (`MANIFEST_FILE`, `parse_manifest`, `install_plugin(source, root, approved)`, `list_plugins(root)`)",
+  "crates/pcode-cli/tests/remoto.rs (ejemplo de test de integración con `assert_cmd` y variables de entorno)",
+]
+objetivo = '''
+1. `main.rs`, `ExtCmd::Instalar`: campo nuevo `#[arg(long = "aceptar")] aceptar: bool` con `///` («Aprueba sin
+   preguntar las capacidades que pide la extensión»). Ajusta los sitios donde se desestructura
+   `ExtCmd::Instalar { origen }` para que incluyan `aceptar` (o `..`).
+2. `ext_cmd`, brazo `ExtCmd::Instalar`: si `origen` es una carpeta que contiene `pcode-extension.toml`
+   (`pcode_extensions::plugin::MANIFEST_FILE`), es una extensión de PublicCode; si no, sigue como hasta ahora
+   (`pcode_extensions::install`).
+3. Extensión de PublicCode: lee el manifiesto con `parse_manifest` (si falla, propaga el error). Imprime
+   `<id> <version> pide estas capacidades: mcp, red` (o `no pide capacidades`) y una línea `  servidor MCP <nombre>:
+   <orden unida con espacios>` por servidor. Decide la aprobación:
+   - con `--aceptar`: aprobadas todas las del manifiesto;
+   - sin `--aceptar` y con stdin en una terminal (`std::io::IsTerminal`): pregunta `¿Instalar y aprobar? [s/N] ` y
+     lee una línea; solo `s` o `S` aprueba;
+   - sin `--aceptar` y sin terminal: no aprueba nada.
+   Si no se aprueba: imprime en stderr `no instalada: vuelve a ejecutar con --aceptar para aprobar las capacidades`
+   y devuelve `Ok(2)`. Si se aprueba: `install_plugin(&origen, &root, &capacidades)` e imprime
+   `✓ <id> <version> · <n> servidores MCP · <n> órdenes · <n> skills`.
+4. `ext_cmd`, brazo `ExtCmd::Listar`: después de las de VS Code, una línea por cada `list_plugins(&root)` con el
+   mismo formato `✓ …` del paso 3.
+5. `tests/extensiones.rs`: los tests de la lista. Usa un directorio temporal como `XDG_DATA_HOME` (así
+   `default_root()` cae dentro) y otra carpeta temporal con el manifiesto y un `ordenes/a.md`.
+'''
+firmas = '''
+// crates/pcode-cli/src/main.rs — `ExtCmd::Instalar` queda así
+Instalar {
+    /// Archivo `.vsix`, carpeta de extensión o `editor.nombre`.
+    origen: std::path::PathBuf,
+    /// Aprueba sin preguntar las capacidades que pide la extensión.
+    #[arg(long = "aceptar")]
+    aceptar: bool,
+},
+'''
+ejemplo = '''
+$ pcode extensiones instalar ./mi-ext            (sin terminal; código de salida 2)
+ana.herramientas 1.0.0 pide estas capacidades: mcp
+  servidor MCP github: npx -y srv
+no instalada: vuelve a ejecutar con --aceptar para aprobar las capacidades
+$ pcode extensiones instalar ./mi-ext --aceptar  (código de salida 0)
+ana.herramientas 1.0.0 pide estas capacidades: mcp
+  servidor MCP github: npx -y srv
+✓ ana.herramientas 1.0.0 · 1 servidores MCP · 1 órdenes · 0 skills
+$ pcode extensiones listar
+✓ ana.herramientas 1.0.0 · 1 servidores MCP · 1 órdenes · 0 skills
+'''
+tests = [
+  "instalar_sin_aceptar_no_instala: sin --aceptar (stdin no es terminal) sale con 2, stdout nombra la capacidad mcp, stderr contiene «--aceptar» y `listar` no muestra la extensión",
+  "instalar_con_aceptar_y_listar: con --aceptar sale con 0 y `pcode extensiones listar` muestra «ana.herramientas 1.0.0»",
+  "quitar_la_extension: tras instalar, `pcode extensiones quitar ana.herramientas` sale con 0 y `listar` ya no la muestra",
+  "manifiesto_roto_falla: una carpeta con un pcode-extension.toml sin id no sale con 0 y stderr contiene «pcode-extension.toml no válido»",
+]
+no_hagas = [
+  "No apruebes nada por defecto: sin `--aceptar` y sin terminal, no se instala",
+  "No cambies cómo se instalan las extensiones de VS Code (`.vsix`, carpeta con `package.json`, `editor.nombre`)",
+  "No ejecutes los servidores MCP al instalar",
+  "No uses la carpeta real del usuario en los tests: siempre `XDG_DATA_HOME` temporal",
+]
+
+[[tarea]]
+id = "F8.32d"
+nombre = "extension-mcp-en-el-agente"
+titulo = "Agente: conectar los servidores MCP de las extensiones aprobadas (siempre con aprobación por llamada)"
+fase = "F8"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.32b"]
+toca = ["crates/pcode-cli/src/provider.rs"]
+acepta = "cargo test -p pcode-cli plugin_servers"
+contexto = [
+  "crates/pcode-cli/src/provider.rs (función `mcp_tools`: construye `Vec<pcode_tools::mcp::McpServer>` a partir de `cfg.mcp`)",
+  "crates/pcode-extensions/src/plugin.rs (`mcp_servers(root: &Path) -> Vec<(String, McpDecl)>`; `McpDecl { command, env }`)",
+  "crates/pcode-config/src/lib.rs (`pub fn expand_env(s: &str) -> Result<String, ConfigError>`: sustituye `{env:VAR}`)",
+]
+objetivo = '''
+1. `provider.rs`: nueva función `plugin_servers(root)` (firma abajo). Por cada `(nombre, decl)` de
+   `pcode_extensions::plugin::mcp_servers(root)` crea un `pcode_tools::mcp::McpServer { name: nombre, command:
+   decl.command, env, ask: true }`. `env` es `decl.env` con cada valor pasado por `pcode_config::expand_env`; si
+   alguna variable no está definida, ese servidor NO se devuelve y se añade a los avisos el texto
+   `extensión <nombre>: falta la variable de entorno de <CLAVE>`.
+2. `provider.rs`, `mcp_tools`: después de construir `servers` a partir de `cfg.mcp`, si
+   `pcode_extensions::default_root()` es `Some(root)`, añade los de `plugin_servers(&root)` que no repitan un nombre
+   ya presente, y guarda sus avisos para sumarlos a `warnings` al final. (`servers` pasa a ser `let mut`.)
+3. Tests en el `mod tests` de `provider.rs` (créalo si no existe), con `tempfile` y
+   `pcode_extensions::plugin::install_plugin` para preparar la carpeta.
+'''
+firmas = '''
+// crates/pcode-cli/src/provider.rs
+/// Servidores MCP de las extensiones aprobadas (siempre piden aprobación por llamada) y avisos de los que se saltan.
+pub fn plugin_servers(root: &std::path::Path) -> (Vec<pcode_tools::mcp::McpServer>, Vec<String>);
+'''
+ejemplo = '''
+Extensión «ana.herramientas» instalada y aprobada, con [mcp.github] orden = ["npx", "-y", "srv"], entorno = { A = "fijo" }
+plugin_servers(root) -> ([McpServer { name: "ana-herramientas-github", command: ["npx", "-y", "srv"], env: {"A": "fijo"}, ask: true }], [])
+Con entorno = { T = "{env:PCODE_TEST_NO_EXISTE_JAMAS}" }
+plugin_servers(root) -> ([], ["extensión ana-herramientas-github: falta la variable de entorno de T"])
+'''
+tests = [
+  "plugin_servers_de_una_extension_aprobada: el primer ejemplo devuelve un servidor con ask = true y sin avisos",
+  "plugin_servers_sin_variable_se_salta: el segundo ejemplo no devuelve servidores y el aviso nombra la clave T",
+  "plugin_servers_sin_extensiones: con una carpeta vacía (o que no existe) devuelve dos listas vacías",
+]
+no_hagas = [
+  "No pongas `ask: false`: las tools de una extensión de terceros siempre piden aprobación",
+  "No lances los servidores en los tests: `plugin_servers` solo construye la lista",
+  "No cambies la firma de `mcp_tools`",
+  "No escribas valores de variables de entorno en avisos ni registros: solo el nombre de la clave",
+]
 
 [[tarea]]
 id = "F8.33"
@@ -5594,16 +6660,60 @@ id = "F8.34"
 nombre = "rendimiento"
 titulo = "Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI"
 fase = "F8"
+hito = "1.2"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F0.07"]
-toca = ["tools/bench/rendimiento.py", "tools/bench/test_rendimiento.py", ".github/workflows/ci.yml"]
-acepta = "python3 -m unittest tools/bench/test_rendimiento.py -v"
-contexto = ["crates/pcode-cli/src/main.rs"]
+toca = ["tools/bench/rendimiento.py", "tools/bench/test_rendimiento.py"]
+acepta = "python3 -m unittest tools/bench/test_rendimiento.py -v && grep -q primera_respuesta_ms tools/bench/rendimiento.py"
+lenguaje = "python"
+contexto = [
+  "tools/bench/rendimiento.py (funciones `mediana_arranque_ms` y `medir`; constantes `PRESUPUESTO`, `METRICAS` y `ESPERA_MAX_S`; el docstring de uso)",
+  "tools/bench/test_rendimiento.py (constante `PCODE_FALSO`: el binario falso que usan los tests; test `test_mide_y_compara_con_base`)",
+  "crates/pcode-cli/tests/chat.rs (función `pcode` y `resp`: cómo se lanza `pcode chat` con un modelo simulado mediante la variable `PCODE_MOCK_SCRIPT`)",
+]
 objetivo = '''
-Medir `pcode --version` (arranque en frío < 50 ms), `pcode studio` hasta servir `/` (< 300 ms), memoria en reposo del demonio
-(< 60 MB) y primera respuesta de la TUI con modelo simulado; la CI falla si algo empeora más de un 20 % respecto a la base.
+Ya existen `medir`, `comparar`, `presupuesto`, `medir-ide` y el paso de la CI. Falta una métrica: cuánto tarda la
+primera respuesta del agente con un modelo simulado (el mismo camino que usa la TUI: el agente corre en proceso).
+1. `rendimiento.py`: nueva función `primera_respuesta_ms(pcode, n=5)`. Crea un directorio temporal
+   (`tempfile.TemporaryDirectory`) con un `script.json` cuyo contenido es `GUION_MOCK` (constante nueva, abajo) y
+   ejecuta `n` veces `[pcode, "chat", "di", "hola"]` con `cwd` = ese directorio, `stdin=subprocess.DEVNULL`,
+   `capture_output=True`, `timeout=ESPERA_MAX_S` y el entorno actual más `PCODE_MOCK_SCRIPT=<ruta del script>` y
+   `NO_COLOR=1`. Mide cada ejecución con `time.perf_counter()` y devuelve la mediana en ms redondeada a 1 decimal.
+   Si alguna ejecución sale con código distinto de 0 o su salida no contiene `hola desde el mock`, devuelve `None`.
+2. `medir`: si `primera_respuesta_ms(pcode)` no es `None`, añade al resultado la clave `primera_respuesta_ms`.
+3. Añade `"primera_respuesta_ms"` a `METRICAS` y `"primera_respuesta_ms": 500.0` a `PRESUPUESTO`. Añade una línea al
+   docstring, en la lista de lo que saca `medir`: `- primera_respuesta_ms: mediana de «pcode chat di hola» con un
+   modelo simulado (PCODE_MOCK_SCRIPT) hasta que termina.`
+4. `test_rendimiento.py`: en `PCODE_FALSO`, antes de la línea `if sys.argv[1] == "ide":`, añade el caso
+   `if sys.argv[1] == "chat":` que imprime `hola desde el mock` si existe la variable `PCODE_MOCK_SCRIPT` y el
+   archivo al que apunta, y sale con 0 (si no existe, sale con 2). Añade los dos tests de la lista.
 '''
-tests = ["mide_y_compara_con_base", "umbral_del_20_por_ciento"]
+firmas = '''
+# tools/bench/rendimiento.py
+# Guion del modelo simulado: una sola respuesta, sin tools.
+GUION_MOCK = [{"message": {"role": "assistant", "content": "hola desde el mock", "tool_calls": []},
+               "usage": {"input_tokens": 3, "output_tokens": 2, "cached_input_tokens": 0}, "stop_reason": "EndTurn"}]
+
+def primera_respuesta_ms(pcode, n=5):
+    """Mediana en ms de `pcode chat di hola` con un modelo simulado; None si el binario no lo admite."""
+'''
+ejemplo = '''
+primera_respuesta_ms("/ruta/al/pcode-falso", n=3)   -> 41.7        (un número mayor que 0)
+primera_respuesta_ms("/bin/false", n=1)              -> None        (sale con 1)
+medir(pcode_falso, proyecto)   -> {"arranque_ms": …, "studio_listo_ms": …, "reposo_mb": …, "primera_respuesta_ms": 41.7, …}
+fuera_de_presupuesto({"primera_respuesta_ms": 900})  -> ["primera_respuesta_ms: 900 > 500.0"]
+'''
+tests = [
+  "test_primera_respuesta_con_binario_falso: con el pcode falso devuelve un número mayor que 0, y con /bin/false devuelve None",
+  "test_presupuesto_incluye_la_primera_respuesta: fuera_de_presupuesto con primera_respuesta_ms = 900 devuelve una lista con un texto que nombra esa métrica; con 100 devuelve lista vacía",
+]
+no_hagas = [
+  "No uses red ni un modelo real: solo `PCODE_MOCK_SCRIPT`",
+  "No cambies los límites que ya hay en `PRESUPUESTO` ni los tests existentes",
+  "No añadas paquetes de fuera de la biblioteca estándar",
+  "No toques `.github/workflows/ci.yml`: el paso de la CI ya llama a `medir` y a `presupuesto`",
+]
 
 [[tarea]]
 id = "F8.35"

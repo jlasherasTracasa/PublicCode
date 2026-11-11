@@ -516,22 +516,158 @@ tests = ["(sin tests unitarios): la aceptación comprueba los scripts"]
 [[tarea]]
 id = "F9.19"
 nombre = "extensiones-vscode-declarativas"
-titulo = "Extensiones de VS Code (solo lo declarativo): temas, fragmentos y lenguajes desde .vsix u Open VSX"
+titulo = "Extensiones de VS Code (solo lo declarativo): temas, fragmentos y lenguajes desde .vsix u Open VSX (cierre)"
 fase = "F9"
-ejecutor = "coordinador"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
 depende = ["F9.05"]
-toca = ["crates/pcode-extensions/", "crates/pcode-cli/src/main.rs", "docs/adr/ADR-0012-extensiones-declarativas.md"]
-acepta = "cargo test -p pcode-extensions"
-contexto = ["tareas/F8.32-extensiones.md", "docs/ligero.md §7"]
+toca = []
+acepta = "cargo test -p pcode-extensions && cargo test -p pcode-cli ext_remote::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-Lo que hace pesado a VS Code es su anfitrión de extensiones (un Node por ventana). Aquí no hay anfitrión: de un `.vsix`
-(un zip) se lee `extension/package.json` → `contributes.themes`, `snippets`, `languages` (extensiones y comentarios) y
-`grammars` (se guardan para el futuro); lo ejecutable se ignora y se dice. Lo equivalente a las extensiones
-«de verdad» (lenguaje, depurador, tools) llega por LSP, DAP y MCP, que ya son procesos aparte y opcionales.
-`pcode extensiones instalar <archivo.vsix|editor.nombre>` (Open VSX, solo si se pide), `listar`, `quitar`. Necesita un
-lector de zip: ADR-0012 decide entre `zip` (dependencia nueva) o `unzip` del sistema.
+1. Ejecuta `acepta`. Instalar desde un `.vsix` o una carpeta, listar, quitar e importar de VS Code ya estaba hecho.
+2. Comprueba que existen los informes de F9.19a y F9.19b (instalar por `editor.nombre` desde Open VSX).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["lee_contributes_de_un_package_json", "ignora_lo_ejecutable_y_lo_dice", "instalar_y_quitar"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.19a"
+nombre = "openvsx-nucleo"
+titulo = "Extensiones: URL de Open VSX y lectura de su respuesta (lógica pura)"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-extensions/src/openvsx.rs", "crates/pcode-extensions/src/lib.rs"]
+acepta = "cargo test -p pcode-extensions openvsx::"
+contexto = [
+  "crates/pcode-extensions/src/lib.rs (enum `ExtError`: cómo se declaran los errores; función `parse_package_json`: cómo se lee JSON con `serde_json::Value`)",
+]
+objetivo = '''
+1. `lib.rs`: añade `pub mod openvsx;` después del comentario `//!` inicial, y en `enum ExtError` la variante
+   `Remote(String)` con `#[error("Open VSX: {0}")]` y su `///` («El registro no contestó lo esperado»).
+2. Crea `openvsx.rs` con lo de *Firmas* y sus tests. Nada de red aquí: solo texto.
+3. `parse_id`: parte `id` por el PRIMER punto en espacio de nombres y nombre. Los dos deben tener entre 1 y 100
+   caracteres y solo letras ASCII, cifras, `-` y `_` (el nombre admite además `.`). Si no, `None`.
+4. `api_url`: `"{base}/api/{namespace}/{name}"`, quitando antes las `/` finales de `base`.
+5. `download_of`: `body` es el JSON de esa URL. Lee `version` (cadena) y `files.download` (cadena). Errores, siempre
+   `ExtError::Remote(mensaje)`: JSON no válido → `"respuesta no válida"`; si el JSON trae `error` (cadena) → ese
+   texto; falta `files.download` → `"la extensión no tiene archivo .vsix"`; la URL de descarga no empieza por
+   `base` (sin `/` finales) seguido de `/` → `"descarga fuera del registro: <url>"`. Si falta `version`, usa `""`.
+'''
+firmas = '''
+// crates/pcode-extensions/src/openvsx.rs
+//! Registro Open VSX: solo las URL y la lectura de la respuesta (la descarga la hace la CLI).
+use crate::ExtError;
+
+/// Registro por defecto.
+pub const OPEN_VSX: &str = "https://open-vsx.org";
+
+/// Parte `editor.nombre` en (espacio de nombres, nombre); `None` si no tiene esa forma.
+pub fn parse_id(id: &str) -> Option<(String, String)>;
+
+/// URL de los metadatos de la última versión.
+pub fn api_url(base: &str, namespace: &str, name: &str) -> String;
+
+/// (versión, URL del `.vsix`) a partir del JSON de `api_url`.
+pub fn download_of(body: &str, base: &str) -> Result<(String, String), ExtError>;
+'''
+ejemplo = '''
+parse_id("redhat.java")            -> Some(("redhat", "java"))
+parse_id("sin-punto")              -> None
+api_url("https://open-vsx.org/", "redhat", "java") -> "https://open-vsx.org/api/redhat/java"
+download_of(r#"{"version":"1.2.0","files":{"download":"https://open-vsx.org/api/redhat/java/1.2.0/file/redhat.java-1.2.0.vsix"}}"#,
+            "https://open-vsx.org")
+   -> Ok(("1.2.0", "https://open-vsx.org/api/redhat/java/1.2.0/file/redhat.java-1.2.0.vsix"))
+download_of(r#"{"error":"Extension not found: a.b"}"#, "https://open-vsx.org") -> Err(Remote("Extension not found: a.b"))
+'''
+tests = [
+  "id_con_editor_y_nombre: redhat.java da (redhat, java); sin punto, vacío, con barra o con espacio dan None",
+  "url_de_metadatos: la base con barra final da https://open-vsx.org/api/redhat/java",
+  "lee_version_y_descarga: el JSON del ejemplo da la versión 1.2.0 y la URL del .vsix",
+  "error_del_registro: un JSON con el campo error devuelve ExtError::Remote con ese texto",
+  "descarga_de_otro_sitio_se_rechaza: files.download en https://otro.example/x.vsix da Remote que contiene «fuera del registro»",
+  "json_roto: la cadena «no es json» da Remote(«respuesta no válida»)",
+]
+no_hagas = [
+  "No uses `reqwest` ni ninguna llamada de red en este crate",
+  "No añadas dependencias a `crates/pcode-extensions/Cargo.toml`",
+  "No toques las funciones `install`, `list` ni `uninstall`",
+]
+
+[[tarea]]
+id = "F9.19b"
+nombre = "openvsx-instalar"
+titulo = "`pcode extensiones instalar editor.nombre`: descargar el .vsix de Open VSX e instalarlo"
+fase = "F9"
+hito = "1.2"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.19a"]
+toca = ["crates/pcode-cli/src/ext_remote.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli ext_remote::"
+contexto = [
+  "crates/pcode-cli/src/main.rs (enum `ExtCmd`, función `ext_cmd` y el brazo `Some(Cmd::Extensiones(c))` de `main`)",
+  "crates/pcode-cli/src/update.rs (función `get`: cómo se usa `reqwest` con tiempo máximo y errores con `anyhow`)",
+  "crates/pcode-extensions/src/openvsx.rs (lo crea F9.19a: `OPEN_VSX`, `parse_id`, `api_url`, `download_of`)",
+]
+objetivo = '''
+1. Crea `ext_remote.rs` con `base_url` y `resolve_source` (firmas abajo) y declara `mod ext_remote;` en `main.rs`
+   (en orden alfabético, entre `doctor` y `flow_cmd`).
+2. `base_url`: el valor de la variable `PCODE_OPENVSX_URL` si existe y no está vacía; si no,
+   `pcode_extensions::openvsx::OPEN_VSX`. Sin `/` al final.
+3. `resolve_source(origen, base, tmp)`: si `origen` existe en disco, lo devuelve tal cual (no hay red). Si no existe
+   y `parse_id(texto de origen)` da `Some((ns, name))`: hace GET a `api_url(base, ns, name)`, pasa el cuerpo a
+   `download_of(cuerpo, base)`, descarga esa URL y la guarda en `tmp/<ns>.<name>-<versión>.vsix`; devuelve esa
+   ruta. En cualquier otro caso, error `no existe <origen> ni es un identificador editor.nombre`.
+4. Cliente: `reqwest::Client::builder().timeout(Duration::from_secs(60)).build()`. Una respuesta que no sea 2xx en
+   los metadatos se pasa igualmente a `download_of` (el registro contesta JSON con `error`); en la descarga es un
+   error `descarga fallida: HTTP <código>`. Si el `.vsix` pasa de 64 MiB (`MAX_VSIX`), error `el .vsix es demasiado
+   grande`. Antes de pedir nada imprime `Descargando <id> de <base>…` con `eprintln!`.
+5. `main.rs`, brazo `Some(Cmd::Extensiones(c))`: antes de llamar a `ext_cmd`, si `c` es `ExtCmd::Instalar { origen }`
+   sustituye `origen` por `ext_remote::resolve_source(&origen, &ext_remote::base_url(), &std::env::temp_dir()).await?`.
+   En `ExtCmd::Instalar`, cambia el comentario `///` de `origen` a «Archivo `.vsix`, carpeta o `editor.nombre`
+   (se descarga de Open VSX)».
+6. Tests en `ext_remote.rs` con un servidor HTTP falso en `127.0.0.1:0` hecho con `tokio::net::TcpListener`: acepta
+   como mucho 2 conexiones; en cada una lee hasta `\r\n\r\n`, mira la primera línea y contesta
+   `HTTP/1.1 200 OK\r\nContent-Length: N\r\nConnection: close\r\n\r\n` más el cuerpo. Para `GET /api/ana/temas`
+   el cuerpo es el JSON con `files.download` apuntando a `http://127.0.0.1:<puerto>/f/ana.temas-1.0.0.vsix`; para
+   esa otra ruta, los bytes `PK-falso`.
+'''
+firmas = '''
+// crates/pcode-cli/src/ext_remote.rs
+//! Descarga de extensiones de Open VSX para `pcode extensiones instalar editor.nombre`.
+use std::path::{Path, PathBuf};
+
+/// Tamaño máximo de un `.vsix` descargado.
+pub const MAX_VSIX: usize = 64 * 1024 * 1024;
+
+/// Registro que se usa: `PCODE_OPENVSX_URL` o Open VSX.
+pub fn base_url() -> String;
+
+/// Devuelve `origen` si existe; si es `editor.nombre`, lo descarga a `tmp` y devuelve la ruta del `.vsix`.
+pub async fn resolve_source(origen: &Path, base: &str, tmp: &Path) -> anyhow::Result<PathBuf>;
+'''
+ejemplo = '''
+resolve_source(Path::new("/tmp/mi.vsix"), base, tmp)   (el archivo existe)  -> Ok("/tmp/mi.vsix"), sin red
+resolve_source(Path::new("ana.temas"), "http://127.0.0.1:4000", tmp)        -> Ok(tmp/"ana.temas-1.0.0.vsix")
+resolve_source(Path::new("no/existe/x"), base, tmp)    -> Err("no existe no/existe/x ni es un identificador editor.nombre")
+'''
+tests = [
+  "origen_local_no_usa_la_red: con un archivo que existe y una base inalcanzable (http://127.0.0.1:1) devuelve la misma ruta",
+  "descarga_de_un_servidor_falso: con el servidor falso, ana.temas deja en tmp el archivo ana.temas-1.0.0.vsix con el contenido PK-falso",
+  "origen_que_no_existe_ni_es_id: no/existe/x da un error cuyo texto contiene «ni es un identificador»",
+  "registro_con_error: si el servidor falso contesta {\"error\":\"no está\"} a los metadatos, el error contiene «no está»",
+]
+no_hagas = [
+  "No cambies la firma de `ext_cmd` ni la hagas `async`",
+  "No instales nada en estos tests: `resolve_source` solo descarga; instalar lo sigue haciendo `pcode_extensions::install`",
+  "No uses la red real en los tests: solo el servidor falso de 127.0.0.1",
+  "No añadas dependencias (`reqwest`, `tokio`, `anyhow` y `tempfile` ya están en el Cargo.toml del crate)",
+]
 
 [[tarea]]
 id = "F9.20"
@@ -581,17 +717,42 @@ id = "F9.22"
 nombre = "ide-wayland-y-accesibilidad"
 titulo = "IDE: Wayland nativo (carga dinámica) y lector de pantalla (AccessKit) como funciones opcionales"
 fase = "F9"
-ejecutor = "coordinador"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
 depende = ["F9.05"]
-toca = ["crates/pcode-ide/Cargo.toml", "crates/pcode-ide/src/main.rs", "docs/adr/ADR-0011-ide-nativo.md"]
-acepta = "cargo build -p pcode-ide --features wayland,accesibilidad"
-contexto = ["docs/adr/ADR-0011-ide-nativo.md"]
+toca = ["crates/pcode-ide/Cargo.toml", ".github/workflows/release.yml", "Cargo.lock"]
+acepta = "cargo check -p pcode-ide --features wayland,accesibilidad && cargo check -p pcode-ide && grep -q 'pcode-ide/wayland' .github/workflows/release.yml"
+contexto = [
+  "crates/pcode-ide/Cargo.toml (las cuatro dependencias gráficas: `eframe`, `egui-winit`, `glutin`, `glutin-winit`, hoy solo con `x11` y `egl`)",
+  ".github/workflows/release.yml (job `build`, paso «Compilar»: la línea `cargo build --release --locked -p pcode-cli -p pcode-ide …`)",
+]
 objetivo = '''
-La base solo compila X11 (también va en Wayland por XWayland) para gastar poco al compilar. Features `wayland`
-(eframe/wayland con `wayland-dlopen`, sin bibliotecas de desarrollo) y `accesibilidad` (eframe/accesskit). La release
-las activa; el perfil `ligero` no.
+1. `crates/pcode-ide/Cargo.toml`: añade al final una sección `[features]` con exactamente esto (no cambies las
+   dependencias que ya hay):
+   `default = []`
+   `wayland = ["eframe/wayland", "egui-winit/wayland", "glutin/wayland", "glutin-winit/wayland"]`
+   `accesibilidad = ["eframe/accesskit"]`
+   y, encima, un comentario: la base solo compila X11 (en Wayland funciona por XWayland) para gastar poco al
+   compilar; la release activa las dos funciones; el perfil ligero no.
+2. Ejecuta `cargo check -p pcode-ide --features wayland,accesibilidad`. Cargo descargará las bibliotecas de Wayland
+   y AccessKit y actualizará `Cargo.lock`: ese `Cargo.lock` cambiado entra en el commit. Si la descarga falla por
+   red, para y anótalo en *Pendiente* (no borres la sección `[features]`).
+3. `.github/workflows/release.yml`, paso «Compilar» del job `build`: añade a la orden `cargo build`
+   `--features pcode-ide/wayland,pcode-ide/accesibilidad` (justo antes de `--target`).
+4. Comprueba también que sin funciones sigue compilando: `cargo check -p pcode-ide`.
 '''
-tests = ["(sin tests unitarios): la aceptación compila con las features"]
+tests = ["(sin tests unitarios): la aceptación compila el IDE con las dos funciones y sin ellas"]
+no_hagas = [
+  "No actives `wayland` ni `accesibilidad` por defecto (`default` se queda vacío)",
+  "No añadas `eframe/x11` ni `glutin/glx`: el IDE usa solo EGL a propósito (lo explica el comentario del Cargo.toml)",
+  "No toques `tools/compilar-ligero.sh` ni el job de CI: el perfil ligero sigue sin estas funciones",
+  "No cambies versiones de dependencias",
+]
+notas = '''
+`docs/adr/ADR-0011-ide-nativo.md` debería mencionar las dos funciones, pero está fuera de *Toca*: anótalo en
+*Pendiente* con la frase que añadirías.
+'''
 
 [[tarea]]
 id = "F9.23"
@@ -654,19 +815,38 @@ id = "F9.25"
 nombre = "releases-periodicas"
 titulo = "Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas"
 fase = "F9"
+hito = "1.2"
+talla = "S"
 ejecutor = "coordinador"
+motivo_coordinador = "Publicar una release empuja una etiqueta `v*` al remoto (necesita permiso de push de etiquetas) y dispara el workflow que publica binarios: es una decisión del propietario y no se puede deshacer"
 depende = ["F9.01"]
-toca = ["Cargo.toml", "CHANGELOG.md", "tools/release.sh"]
+toca = ["Cargo.toml", "Cargo.lock", "CHANGELOG.md"]
 acepta = "sh -n tools/release.sh && tools/release.sh --comprobar"
-contexto = [".github/workflows/release.yml (se dispara con etiquetas v*)", "CHANGELOG.md"]
+contexto = [
+  "tools/release.sh (ya existe: `tools/release.sh X.Y.Z` publica; `tools/release.sh --comprobar` solo valida)",
+  ".github/workflows/release.yml (se dispara con etiquetas `v*` y publica binarios, APK y SHA256SUMS)",
+  "CHANGELOG.md (cada versión tiene su sección `## [X.Y.Z] — fecha`)",
+]
 objetivo = '''
-Cadencia: una release menor cuando cierra un bloque de F9 (base · IDE completo · extensiones y depurador) y un parche
-cuando se corrige algo visible. `tools/release.sh X.Y.Z` comprueba que el árbol está limpio, que `cargo test
---workspace` pasa y que `CHANGELOG.md` tiene `## X.Y.Z`; cambia `version` en `[workspace.package]`, hace commit
-`release: vX.Y.Z`, crea la etiqueta anotada y la empuja (`git push origin HEAD vX.Y.Z`). `--comprobar` solo valida que
-la versión del Cargo.toml tiene su sección en el CHANGELOG. La release la publica el workflow.
+El script ya está hecho. Esta tarea es publicar la primera release con él (v1.2.0) y dejar la cadencia escrita.
+1. Comprueba que el hito 1.2 está cerrado: `tools/tareas/generar.py --estado` no debe listar tareas abiertas del
+   hito 1.2 (salvo esta).
+2. `CHANGELOG.md`: revisa que la sección `## [1.2.0]` cuenta lo que entra (IDE nativo, depurador, remoto,
+   extensiones declarativas, modo opencode) y pon la fecha del día.
+3. Árbol limpio (`git status --porcelain` vacío) y en la rama principal al día con el remoto.
+4. Ejecuta `tools/release.sh 1.2.0`: pasa `cargo test --workspace`, cambia `version` en `[workspace.package]` de
+   `Cargo.toml`, actualiza `Cargo.lock`, hace el commit `release: v1.2.0`, crea la etiqueta anotada `v1.2.0` y
+   ejecuta `git push origin HEAD v1.2.0`.
+5. Sigue el workflow `release` en GitHub hasta que el job `verify-install` termine bien. Si falla, corrige y publica
+   un parche (`1.2.1`); nunca muevas ni borres una etiqueta ya empujada.
+6. Cadencia a partir de aquí: una versión menor al cerrar cada hito (1.3, 1.4…) y un parche cuando se corrige algo
+   visible para el usuario. Escríbelo en el informe.
 '''
-tests = ["(sin tests unitarios): la aceptación valida el script y el CHANGELOG"]
+tests = ["(sin tests unitarios): la aceptación valida el script y que la versión del Cargo.toml tiene su sección en el CHANGELOG"]
+no_hagas = [
+  "No uses `git push --force` ni borres etiquetas publicadas",
+  "No publiques con tests en rojo ni con el árbol sucio",
+]
 
 [[tarea]]
 id = "F9.26"
@@ -1246,3 +1426,1893 @@ no_hagas = [
   "No cambies las acciones `studio` y `tui` ni la línea `Exec=pcode ide %F`",
   "No pongas la ruta absoluta en el archivo .desktop: la pone `desktop_entry` al instalar",
 ]
+
+[[tarea]]
+id = "F9.30"
+nombre = "ide-cambios-sin-guardar"
+titulo = "IDE: preguntar antes de cerrar una pestaña o la ventana con cambios sin guardar (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = []
+acepta = "cargo test -p pcode-ide closing:: && grep -q CancelClose crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`. «Guardar todo» (Ctrl+Alt+S) ya existía; lo nuevo es el diálogo al cerrar.
+2. Comprueba que existen los informes de F9.30a y F9.30b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.30a"
+nombre = "ide-cierre-nucleo"
+titulo = "IDE: qué pestañas con cambios afecta un cierre (lógica pura)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/closing.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide closing::"
+contexto = [
+  "crates/pcode-ide/src/state.rs (`Tab` con `path`, `dirty()` y `title()`; `Tabs` con `list` y `open(path, text)`: se usan aquí y en los tests)",
+]
+objetivo = '''
+1. Crea `closing.rs` con `CloseTarget`, `dirty_indexes` y `dirty_titles` (firmas abajo) y sus tests. En `lib.rs`
+   añade `pub mod closing;` en orden alfabético (después de `pub mod app;`).
+2. `dirty_indexes(tabs, target)`: índices, en orden, de las pestañas con cambios sin guardar (`Tab::dirty()`) a las
+   que afecta el cierre: con `CloseTarget::Tab(path)`, solo la pestaña de esa ruta (si existe y tiene cambios); con
+   `CloseTarget::Window`, todas las que tengan cambios.
+3. `dirty_titles(tabs, target)`: los `title()` de esas mismas pestañas, en el mismo orden. Vacío significa que se
+   puede cerrar sin preguntar.
+'''
+firmas = '''
+// crates/pcode-ide/src/closing.rs
+//! Cierre con cambios sin guardar: qué pestañas hay que guardar antes de cerrar una pestaña o la ventana.
+use crate::state::Tabs;
+
+/// Lo que el usuario quiere cerrar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CloseTarget {
+    /// Una pestaña, por su ruta.
+    Tab(String),
+    /// La ventana entera.
+    Window,
+}
+
+/// Índices de las pestañas con cambios sin guardar a las que afecta el cierre.
+pub fn dirty_indexes(tabs: &Tabs, target: &CloseTarget) -> Vec<usize>;
+/// Nombres cortos de esas pestañas (vacío = se puede cerrar sin preguntar).
+pub fn dirty_titles(tabs: &Tabs, target: &CloseTarget) -> Vec<String>;
+'''
+ejemplo = '''
+let mut tabs = Tabs::default();
+tabs.open("src/a.rs", "uno".into());  tabs.open("b.md", "dos".into());  tabs.open("c.py", "tres".into());
+tabs.list[0].text.push('!');  tabs.list[2].text.push('!');          // a.rs y c.py quedan con cambios
+dirty_titles(&tabs, &CloseTarget::Window)                  -> ["a.rs", "c.py"]
+dirty_indexes(&tabs, &CloseTarget::Window)                 -> [0, 2]
+dirty_titles(&tabs, &CloseTarget::Tab("b.md".into()))      -> []
+dirty_titles(&tabs, &CloseTarget::Tab("src/a.rs".into()))  -> ["a.rs"]
+dirty_titles(&tabs, &CloseTarget::Tab("no-abierta".into())) -> []
+'''
+tests = [
+  "ventana_lista_todas_las_modificadas: el ejemplo con Window da los títulos a.rs y c.py y los índices 0 y 2",
+  "pestana_sin_cambios_no_pregunta: Tab(b.md) da listas vacías",
+  "pestana_con_cambios_pregunta_solo_por_ella: Tab(src/a.rs) da [a.rs] y el índice 0",
+  "ruta_que_no_esta_abierta: Tab(no-abierta) da listas vacías; con Tabs::default() y Window, también",
+]
+no_hagas = ["No uses `egui` en este módulo", "No cambies `state.rs`", "No guardes ni cierres nada aquí: solo se calcula"]
+
+[[tarea]]
+id = "F9.30b"
+nombre = "ide-cierre-dialogo"
+titulo = "IDE: diálogo «¿Guardar los cambios?» al cerrar una pestaña, al salir y al cerrar la ventana"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.30a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide textos_de_cierre && grep -q CancelClose crates/pcode-ide/src/app.rs && ! grep -q quit_armed crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`fn run`: brazos `Command::CloseEditor` y `Command::Quit`; el final de `fn ui_tabs` (`if let Some(i) = close`); `fn save_tab`; `impl eframe::App for Ide`, `fn ui`; el campo `quit_armed`)",
+  "crates/pcode-ide/src/closing.rs (lo crea F9.30a: `CloseTarget::{Tab(String), Window}`, `dirty_indexes(&Tabs, &CloseTarget) -> Vec<usize>`, `dirty_titles(…) -> Vec<String>`)",
+]
+objetivo = '''
+1. `texts.rs`: añade al final de `Texts` (después de `shortcuts`; con `///`, en `ES` y `EN`): `unsaved_title`
+   («¿Guardar los cambios antes de cerrar?» / «Save changes before closing?»), `save_changes` («Guardar» / «Save»),
+   `discard_changes` («No guardar» / «Don't save») y `cancel` («Cancelar» / «Cancel»). Test `textos_de_cierre`.
+2. `app.rs`, `struct Ide`: quita el campo `quit_armed` (y su valor en `Ide::new`) y añade
+   `closing: Option<(CloseTarget, bool)>` (qué se quiere cerrar y si se está esperando a que se guarde) y
+   `allow_close: bool`; los dos empiezan en `None` y `false`.
+3. `app.rs`, dos métodos nuevos en `impl Ide`:
+   - `fn do_close(&mut self, target: CloseTarget, ctx: &egui::Context)`: con `Tab(path)`, busca su índice en
+     `self.tabs.list` y llama a `self.tabs.close(i)`; con `Window`, pone `self.allow_close = true` y manda
+     `ctx.send_viewport_cmd(egui::ViewportCommand::Close)`.
+   - `fn request_close(&mut self, target: CloseTarget, ctx: &egui::Context)`: si
+     `closing::dirty_titles(&self.tabs, &target)` está vacío, llama a `do_close`; si no,
+     `self.closing = Some((target, false))`.
+4. `app.rs`, usa `request_close` en tres sitios: en `fn run`, `Command::CloseEditor` (con la ruta de la pestaña
+   activa, si hay) y `Command::Quit` (con `CloseTarget::Window`; desaparece el aviso `quit_unsaved`); y al final de
+   `fn ui_tabs`, donde hoy se hace `self.tabs.close(i)` (con la ruta de la pestaña `i`; necesita
+   `let ctx = ui.ctx().clone();`).
+5. `app.rs`, `fn ui`, justo después del bucle `while let Ok(m) = self.rx.try_recv()`:
+   a) si `ctx.input(|i| i.viewport().close_requested())` y `!self.allow_close` y `self.tabs.any_dirty()`: manda
+      `ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose)` y, si `self.closing` es `None`, pon
+      `Some((CloseTarget::Window, false))`.
+   b) si `self.closing` es `Some((target, true))` y `dirty_titles` de ese `target` ya está vacío (los guardados
+      terminaron): pon `self.closing = None` y llama a `self.do_close(target, &ctx)`.
+6. `app.rs`: nuevo método `fn ui_close_dialog(&mut self, ctx: &egui::Context)`, llamado en `fn ui` después de
+   `self.ui_toasts(&ctx);`. Si `self.closing` es `Some`, dibuja un `egui::Window::new(t.unsaved_title)` (sin
+   plegar, sin redimensionar, anclado con `Align2::CENTER_CENTER`) con una línea por título de `dirty_titles` y tres
+   botones: `t.save_changes` → llama a `self.save_tab(i)` para cada índice de `dirty_indexes` y deja
+   `self.closing = Some((target, true))`; `t.discard_changes` → `self.closing = None` y `self.do_close(target, ctx)`;
+   `t.cancel` (o la tecla Esc) → `self.closing = None`. Mientras se espera el guardado (`true`), enseña
+   `ui.spinner()` en vez del botón de guardar. Apunta el botón pulsado en una variable y actúa fuera del cierre.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs — dentro de `impl Ide`
+/// Cierra una pestaña o la ventana sin preguntar.
+fn do_close(&mut self, target: CloseTarget, ctx: &egui::Context);
+/// Cierra si no hay cambios sin guardar; si los hay, abre el diálogo.
+fn request_close(&mut self, target: CloseTarget, ctx: &egui::Context);
+/// Diálogo «¿Guardar los cambios antes de cerrar?».
+fn ui_close_dialog(&mut self, ctx: &egui::Context);
+'''
+tests = [
+  "textos_de_cierre: unsaved_title, save_changes, discard_changes y cancel no están vacíos en ES ni en EN, y ES.cancel es «Cancelar»",
+]
+no_hagas = [
+  "No cierres la ventana mientras quede algún guardado pendiente: se espera a que `dirty_titles` quede vacío",
+  "No quites el texto `quit_unsaved` de `texts.rs` (puede quedar sin usar)",
+  "No llames a `self.save_tab` ni a `self.do_close` dentro del cierre que dibuja la ventana: guarda la elección y actúa después",
+  "No cambies `Tabs::close` ni `save_tab`",
+]
+
+[[tarea]]
+id = "F9.31"
+nombre = "ide-reemplazar-en-proyecto"
+titulo = "IDE: buscar en el proyecto con reemplazo en todos los archivos (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.09"]
+toca = []
+acepta = "cargo test -p pcode-ide project_replace:: && grep -q 'Msg::Replaced' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: la lógica de reemplazo pasa sus tests y la barra de búsqueda la usa.
+2. Comprueba que existen los informes de F9.31a y F9.31b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.31a"
+nombre = "ide-reemplazar-en-proyecto-nucleo"
+titulo = "IDE: reemplazar un texto en una lista de archivos, con lectura y escritura inyectadas (lógica pura)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.09"]
+toca = ["crates/pcode-ide/src/project_replace.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide project_replace::"
+contexto = [
+  "crates/pcode-ide/src/find.rs (`pub fn replace_all(text: &str, query: &str, replacement: &str, case_sensitive: bool) -> (String, usize)`: texto nuevo y cuántas sustituciones)",
+  "crates/pcode-ide/src/app.rs (`pub fn group_hits`: los resultados de búsqueda son `(ruta, línea, texto)`)",
+]
+objetivo = '''
+1. Crea `project_replace.rs` con `files_of`, `Outcome` y `run` (firmas abajo) y sus tests. En `lib.rs` añade
+   `pub mod project_replace;` en orden alfabético (después de `pub mod problems;`).
+2. `files_of(hits)`: rutas de los resultados, sin repetir y en orden de primera aparición.
+3. `run(files, dirty, query, replacement, case_sensitive, read, write)`: para cada ruta de `files`, en orden:
+   - si está en `dirty` (pestaña abierta con cambios sin guardar), se añade a `skipped` y no se toca;
+   - `read(ruta)`: si da `Err`, a `skipped`;
+   - `crate::find::replace_all(&texto, query, replacement, case_sensitive)`: si hubo 0 sustituciones, no se escribe
+     ni cuenta;
+   - `write(ruta, &nuevo)`: si da `Err`, a `skipped`; si va bien, `files += 1` y `replacements += n`.
+   Con `query` vacía no hace nada y devuelve `Outcome::default()`.
+'''
+firmas = '''
+// crates/pcode-ide/src/project_replace.rs
+//! Reemplazo en todo el proyecto: la lectura y la escritura se inyectan para probarlo sin demonio.
+
+/// Resultado de un reemplazo en varios archivos.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Outcome {
+    /// Archivos cambiados.
+    pub files: usize,
+    /// Sustituciones hechas en total.
+    pub replacements: usize,
+    /// Archivos que no se tocaron (cambios sin guardar, o no se pudieron leer o escribir).
+    pub skipped: Vec<String>,
+}
+
+/// Rutas de los resultados de búsqueda, sin repetir y en orden.
+pub fn files_of(hits: &[(String, u32, String)]) -> Vec<String>;
+
+/// Sustituye `query` por `replacement` en cada archivo de `files` que no esté en `dirty`.
+pub fn run(
+    files: &[String], dirty: &[String], query: &str, replacement: &str, case_sensitive: bool,
+    read: impl FnMut(&str) -> Result<String, String>,
+    write: impl FnMut(&str, &str) -> Result<(), String>,
+) -> Outcome;
+'''
+ejemplo = '''
+files_of(&[("a.rs".into(), 1, "x".into()), ("b.rs".into(), 4, "x".into()), ("a.rs".into(), 9, "x".into())]) -> ["a.rs", "b.rs"]
+
+Disco simulado: a.rs = "foo foo", b.rs = "nada", c.rs = "foo", d.rs = "foo" (d.rs está en `dirty`)
+run(&[a.rs, b.rs, c.rs, d.rs], &[d.rs], "foo", "bar", true, read, write)
+   -> Outcome { files: 2, replacements: 3, skipped: ["d.rs"] }
+   y el disco queda: a.rs = "bar bar", b.rs = "nada" (sin escribir), c.rs = "bar", d.rs = "foo"
+'''
+tests = [
+  "archivos_sin_repetir: el ejemplo de files_of da [a.rs, b.rs]",
+  "reemplaza_y_cuenta: el ejemplo de run (con un HashMap como disco) da 2 archivos, 3 sustituciones y deja a.rs y c.rs cambiados",
+  "salta_los_que_tienen_cambios_sin_guardar: d.rs no se lee ni se escribe y sale en skipped",
+  "no_escribe_si_no_hay_coincidencias: para b.rs no se llama a write",
+  "errores_de_lectura_y_escritura_se_apuntan: si read da Err para un archivo, o write da Err, ese archivo sale en skipped y no cuenta",
+  "consulta_vacia_no_hace_nada: con query vacía el resultado es Outcome::default() y no se llama a read",
+]
+no_hagas = [
+  "No llames al demonio ni al disco real: todo pasa por `read` y `write`",
+  "No reimplementes la búsqueda: usa `crate::find::replace_all`",
+  "No uses `egui`",
+]
+
+[[tarea]]
+id = "F9.31b"
+nombre = "ide-reemplazar-en-proyecto-barra"
+titulo = "IDE: campo «Reemplazar» en la búsqueda del proyecto, con confirmación y recarga de las pestañas"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.31a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide textos_de_reemplazo_en_proyecto && grep -q 'Msg::Replaced' crates/pcode-ide/src/app.rs && grep -q 'fn reload_clean_tabs' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`fn ui_search`: campo de búsqueda y botón «Aa»; `fn search`; `fn open_file`: cómo se pide `fs.read`; `fn save_tab`: cómo se pide `fs.write`; `enum Msg` y `fn on_msg`)",
+  "crates/pcode-ide/src/project_replace.rs (lo crea F9.31a: `files_of(&hits) -> Vec<String>`, `run(files, dirty, query, replacement, case_sensitive, read, write) -> Outcome { files, replacements, skipped }`)",
+]
+objetivo = '''
+1. `texts.rs`: añade al final de `Texts` (con `///`, en `ES` y `EN`): `confirm_replace` («Confirmar: reemplazar en
+   todos los archivos» / «Confirm: replace in all files»), `replacements` («sustituciones» / «replacements») y
+   `skipped_files` («archivos sin tocar» / «files skipped»). Test `textos_de_reemplazo_en_proyecto`.
+2. `app.rs`: en `struct Ide`, campos `search_replace: String` y `replace_armed: bool` (vacío y `false` en
+   `Ide::new`). En `enum Msg`, variantes `Replaced(crate::project_replace::Outcome)` y
+   `Reloaded(String, String)` (ruta y texto), con `///`.
+3. `app.rs`, `fn ui_search`: debajo de la fila del campo de búsqueda añade otra fila con
+   `egui::TextEdit::singleline(&mut self.search_replace).hint_text(t.replace)` y un botón. El botón está activo
+   (`ui.add_enabled`) solo si hay resultados (`!self.hits.is_empty()`). Su texto es `t.replace_all`; tras el primer
+   clic (`replace_armed = true`) pasa a ser `t.confirm_replace` en color `p.warning`; el segundo clic llama a
+   `self.replace_in_project()`. Si cambia el texto de búsqueda o el de reemplazo, `replace_armed` vuelve a `false`.
+4. `app.rs`, nuevo `fn replace_in_project(&mut self)`: pone `replace_armed = false`; calcula
+   `files = project_replace::files_of(&self.hits)` y `dirty` = rutas de las pestañas con `dirty()`; con `self.spawn`
+   ejecuta `project_replace::run(…)` donde `read` llama a `c.call("fs.read", json!({"path": p}))` (si `binary` es
+   `true`, `Err`; si no, el `content`) y `write` llama a `c.call("fs.write", json!({"path": p, "content": t}))`.
+   Devuelve `Msg::Replaced(resultado)`.
+5. `app.rs`, `fn on_msg`: `Msg::Replaced(o)` → aviso
+   `format!("{} {} · {} {}", o.replacements, t.replacements, o.files, t.in_files)` y, si hay `skipped`, añade
+   ` · {n} {t.skipped_files}` (aviso de error en ese caso); después `self.reload_clean_tabs()`, `self.search()` y
+   `self.refresh_git()`. `Msg::Reloaded(path, text)` → si la pestaña de esa ruta existe y NO tiene cambios, pon su
+   `text` y su `saved` a `text`.
+6. `app.rs`, nuevo `fn reload_clean_tabs(&self)`: por cada pestaña sin cambios, pide `fs.read` con `self.spawn` y
+   devuelve `Msg::Reloaded(ruta, contenido)` (si falla, `Msg::Toast(e, true)`).
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Msg { /* … */
+    /// Terminó un reemplazo en el proyecto.
+    Replaced(crate::project_replace::Outcome),
+    /// Texto recargado del disco de una pestaña sin cambios (ruta, texto).
+    Reloaded(String, String),
+}
+impl Ide {
+    /// Reemplaza en todos los archivos con resultados y avisa del total.
+    fn replace_in_project(&mut self);
+    /// Vuelve a leer del disco las pestañas sin cambios (tras un reemplazo o un renombrado).
+    fn reload_clean_tabs(&self);
+}
+'''
+tests = [
+  "textos_de_reemplazo_en_proyecto: confirm_replace, replacements y skipped_files no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No reemplaces con un solo clic: siempre hace falta el segundo clic de confirmación",
+  "No toques los archivos abiertos con cambios sin guardar: `run` ya los salta porque se le pasan en `dirty`",
+  "No hagas las peticiones en el hilo de la interfaz: todo dentro de `self.spawn`",
+  "No cambies `find.rs` ni la barra de buscar del archivo (`ui_find_bar`)",
+]
+
+[[tarea]]
+id = "F9.32"
+nombre = "ide-completado-lsp"
+titulo = "IDE: autocompletado del servidor de lenguaje en el editor (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.07", "F9.20"]
+toca = []
+acepta = "cargo test -p pcode-ide completion:: && grep -q 'lsp.completion' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: Ctrl+Espacio suma a los fragmentos las propuestas del servidor de lenguaje.
+2. Comprueba que existen los informes de F9.32a y F9.32b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.32a"
+nombre = "ide-completado-nucleo"
+titulo = "IDE: leer las propuestas de `lsp.completion`, filtrarlas y convertirlas en fragmentos (lógica pura)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.20"]
+toca = ["crates/pcode-ide/src/completion.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide completion::"
+contexto = [
+  "crates/pcode-ide/src/snippets.rs (`Snippet { prefix, body, description }` y `expand`: en el cuerpo, `$1`, `${1:x}` y `$0` son huecos y `\\$` es un dólar literal)",
+  "crates/pcode-ide/src/problems.rs (lectura tolerante de campos de un `serde_json::Value`)",
+]
+objetivo = '''
+1. Crea `completion.rs` con `Item`, `parse_items`, `filter` y `to_snippet` (firmas abajo) y sus tests. En `lib.rs`
+   añade `pub mod completion;` en orden alfabético.
+2. `parse_items(v)`: `v` es la respuesta de `lsp.completion`. Acepta una lista de objetos o un objeto con la lista
+   en `items`; cualquier otra cosa da vector vacío. De cada objeto: `label` (cadena, obligatoria: sin ella se salta);
+   `detail` (cadena, por defecto vacía); `insert` = el primero que exista de `textEdit.newText`, `insertText` y
+   `label`; `snippet` = `true` si `insertTextFormat == 2` o si `snippet == true`. Como mucho `MAX_ITEMS` elementos.
+3. `filter(items, word)`: los que tienen un `label` que empieza por `word` sin distinguir mayúsculas (con `word`
+   vacía, todos), en el mismo orden, como mucho 50.
+4. `to_snippet(item)`: `Snippet { prefix: label, description: detail, body }`. Si `item.snippet` es `true`, el
+   cuerpo es `insert` tal cual (ya viene con huecos `$1`). Si es `false`, es texto literal: cada `$` de `insert` se
+   escribe `\$` para que `expand` no lo tome por un hueco.
+'''
+firmas = '''
+// crates/pcode-ide/src/completion.rs
+//! Autocompletado del servidor de lenguaje: lectura de la respuesta de `lsp.completion`.
+use crate::snippets::Snippet;
+use serde_json::Value;
+
+/// Máximo de propuestas que se leen.
+pub const MAX_ITEMS: usize = 200;
+
+/// Una propuesta de autocompletado.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Item {
+    /// Texto que se muestra.
+    pub label: String,
+    /// Detalle (tipo o firma).
+    pub detail: String,
+    /// Texto que se inserta.
+    pub insert: String,
+    /// Si `insert` usa la sintaxis de fragmentos (`$1`, `${1:x}`).
+    pub snippet: bool,
+}
+
+/// Propuestas de la respuesta de `lsp.completion`.
+pub fn parse_items(v: &Value) -> Vec<Item>;
+/// Las propuestas cuyo `label` empieza por `word` (sin distinguir mayúsculas).
+pub fn filter(items: &[Item], word: &str) -> Vec<Item>;
+/// La propuesta como fragmento, para insertarla con `snippets::insert`.
+pub fn to_snippet(item: &Item) -> Snippet;
+'''
+ejemplo = '''
+parse_items(&json!([{"label": "println!", "detail": "macro", "insertText": "println!(\"$1\")", "insertTextFormat": 2},
+                    {"label": "push", "textEdit": {"newText": "push_str"}}, {"detail": "sin label"}]))
+   -> [Item { label: "println!", detail: "macro", insert: "println!(\"$1\")", snippet: true },
+       Item { label: "push", detail: "", insert: "push_str", snippet: false }]
+parse_items(&json!({"items": [{"label": "a"}]})) -> [Item { label: "a", detail: "", insert: "a", snippet: false }]
+filter(&items, "PU") -> [el de «push»]
+to_snippet(&Item { label: "$HOME".into(), detail: "".into(), insert: "$HOME".into(), snippet: false }).body -> "\\$HOME"
+   (y `snippets::expand` de ese cuerpo devuelve el texto «$HOME»)
+'''
+tests = [
+  "lee_lista_y_objeto_con_items: los dos primeros ejemplos; null, un número y una cadena dan vector vacío",
+  "text_edit_gana_a_insert_text: con textEdit.newText e insertText a la vez, insert es el de textEdit",
+  "limite_de_propuestas: una lista de 300 objetos válidos da MAX_ITEMS elementos",
+  "filtra_por_prefijo_sin_mayusculas: «PU» encuentra push; la palabra vacía los devuelve todos; «zz» ninguno",
+  "texto_literal_escapa_el_dolar: el último ejemplo; al pasar el cuerpo por snippets::expand sale $HOME",
+  "fragmento_del_servidor_conserva_los_huecos: con snippet = true el cuerpo es igual a insert",
+]
+no_hagas = [
+  "No hagas peticiones al demonio en este módulo",
+  "No cambies `snippets.rs`",
+  "No uses `egui`",
+]
+notas = '''
+Contrato de F8.07: `lsp.completion` devuelve una lista de `{label, kind, detail, insertText, replaceStart?,
+replaceEnd?, sortText}`, con `insertText` ya en texto plano (sin huecos). `kind`, `sortText` y `replaceStart/End` no
+se usan aquí: el IDE sustituye la palabra que hay antes del cursor. La lectura acepta además las formas crudas del
+LSP (`{items}`, `textEdit`, `insertTextFormat`) por si el demonio cambia.
+'''
+
+[[tarea]]
+id = "F9.32b"
+nombre = "ide-completado-en-el-editor"
+titulo = "IDE: Ctrl+Espacio pide `lsp.completion` y añade sus propuestas a la lista de fragmentos"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.32a", "F8.07"]
+toca = ["crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide completion:: && grep -q 'lsp.completion' crates/pcode-ide/src/app.rs && grep -q 'Msg::Completion' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`fn open_snippets`: lo que hace Ctrl+Espacio hoy; el campo `snippet_pick: Option<(Vec<Snippet>, usize)>`; `fn lsp_request`: cómo se calcula la posición con `to_lsp` y se pide algo al LSP con `self.spawn`; `enum Msg` y `fn on_msg`)",
+  "crates/pcode-ide/src/completion.rs (lo crea F9.32a: `parse_items(&Value) -> Vec<Item>`, `filter(&[Item], &str) -> Vec<Item>`, `to_snippet(&Item) -> Snippet`)",
+]
+objetivo = '''
+1. `app.rs`, `enum Msg`: variante nueva `Completion(String, String, Value)` con `///`: ruta del archivo, palabra
+   que había antes del cursor al pedirlo y respuesta de `lsp.completion`.
+2. `app.rs`, `fn open_snippets`: deja de avisar con `no_snippets` cuando no hay fragmentos (si `found` está vacío,
+   `self.snippet_pick` se queda en `None`, sin aviso). Al final, además, pide el autocompletado: con la pestaña
+   activa, `(line, character) = to_lsp(&tab.text, self.cursor_char)`, y con `self.spawn`:
+   `c.call("lsp.completion", json!({"path": p, "content": text, "line": line, "character": character}))` (el demonio
+   sincroniza el texto antes de preguntar al servidor de lenguaje); devuelve
+   `Msg::Completion(p, palabra, v)` si va bien y `Msg::Completion(p, palabra, Value::Null)` si falla (un archivo sin
+   servidor de lenguaje no es un error para el usuario).
+3. `app.rs`, `fn on_msg`, brazo `Msg::Completion(path, word, v)`: si la pestaña activa ya no es `path`, no hagas
+   nada. Si lo es: `nuevos = completion::filter(&completion::parse_items(&v), &word)` convertidos con
+   `completion::to_snippet`. Añádelos a la lista de `self.snippet_pick` (créala con `Some((nuevos, 0))` si era
+   `None`), saltando los que tengan un `prefix` que ya esté en la lista. Si al final no hay ninguna propuesta
+   (`snippet_pick` sigue en `None` o vacío), `self.snippet_pick = None` y `self.toast(self.t.no_snippets, false)`.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Msg { /* … */
+    /// Propuestas del servidor de lenguaje: (ruta, palabra antes del cursor, respuesta de `lsp.completion`).
+    Completion(String, String, Value),
+}
+// Método del demonio (lo añade F8.07):
+//   lsp.completion {path, content, line, character} → [{label, kind, detail, insertText, replaceStart?, replaceEnd?, sortText}]
+'''
+tests = [
+  "(sin tests nuevos): la lógica se prueba en completion:: (F9.32a); aquí la aceptación comprueba que compila y que el cableado existe",
+]
+no_hagas = [
+  "No cambies cómo se dibuja ni cómo se elige en la lista de fragmentos: las propuestas del servidor entran en la misma lista",
+  "No avises de error si `lsp.completion` falla: se tratan como «sin propuestas»",
+  "No pidas el autocompletado en cada pulsación: solo con Ctrl+Espacio",
+  "No dejes `snippet_pick` en `Some` con una lista vacía: las flechas dividirían por cero",
+]
+
+[[tarea]]
+id = "F9.33"
+nombre = "ide-formatear"
+titulo = "IDE: formatear el documento con el servidor de lenguaje (Mayús+Alt+F), también al guardar"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.06", "F9.11"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs", "crates/pcode-ide/src/settings.rs"]
+acepta = "cargo test -p pcode-ide formatear && grep -q 'lsp.format' crates/pcode-ide/src/app.rs && grep -q 'Command::Format' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`enum Command`, `Command::ALL` y `label`; `fn run`, brazo `Command::Save`; `fn shortcuts`: la primera tabla, la de Mayús y Alt; `fn lsp_request`: ejemplo de petición al LSP con `self.spawn`; `fn ui_settings`; `enum Msg` y `fn on_msg`; `pub fn breadcrumbs`: ejemplo de función pura con test en este archivo)",
+  "crates/pcode-ide/src/settings.rs (struct `IdeSettings`, su `Default` y los tests de ida y vuelta)",
+  "crates/pcode-ide/src/texts.rs (struct `Texts` y las constantes `ES` y `EN`)",
+]
+objetivo = '''
+El demonio ya formatea (F8.06): `lsp.format {"path", "content"}` devuelve `{"changed": true|false, "content": "texto
+formateado"}`. Aquí solo se pide y se pone el resultado en la pestaña.
+1. `settings.rs`: campo nuevo `pub format_on_save: bool` con `#[serde(rename = "formatear_al_guardar")]` y `///`;
+   por defecto `false`. Test `formatear_al_guardar_se_guarda_y_se_lee`.
+2. `texts.rs`: al final de `Texts` (después de `shortcuts`; con `///`, en `ES` y `EN`): `format_document`
+   («Formatear documento» / «Format document»), `format_on_save` («Formatear al guardar» / «Format on save») y
+   `format_none` («Sin cambios de formato» / «No formatting changes»). Test `textos_de_formatear`.
+3. `app.rs`: función pura nueva `pub fn format_result(v: &Value) -> Option<String>` junto a `breadcrumbs`:
+   `Some(contenido)` solo si `v["changed"]` es `true` y `v["content"]` es una cadena; en cualquier otro caso
+   (sin cambios, `null`, otra forma), `None`. Test `resultado_de_formatear`.
+4. `app.rs`: orden nueva `Command::Format` (con `///`), añadida a `Command::ALL` (su tamaño sube en 1) después de
+   `Command::Replace`, y a `label` con `(t.format_document, "Mayús+Alt+F")`. En `fn shortcuts`, añade a la primera
+   tabla `(Modifiers::SHIFT | Modifiers::ALT, Key::F, Command::Format)`. En `ui_title`, añádela a la lista del menú
+   `t.menu_edit`.
+5. `app.rs`: en `struct Ide`, campo `save_after_format: Option<String>` (ruta que hay que guardar cuando llegue su
+   formateo; `None` en `Ide::new`). En `enum Msg`, variante `Formatted(String, String, Value)` con `///`: ruta, texto
+   que se mandó y respuesta de `lsp.format`.
+6. `app.rs`, nuevo `fn format_tab(&mut self)`: con la pestaña activa (`p` = ruta, `text` = texto), con `self.spawn`:
+   `c.call("lsp.format", json!({"path": p, "content": text}))`; devuelve `Msg::Formatted(p, text, v)` y, si falla,
+   `Msg::Formatted(p, text, Value::Null)`.
+7. `app.rs`, `fn run`: `Command::Format => self.format_tab()`. En `Command::Save`: si
+   `self.settings.format_on_save` y hay pestaña activa, guarda su ruta en `self.save_after_format` y llama a
+   `self.format_tab()` en vez de guardar ya; si no, como antes.
+8. `app.rs`, `fn on_msg`, `Msg::Formatted(path, sent, v)`: busca el índice de la pestaña de `path`. Solo si su texto
+   sigue siendo igual a `sent`: si `format_result(&v)` da `Some(nuevo)`, pon `tab.text = nuevo`; si da `None` y
+   `self.save_after_format` no es esa ruta, avisa con `t.format_none`. Al final, si `self.save_after_format` es esa
+   ruta, vacíalo y llama a `self.save_tab(índice)` (se guarda aunque el formateo haya fallado).
+9. `app.rs`, `fn ui_settings`: debajo del tamaño de letra, una casilla
+   `ui.checkbox(&mut self.settings.format_on_save, t.format_on_save)`; si cambia (`.changed()`),
+   `self.settings.save()`.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+/// Texto formateado de la respuesta de `lsp.format`; `None` si no cambió nada o la respuesta no vale.
+pub fn format_result(v: &Value) -> Option<String>;
+pub enum Command { /* … */ Format, /* … */ }
+pub enum Msg { /* … */
+    /// Respuesta de `lsp.format`: (ruta, texto que se mandó, respuesta).
+    Formatted(String, String, Value),
+}
+impl Ide {
+    /// Pide al servidor de lenguaje que formatee la pestaña activa.
+    fn format_tab(&mut self);
+}
+// crates/pcode-ide/src/settings.rs — campo nuevo de `IdeSettings`
+#[serde(rename = "formatear_al_guardar")]
+pub format_on_save: bool,
+'''
+ejemplo = '''
+format_result(&json!({"changed": true, "content": "fn main() {}\n"}))  -> Some("fn main() {}\n")
+format_result(&json!({"changed": false, "content": "fn main() {}\n"})) -> None
+format_result(&json!(null))                                            -> None
+format_result(&json!({"changed": true}))                               -> None
+'''
+tests = [
+  "resultado_de_formatear: los cuatro casos del ejemplo",
+  "formatear_al_guardar_se_guarda_y_se_lee: IdeSettings con format_on_save = true sobrevive a to_toml + parse, y un TOML sin esa clave da false",
+  "textos_de_formatear: format_document, format_on_save y format_none no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No apliques el formateo si el usuario ha seguido escribiendo (el texto de la pestaña ya no es el que se mandó)",
+  "No bloquees el guardado si el formateo falla: con «formatear al guardar», se guarda igualmente",
+  "No apliques ediciones de texto en el IDE: el demonio ya devuelve el texto completo",
+  "No cambies `save_tab`",
+]
+
+[[tarea]]
+id = "F9.34"
+nombre = "ide-renombrar-simbolo"
+titulo = "IDE: renombrar un símbolo en todo el proyecto con el servidor de lenguaje (F2) (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.08", "F9.31"]
+toca = []
+acepta = "cargo test -p pcode-ide rename:: && grep -q 'lsp.rename' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: F2 pide el nombre nuevo y `lsp.rename` lo aplica en el demonio.
+2. Comprueba que existen los informes de F9.34a y F9.34b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.34a"
+nombre = "ide-renombrar-nucleo"
+titulo = "IDE: la palabra bajo el cursor y si un nombre nuevo es un identificador válido (lógica pura)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.11"]
+toca = ["crates/pcode-ide/src/rename.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide rename::"
+contexto = [
+  "crates/pcode-ide/src/snippets.rs (`pub fn word_before(text: &str, cursor: usize) -> &str`: ejemplo de cómo se recorre el texto por caracteres, con el cursor como índice de CARÁCTER)",
+]
+objetivo = '''
+1. Crea `rename.rs` con `word_at` y `valid_name` (firmas abajo) y sus tests. En `lib.rs` añade `pub mod rename;` en
+   orden alfabético (después de `pub mod remote;`).
+2. `word_at(text, cursor)`: `cursor` es un índice de carácter. Un carácter «de palabra» es alfanumérico
+   (`char::is_alphanumeric`) o `_`. Devuelve la palabra que toca el cursor: se extiende hacia la izquierda y hacia
+   la derecha desde `cursor` mientras haya caracteres de palabra (el cursor justo al final de una palabra también
+   la toca). Si no hay ninguno a los lados, `None`. Si `cursor` es mayor que la longitud, se trata como el final.
+3. `valid_name(name)`: `true` si no está vacío, el primer carácter es una letra (`char::is_alphabetic`) o `_`, y el
+   resto son caracteres de palabra. Sin espacios ni puntos.
+'''
+firmas = '''
+// crates/pcode-ide/src/rename.rs
+//! Renombrar símbolo: la palabra bajo el cursor y la validación del nombre nuevo.
+
+/// La palabra que toca el cursor (índice de carácter), o `None` si no hay ninguna.
+pub fn word_at(text: &str, cursor: usize) -> Option<String>;
+/// Si `name` sirve como identificador.
+pub fn valid_name(name: &str) -> bool;
+'''
+ejemplo = '''
+word_at("let total = suma(a);", 6)   -> Some("total")     // cursor en medio de «total»
+word_at("let total = suma(a);", 9)   -> Some("total")     // justo al final de «total»
+word_at("let total = suma(a);", 10)  -> None              // entre el espacio y «=»
+word_at("año_2 = 1", 2)              -> Some("año_2")
+valid_name("nuevo_total") -> true    valid_name("_x") -> true    valid_name("ñu") -> true
+valid_name("") -> false   valid_name("2x") -> false   valid_name("a b") -> false   valid_name("a.b") -> false
+'''
+tests = [
+  "palabra_en_medio_y_al_final: los dos primeros ejemplos dan «total»",
+  "sin_palabra_da_none: el tercer ejemplo, el texto vacío y un cursor rodeado de espacios dan None",
+  "palabra_con_letras_no_ascii: «año_2 = 1» con cursor 2 da «año_2»",
+  "cursor_pasado_el_final: con cursor 999 en «abc» da «abc»",
+  "nombres_validos_y_no_validos: los siete casos del ejemplo de valid_name",
+]
+no_hagas = ["No uses `egui` ni hagas peticiones en este módulo", "No cambies `snippets.rs`"]
+
+[[tarea]]
+id = "F9.34b"
+nombre = "ide-renombrar-orden"
+titulo = "IDE: orden «Renombrar símbolo» (F2): pedir el nombre, llamar a `lsp.rename` y recargar las pestañas"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.34a", "F8.08", "F9.31"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide textos_de_renombrar && grep -q 'lsp.rename' crates/pcode-ide/src/app.rs && grep -q 'Command::RenameSymbol' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`enum Command`, `Command::ALL` y `label`; `fn run`; `fn shortcuts`: la línea de `Key::F12`; `fn lsp_request`: petición con `lsp.sync` y `to_lsp`; `fn reload_clean_tabs` (la crea F9.31b): vuelve a leer del disco las pestañas sin cambios)",
+  "crates/pcode-ide/src/rename.rs (lo crea F9.34a: `word_at(text, cursor) -> Option<String>`, `valid_name(&str) -> bool`)",
+]
+objetivo = '''
+1. `texts.rs`: al final de `Texts` (con `///`, en `ES` y `EN`): `rename_symbol` («Renombrar símbolo» / «Rename
+   symbol»), `rename_save_first` («Guarda todos los archivos antes de renombrar» / «Save all files before
+   renaming»), `rename_invalid` («Ese nombre no es un identificador válido» / «That name is not a valid
+   identifier»), `rename_no_symbol` («No hay ningún símbolo bajo el cursor» / «No symbol under the cursor») y
+   `renamed` («Símbolo renombrado» / «Symbol renamed»). Test `textos_de_renombrar`.
+2. `app.rs`: orden nueva `Command::RenameSymbol` (con `///`), en `Command::ALL` (su tamaño sube en 1) después de
+   `Command::ShowHover`, y en `label` con `(t.rename_symbol, "F2")`. En `fn shortcuts`, junto a la de `Key::F12`:
+   `if press(Modifiers::NONE, Key::F2) { cmds.push(Some(Command::RenameSymbol)); }`. En `ui_title`, añádela al menú
+   `t.menu_edit`.
+3. `app.rs`: en `struct Ide`, campo `rename: Option<String>` (el nombre que se está escribiendo; `None` = cerrado).
+   En `enum Msg`, variante `Renamed(usize)` (archivos cambiados) con `///`.
+4. `app.rs`, `fn run`, `Command::RenameSymbol`: si `self.tabs.any_dirty()`, avisa con `t.rename_save_first` (error)
+   y no sigas. Si `rename::word_at(&tab.text, self.cursor_char)` da `None`, avisa con `t.rename_no_symbol`. Si da
+   `Some(w)`, `self.rename = Some(w)`.
+5. `app.rs`, nuevo `fn ui_rename(&mut self, ctx: &egui::Context)`, llamado en `fn ui` de `impl eframe::App` después
+   de `self.ui_toasts(&ctx);`. Si `self.rename` es `Some`, dibuja un `egui::Window::new(t.rename_symbol)` (sin
+   plegar ni redimensionar, anclado con `Align2::CENTER_TOP` y desplazamiento `vec2(0.0, 80.0)`) con un
+   `egui::TextEdit::singleline` que pide el foco. Con Intro (`resp.lost_focus()` y `Key::Enter` pulsada): si
+   `!rename::valid_name(&nombre)`, avisa con `t.rename_invalid` y deja el diálogo abierto; si es válido, cierra el
+   diálogo y llama a `self.rename_to(nombre)`. Con Esc, cierra sin hacer nada.
+6. `app.rs`, nuevo `fn rename_to(&mut self, new_name: String)`: con la pestaña activa y
+   `(line, character) = to_lsp(&tab.text, self.cursor_char)`, con `self.spawn`: `lsp.sync` y después
+   `c.call("lsp.rename", json!({"path": p, "line": line, "character": character, "newName": new_name}))`. La
+   respuesta es `{"files": [{"path", "edits"}], "applied": true}`: si va bien, `Msg::Renamed(n)` con `n` = número de
+   elementos de `files`; si falla, `Msg::Toast(e, true)`.
+7. `app.rs`, `fn on_msg`, `Msg::Renamed(n)`: avisa con `format!("{} · {n} {}", t.renamed, t.in_files)`, llama a `self.reload_clean_tabs()`, a
+   `self.refresh_git()` y pone en marcha la recarga del árbol igual que el evento `filesChanged`
+   (`for d in self.tree.invalidate() { self.list_dir(&d); }`).
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Command { /* … */ RenameSymbol, /* … */ }
+pub enum Msg { /* … */
+    /// El demonio aplicó un renombrado en el proyecto (número de archivos cambiados).
+    Renamed(usize),
+}
+impl Ide {
+    /// Diálogo con el nombre nuevo del símbolo.
+    fn ui_rename(&mut self, ctx: &egui::Context);
+    /// Pide el renombrado al servidor de lenguaje.
+    fn rename_to(&mut self, new_name: String);
+}
+// Método del demonio (lo añade F8.08):
+//   lsp.rename {path, line, character, newName} → {files: [{path, edits}], applied: true}; escribe los archivos y emite filesChanged
+'''
+tests = [
+  "textos_de_renombrar: rename_symbol, rename_save_first, rename_invalid, rename_no_symbol y renamed no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No renombres con archivos sin guardar: el demonio cambia los archivos en disco y se perderían cambios",
+  "No apliques tú las ediciones en las pestañas: el demonio escribe los archivos y el IDE solo recarga",
+  "No mandes `dryRun`: aquí se aplica directamente",
+  "No lances la petición desde dentro del cierre que dibuja el diálogo: guarda el nombre y llama después",
+]
+
+[[tarea]]
+id = "F9.35"
+nombre = "ide-notificaciones-de-escritorio"
+titulo = "IDE: notificación de escritorio cuando el agente termina o pide aprobación y la ventana no está delante (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.14"]
+toca = []
+acepta = "cargo test -p pcode-ide notify:: && grep -q 'notify::' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: la decisión de avisar pasa sus tests y el IDE la usa al recibir eventos.
+2. Comprueba que existen los informes de F9.35a y F9.35b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.35a"
+nombre = "ide-notificaciones-nucleo"
+titulo = "IDE: qué evento merece una notificación y cómo se envía con `notify-send` (tras un trait)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.14"]
+toca = ["crates/pcode-ide/src/notify.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide notify::"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`fn on_event`: los eventos `approvalRequested` (con `approval.action`) y `turnFinished` (con `session`) tal como llegan del demonio)",
+  "crates/pcode-ide/src/remote.rs (`pub fn connect`: ejemplo de lanzar un proceso externo con `std::process::Command` sin esperar a que acabe)",
+]
+objetivo = '''
+1. Crea `notify.rs` con lo de *Firmas* y sus tests. En `lib.rs` añade `pub mod notify;` en orden alfabético (después
+   de `pub mod lsp_pos;`).
+2. `notice_for(ev, session)`: si `ev["tipo"] == "approvalRequested"` → `Some(Notice::Approval(texto de
+   ev["approval"]["action"]))`. Si `ev["tipo"] == "turnFinished"` y `ev["session"]` es un entero igual a `session`
+   (que debe ser `Some`) → `Some(Notice::Finished)`. Cualquier otro caso, `None`.
+3. `should_notify(enabled, focused)`: `enabled && !focused` (si la ventana está delante, basta con lo que se ve).
+4. `command(title, body)`: `["notify-send", "--app-name=PublicCode", "--icon=pcode", "--", title, body]`, con `body`
+   recortado a 200 caracteres (`chars().take(200)`). El `--` evita que un texto que empiece por guion se tome por
+   una opción.
+5. `trait Notifier` con un solo método `notify(&self, title, body) -> bool`. `NotifySend` lo implementa: lanza
+   `command(title, body)` con `std::process::Command` (`spawn`, sin esperar; stdin, stdout y stderr a
+   `Stdio::null()`) y devuelve `true` si se pudo lanzar. En Windows y donde no esté `notify-send`, devuelve `false`
+   sin más.
+6. `send(notifier, notice, approval_title, finished_title)`: para `Approval(action)` llama a
+   `notifier.notify(approval_title, &action)`; para `Finished`, a `notifier.notify(finished_title, "")`.
+'''
+firmas = '''
+// crates/pcode-ide/src/notify.rs
+//! Notificaciones de escritorio: qué evento avisa y cómo se manda (hoy con `notify-send`, tras un trait).
+use serde_json::Value;
+
+/// Lo que se le cuenta al usuario fuera de la ventana.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notice {
+    /// El agente pide aprobación para esta acción.
+    Approval(String),
+    /// El agente terminó su turno.
+    Finished,
+}
+
+/// El aviso que corresponde a un evento del demonio (`session` = conversación abierta en el IDE).
+pub fn notice_for(ev: &Value, session: Option<i64>) -> Option<Notice>;
+/// Si hay que avisar: avisos activados y la ventana no tiene el foco.
+pub fn should_notify(enabled: bool, focused: bool) -> bool;
+/// Orden de `notify-send` para un aviso.
+pub fn command(title: &str, body: &str) -> Vec<String>;
+
+/// Quien sabe mostrar una notificación de escritorio.
+pub trait Notifier {
+    /// Muestra la notificación; `false` si no se pudo.
+    fn notify(&self, title: &str, body: &str) -> bool;
+}
+/// Notificaciones con `notify-send` (Linux).
+pub struct NotifySend;
+impl Notifier for NotifySend { /* … */ }
+
+/// Manda `notice` con `notifier`, con los títulos ya traducidos.
+pub fn send(notifier: &dyn Notifier, notice: &Notice, approval_title: &str, finished_title: &str) -> bool;
+'''
+ejemplo = '''
+notice_for(&json!({"tipo": "approvalRequested", "approval": {"id": 3, "action": "bash: rm x"}}), None)
+   -> Some(Notice::Approval("bash: rm x".into()))
+notice_for(&json!({"tipo": "turnFinished", "session": 7}), Some(7)) -> Some(Notice::Finished)
+notice_for(&json!({"tipo": "turnFinished", "session": 7}), Some(8)) -> None
+notice_for(&json!({"tipo": "turnFinished", "session": 7}), None)    -> None
+should_notify(true, false) -> true     should_notify(true, true) -> false     should_notify(false, false) -> false
+command("El agente pide aprobación", "-rf /")
+   -> ["notify-send", "--app-name=PublicCode", "--icon=pcode", "--", "El agente pide aprobación", "-rf /"]
+'''
+tests = [
+  "aprobacion_avisa_siempre: el primer ejemplo da Approval con la acción, con session None y con Some(1)",
+  "fin_de_turno_solo_de_mi_sesion: los tres ejemplos de turnFinished dan Finished, None y None",
+  "otros_eventos_no_avisan: filesChanged, assistantDelta y un objeto vacío dan None",
+  "solo_si_no_tiene_el_foco: los tres casos de should_notify",
+  "orden_de_notify_send: el ejemplo de command; un cuerpo de 500 caracteres queda en 200",
+  "send_usa_los_titulos: con un Notifier de prueba que apunta lo que recibe, Approval(«x») llama a notify(«A», «x») y Finished a notify(«F», «»)",
+]
+no_hagas = [
+  "No añadas dependencias (ni `notify-rust` ni D-Bus): solo `notify-send` como proceso externo",
+  "No esperes al proceso ni leas su salida",
+  "No lances `notify-send` en los tests: usa un `Notifier` de prueba",
+  "No pongas textos visibles aquí: los títulos llegan como parámetros desde `texts.rs`",
+]
+
+[[tarea]]
+id = "F9.35b"
+nombre = "ide-notificaciones-cableado"
+titulo = "IDE: mandar la notificación al recibir el evento, con ajuste para desactivarla"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.35a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs", "crates/pcode-ide/src/settings.rs"]
+acepta = "cargo test -p pcode-ide avisos_de_escritorio && grep -q 'notify::notice_for' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`fn on_event`: su principio; `impl eframe::App for Ide`, `fn ui`: su principio; `fn ui_settings`)",
+  "crates/pcode-ide/src/notify.rs (lo crea F9.35a: `notice_for(&Value, Option<i64>) -> Option<Notice>`, `should_notify(enabled, focused) -> bool`, `send(&dyn Notifier, &Notice, &str, &str) -> bool`, `NotifySend`)",
+  "crates/pcode-ide/src/settings.rs (struct `IdeSettings` y su `Default`)",
+]
+objetivo = '''
+1. `settings.rs`: campo nuevo `pub desktop_notifications: bool` con `#[serde(rename = "avisos_escritorio")]` y
+   `///`; por defecto `true`. Test `avisos_de_escritorio_por_defecto_y_guardados`.
+2. `texts.rs`: al final de `Texts` (con `///`, en `ES` y `EN`): `notify_approval` («El agente pide aprobación» /
+   «The agent needs approval»), `notify_finished` («El agente ha terminado» / «The agent has finished») y
+   `desktop_notifications` («Avisos de escritorio» / «Desktop notifications»). Test
+   `textos_de_avisos_de_escritorio`.
+3. `app.rs`: en `struct Ide`, campo `focused: bool` (`true` en `Ide::new`). En `fn ui` de `impl eframe::App`, como
+   primera línea tras `let ctx = …;`: `self.focused = ctx.input(|i| i.focused);`.
+4. `app.rs`, `fn on_event`: después de la comprobación de `ev.is_null()` y de `self.connected = true;`, añade:
+   si `notify::notice_for(&ev, self.session)` es `Some(n)` y
+   `notify::should_notify(self.settings.desktop_notifications, self.focused)`, lanza un hilo
+   (`std::thread::spawn`) que llama a
+   `notify::send(&notify::NotifySend, &n, t.notify_approval, t.notify_finished)` (copia `self.t` a una variable
+   antes). El evento sigue su camino normal después: no hagas `return`.
+5. `app.rs`, `fn ui_settings`: una casilla `ui.checkbox(&mut self.settings.desktop_notifications,
+   t.desktop_notifications)`; si cambia, `self.settings.save()`.
+'''
+firmas = '''
+// crates/pcode-ide/src/settings.rs — campo nuevo de `IdeSettings`
+/// Avisos de escritorio cuando el agente termina o pide aprobación y la ventana no está delante.
+#[serde(rename = "avisos_escritorio")]
+pub desktop_notifications: bool,
+'''
+tests = [
+  "avisos_de_escritorio_por_defecto_y_guardados: IdeSettings::default().desktop_notifications es true; con false sobrevive a to_toml + parse; un TOML sin la clave da true",
+  "textos_de_avisos_de_escritorio: notify_approval, notify_finished y desktop_notifications no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No llames a `notify-send` en el hilo de la interfaz",
+  "No cortes el tratamiento del evento: la aprobación debe seguir apareciendo en el panel del agente",
+  "No avises si la ventana tiene el foco",
+]
+
+[[tarea]]
+id = "F9.36"
+nombre = "ide-vista-previa-markdown"
+titulo = "IDE: vista previa de Markdown (Ctrl+Mayús+V) sin HTML crudo (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = []
+acepta = "cargo test -p pcode-ide markdown:: && grep -q 'Command::MarkdownPreview' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: el analizador de Markdown pasa sus tests y el editor tiene la orden de vista previa.
+2. Comprueba que existen los informes de F9.36a y F9.36b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.36a"
+nombre = "ide-markdown-nucleo"
+titulo = "IDE: partir un Markdown en bloques (títulos, párrafos, listas, citas, código) para la vista previa"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/markdown.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide markdown::"
+contexto = [
+  "crates/pcode-ide/src/git.rs (`diff_lines`: ejemplo de función pura que clasifica líneas de texto en un enum, con sus tests)",
+]
+objetivo = '''
+1. Crea `markdown.rs` con `Block`, `parse` y `plain_inline` (firmas abajo) y sus tests. En `lib.rs` añade
+   `pub mod markdown;` en orden alfabético (después de `pub mod lsp_pos;`).
+2. `parse(text)` recorre las líneas y produce bloques en orden:
+   - Una línea que empieza por tres acentos graves abre un bloque de código hasta la siguiente línea que empiece
+     igual (o el final): `Block::Code(texto de dentro, con sus saltos de línea, sin las dos líneas de valla)`.
+     Dentro no se interpreta nada.
+   - `#` a `######` seguido de espacio → `Block::Heading(nivel 1..=6, plain_inline(resto))`.
+   - `- `, `* ` o `+ ` al principio (tras espacios opcionales) → `Block::Bullet(plain_inline(resto))`; lo mismo para
+     listas numeradas (`1. `, `12. `): el número se conserva en el texto (`"1. texto"`).
+   - `> ` → `Block::Quote(plain_inline(resto))`.
+   - `---`, `***` o `___` solos en la línea → `Block::Rule`.
+   - Línea vacía: cierra el párrafo en curso.
+   - Cualquier otra línea se añade al párrafo en curso (las líneas seguidas se unen con un espacio):
+     `Block::Paragraph(plain_inline(texto unido))`.
+3. `plain_inline(s)`: quita las marcas de énfasis `**` y `__` siempre, y `*` y `_` sueltos solo cuando están en el
+   borde de una palabra (al principio o al final del texto, o junto a un espacio): un guion bajo ENTRE letras, como
+   en `mi_variable`, se conserva. Quita también los acentos graves del código en línea; un enlace `[texto](url)` pasa a `texto (url)`; una imagen `![alt](url)` pasa a `alt`. El
+   HTML (`<b>`, `<script>`…) NO se interpreta ni se quita: se deja como texto literal.
+'''
+firmas = '''
+// crates/pcode-ide/src/markdown.rs
+//! Markdown para la vista previa: se parte en bloques de texto; el HTML nunca se interpreta.
+
+/// Un bloque del documento.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Block {
+    /// Título de nivel 1 a 6.
+    Heading(u8, String),
+    /// Párrafo.
+    Paragraph(String),
+    /// Elemento de lista.
+    Bullet(String),
+    /// Cita.
+    Quote(String),
+    /// Bloque de código (entre vallas).
+    Code(String),
+    /// Línea horizontal.
+    Rule,
+}
+
+/// Bloques de un documento Markdown, en orden.
+pub fn parse(text: &str) -> Vec<Block>;
+/// Texto de una línea sin las marcas de énfasis, código en línea, enlaces ni imágenes.
+pub fn plain_inline(s: &str) -> String;
+'''
+ejemplo = '''
+parse("# Título\n\nUn **párrafo**\nen dos líneas.\n\n- uno\n- [dos](http://x)\n\n> cita\n\n---\n")
+   -> [Heading(1, "Título"), Paragraph("Un párrafo en dos líneas."), Bullet("uno"), Bullet("dos (http://x)"),
+       Quote("cita"), Rule]
+(un bloque entre vallas de tres acentos graves con las líneas `let a = 1;` y `# no es título` dentro)
+   -> [Code("let a = 1;\n# no es título\n")]
+plain_inline("usa `cargo test` y <b>esto</b>") -> "usa cargo test y <b>esto</b>"
+plain_inline("![logo](img/a.png) fin")         -> "logo fin"
+'''
+tests = [
+  "titulos_parrafos_listas_citas_y_regla: el primer ejemplo da los seis bloques en ese orden",
+  "codigo_entre_vallas_no_se_interpreta: el segundo ejemplo da un único Code con las dos líneas",
+  "valla_sin_cerrar_llega_al_final: un bloque de código sin valla de cierre incluye todo lo que queda",
+  "lista_numerada_conserva_el_numero: «1. uno» da Bullet(«1. uno»)",
+  "niveles_de_titulo: de uno a seis almohadillas dan los niveles 1 a 6; siete almohadillas son un párrafo",
+  "html_se_queda_como_texto: «<script>alert(1)</script>» da un Paragraph con ese mismo texto",
+  "enlaces_imagenes_y_enfasis: los dos ejemplos de plain_inline; «**a** _b_» da «a b»",
+  "guion_bajo_entre_letras_se_conserva: «usa mi_variable y a*b» se queda igual",
+  "documento_vacio: la cadena vacía da un vector vacío",
+]
+no_hagas = [
+  "No interpretes HTML ni lo elimines: se muestra tal cual, como texto",
+  "No añadas dependencias (ni `pulldown-cmark` ni ninguna otra)",
+  "No uses `egui` en este módulo",
+  "No intentes cubrir tablas ni listas anidadas: quedan como párrafos y elementos sueltos",
+]
+
+[[tarea]]
+id = "F9.36b"
+nombre = "ide-markdown-vista"
+titulo = "IDE: orden «Vista previa de Markdown» (Ctrl+Mayús+V) que dibuja los bloques en lugar del editor"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.36a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide textos_de_vista_previa && grep -q 'Command::MarkdownPreview' crates/pcode-ide/src/app.rs && grep -q 'fn ui_markdown' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`enum Command`, `Command::ALL` y `label`; `fn shortcuts`: la primera tabla, la de Ctrl+Mayús; `fn ui_editor`: tras las migas de pan y la barra de buscar, la línea `let size = self.settings.font_size;`; la función libre `chat_text`: cómo se dibuja un bloque de código con fondo `p.code_bg`)",
+  "crates/pcode-ide/src/markdown.rs (lo crea F9.36a: `parse(&str) -> Vec<Block>`; `Block::{Heading(u8, String), Paragraph, Bullet, Quote, Code, Rule}`)",
+]
+objetivo = '''
+1. `texts.rs`: al final de `Texts` (con `///`, en `ES` y `EN`): `markdown_preview` («Vista previa de Markdown» /
+   «Markdown preview») y `preview_only_markdown` («La vista previa es para archivos .md» / «Preview is for .md
+   files»). Test `textos_de_vista_previa`.
+2. `app.rs`: orden nueva `Command::MarkdownPreview` (con `///`), en `Command::ALL` (su tamaño sube en 1) después de
+   `Command::Problems`, y en `label` con `(t.markdown_preview, "Ctrl+Mayús+V")`. En `fn shortcuts`, añade a la
+   primera tabla `(cs, Key::V, Command::MarkdownPreview)`. En `ui_title`, añádela al menú `t.menu_view`.
+3. `app.rs`: en `struct Ide`, campo `md_preview: bool` (`false` al empezar). En `fn run`,
+   `Command::MarkdownPreview`: si la pestaña activa acaba en `.md` (sin distinguir mayúsculas), alterna
+   `self.md_preview`; si no, avisa con `t.preview_only_markdown`.
+4. `app.rs`, `fn ui_editor`: justo antes de `let size = self.settings.font_size;`, añade: si `self.md_preview` y la
+   pestaña activa acaba en `.md`: calcula `let blocks = crate::markdown::parse(&tab.text);`, dibuja con
+   `ui_markdown(ui, p, &blocks)` dentro de `egui::Frame::new().fill(p.editor).inner_margin(egui::Margin::same(16))` y
+   de un `egui::ScrollArea::vertical().id_salt("vista-md").auto_shrink(false)`, y haz `return;` (no se dibuja el
+   editor). Si la pestaña activa no es `.md`, no se toca nada (el editor se dibuja normal).
+5. `app.rs`: nueva función libre `fn ui_markdown(ui: &mut egui::Ui, p: &Palette, blocks: &[crate::markdown::Block])`
+   junto a `chat_text`. Por bloque: `Heading(n, t)` → `RichText::new(t).strong().size(…)` con tamaños 26, 22, 18,
+   16, 14 y 13 para los niveles 1 a 6, con `ui.add_space(6.0)` antes; `Paragraph(t)` → etiqueta con ajuste de línea
+   (`egui::Label::new(…).wrap()`); `Bullet(t)` → fila con `•` y la etiqueta; `Quote(t)` → etiqueta en `p.fg_dim` y
+   cursiva, con sangría de 12; `Code(t)` → como en `chat_text` (fondo `p.code_bg`, monoespaciada);
+   `Rule` → `ui.separator()`.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Command { /* … */ MarkdownPreview, /* … */ }
+/// Dibuja los bloques de un Markdown (vista previa, solo lectura).
+fn ui_markdown(ui: &mut egui::Ui, p: &Palette, blocks: &[crate::markdown::Block]);
+'''
+tests = [
+  "textos_de_vista_previa: markdown_preview y preview_only_markdown no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No interpretes HTML ni abras enlaces: todo es texto",
+  "No cambies `chat_text`",
+  "No guardes los bloques entre fotogramas: se recalculan al dibujar (la vista previa es solo lectura)",
+  "No pongas textos literales en `app.rs` (el `•` de las listas es un símbolo, no un texto)",
+]
+
+[[tarea]]
+id = "F9.37"
+nombre = "ide-vista-dividida"
+titulo = "IDE: vista dividida, con un segundo editor a la derecha (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = []
+acepta = "cargo test -p pcode-ide split:: && grep -q 'fn ui_split' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: el estado de la división pasa sus tests y el IDE dibuja el segundo editor.
+2. Comprueba que existen los informes de F9.37a y F9.37b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.37a"
+nombre = "ide-vista-dividida-nucleo"
+titulo = "IDE: estado de la vista dividida (qué archivo va a la derecha) sin interfaz"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/split.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide split::"
+contexto = [
+  "crates/pcode-ide/src/state.rs (`Tabs { list, active }`, `Tabs::open`, `Tabs::close`, `Tabs::current`; `Tab { path, … }`)",
+]
+objetivo = '''
+1. Crea `split.rs` con `Split` y sus métodos (firmas abajo) y sus tests. En `lib.rs` añade `pub mod split;` en orden
+   alfabético (después de `pub mod snippets;`).
+2. `Split` guarda la RUTA del archivo de la derecha (`right: Option<String>`), no su índice: así sigue valiendo
+   aunque las pestañas cambien de orden.
+3. `toggle(&mut self, tabs)`: si hay división, la quita (`right = None`). Si no la hay y hay pestaña activa, pone a
+   la derecha la ruta de la pestaña activa (el mismo archivo en los dos lados). Sin pestañas, no hace nada.
+4. `right_index(&self, tabs)`: índice en `tabs.list` de la pestaña cuya ruta es `right`; `None` si no hay división
+   o ese archivo ya no está abierto.
+5. `sync(&mut self, tabs)`: si el archivo de la derecha ya no está abierto, quita la división.
+6. `swap(&mut self, tabs)`: intercambia los lados: el archivo de la derecha pasa a ser la pestaña activa y el que
+   era activo pasa a la derecha. Si no hay división o el de la derecha no está abierto, no hace nada.
+'''
+firmas = '''
+// crates/pcode-ide/src/split.rs
+//! Vista dividida: qué archivo se muestra en el segundo editor, a la derecha.
+use crate::state::Tabs;
+
+/// Estado de la vista dividida.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Split {
+    /// Ruta del archivo de la derecha (`None` = sin dividir).
+    pub right: Option<String>,
+}
+
+impl Split {
+    /// Divide con el archivo activo, o quita la división.
+    pub fn toggle(&mut self, tabs: &Tabs);
+    /// Índice de la pestaña de la derecha.
+    pub fn right_index(&self, tabs: &Tabs) -> Option<usize>;
+    /// Quita la división si su archivo se cerró.
+    pub fn sync(&mut self, tabs: &Tabs);
+    /// Intercambia el archivo activo y el de la derecha.
+    pub fn swap(&mut self, tabs: &mut Tabs);
+}
+'''
+ejemplo = '''
+tabs: [a.rs, b.rs] con b.rs activa (índice 1);  let mut s = Split::default();
+s.toggle(&tabs)            -> s.right == Some("b.rs");  s.right_index(&tabs) == Some(1)
+tabs.active = 0;  s.swap(&mut tabs)   -> tabs.active == 1 (b.rs) y s.right == Some("a.rs")
+tabs.close(0) (se cierra a.rs);  s.sync(&tabs)  -> s.right == None
+s.toggle(&tabs); s.toggle(&tabs)      -> s.right == None (dividir y quitar)
+'''
+tests = [
+  "divide_con_la_pestana_activa: tras toggle, right es la ruta de la activa y right_index su índice",
+  "toggle_dos_veces_quita_la_division: el segundo toggle deja right en None",
+  "sin_pestanas_no_divide: con Tabs::default(), toggle deja right en None",
+  "intercambia_los_lados: el ejemplo de swap",
+  "cerrar_el_archivo_de_la_derecha_quita_la_division: tras cerrar esa pestaña, sync deja None y right_index da None",
+]
+no_hagas = ["No guardes índices: solo la ruta", "No uses `egui`", "No cambies `state.rs`"]
+
+[[tarea]]
+id = "F9.37b"
+nombre = "ide-vista-dividida-panel"
+titulo = "IDE: orden «Dividir el editor» (Ctrl+\\) y segundo editor a la derecha"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.37a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide textos_de_vista_dividida && grep -q 'fn ui_split' crates/pcode-ide/src/app.rs && grep -q 'Command::SplitEditor' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`impl eframe::App for Ide`, `fn ui`: el orden de los paneles; el bloque `if self.settings.show_agent { egui::Panel::right(\"agente\") … }` es el modelo de panel derecho; `fn ui_editor`: el `layouter` con `layout_job` y el `egui::TextEdit::multiline` del editor)",
+  "crates/pcode-ide/src/split.rs (lo crea F9.37a: `Split { right }` con `toggle(&Tabs)`, `right_index(&Tabs) -> Option<usize>`, `sync(&Tabs)`, `swap(&mut Tabs)`)",
+]
+objetivo = '''
+1. `texts.rs`: al final de `Texts` (con `///`, en `ES` y `EN`): `split_editor` («Dividir el editor» / «Split
+   editor»), `swap_sides` («Intercambiar los lados» / «Swap sides») y `close_split` («Cerrar la división» / «Close
+   split»). Test `textos_de_vista_dividida`.
+2. `app.rs`: orden nueva `Command::SplitEditor` (con `///`), en `Command::ALL` (su tamaño sube en 1) después de
+   `Command::ToggleAgent`, y en `label` con `(t.split_editor, "Ctrl+\\")`. En `fn shortcuts`, añade a la segunda
+   tabla (la de `Modifiers::COMMAND`) `(Key::Backslash, Command::SplitEditor)`. En `ui_title`, al menú `t.menu_view`.
+3. `app.rs`: en `struct Ide`, campo `split: crate::split::Split` (`Default::default()`). En `fn run`,
+   `Command::SplitEditor => self.split.toggle(&self.tabs)`.
+4. `app.rs`, `fn ui` de `impl eframe::App`: justo antes de `egui::CentralPanel::no_frame()`, llama a
+   `self.split.sync(&self.tabs);` y, si `self.split.right_index(&self.tabs)` es `Some(i)`, dibuja
+   `egui::Panel::right("dividido").default_size(480.0).size_range(200.0..=1200.0)
+   .frame(egui::Frame::new().fill(p.editor)).show(ui, |ui| self.ui_split(ui, i));`.
+5. `app.rs`, nuevo `fn ui_split(&mut self, ui: &mut egui::Ui, i: usize)`:
+   - Cabecera en una fila: el icono y el título de la pestaña `i` (`file_icon(tab.title())`), y a la derecha dos
+     botones sin marco: `⇆` (`t.swap_sides` como ayuda) y `×` (`t.close_split`). Apunta cuál se pulsó.
+   - Debajo, un `egui::ScrollArea::both().id_salt("editor2").auto_shrink(false)` con un
+     `egui::TextEdit::multiline(&mut self.tabs.list[i].text)` con la misma fuente monoespaciada, sin marco
+     (`egui::Frame::NONE`), `desired_width(f32::INFINITY)`, `lock_focus(true)` y un `layouter` igual que el de
+     `ui_editor` (con `layout_job(texto, lang, dark, font)` de esa pestaña). Sin números de línea.
+   - Al final, fuera de los cierres: si se pulsó `⇆`, `self.split.swap(&mut self.tabs)`; si se pulsó `×`,
+     `self.split.right = None`.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Command { /* … */ SplitEditor, /* … */ }
+impl Ide {
+    /// Segundo editor (vista dividida) con la pestaña `i`.
+    fn ui_split(&mut self, ui: &mut egui::Ui, i: usize);
+}
+'''
+tests = [
+  "textos_de_vista_dividida: split_editor, swap_sides y close_split no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No toques el editor principal (`ui_editor`): el segundo editor es una función aparte",
+  "No dupliques el texto: los dos lados editan la misma `Tab`, así que guardar y «sin guardar» siguen funcionando",
+  "No cambies el orden de los demás paneles en `fn ui`",
+  "No uses glifos fuera de `⇆` y `×`",
+]
+notas = '''
+El cursor de la barra de estado, ir a la definición y buscar siguen refiriéndose al editor principal (el de la
+izquierda): dilo en el informe. En el `label`, la cadena del atajo se escribe en Rust como "Ctrl+\\" (barra invertida
+escapada).
+'''
+
+[[tarea]]
+id = "F9.38"
+nombre = "ide-arrastrar-pestanas"
+titulo = "IDE: reordenar las pestañas arrastrándolas"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/state.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide mueve_pestana && grep -q 'move_tab' crates/pcode-ide/src/app.rs && grep -q 'dnd_release_payload' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/state.rs (`impl Tabs`: `open` y `close`, y cómo `close` reajusta `active`)",
+  "crates/pcode-ide/src/app.rs (`fn ui_tabs`: la etiqueta `name` de cada pestaña, creada con `egui::Label::new(…).sense(Sense::click())`, y el final de la función, donde se aplican `activate` y `close`)",
+]
+objetivo = '''
+1. `state.rs`, `impl Tabs`: nuevo método `move_tab(&mut self, from: usize, to: usize)`. Saca la pestaña `from` y la
+   inserta en la posición `to` (la posición final que tendrá). Si `from == to` o alguno está fuera de rango, no hace
+   nada. La pestaña activa sigue siendo LA MISMA pestaña después de mover (ajusta `self.active`: si se movió la
+   activa, pasa a `to`; si no, se corrige según quede a su izquierda o a su derecha).
+2. `state.rs`: tests `mueve_pestana_a_la_derecha_y_a_la_izquierda`, `mueve_pestana_conserva_la_activa` y
+   `mueve_pestana_fuera_de_rango_no_hace_nada` en el `mod tests` que ya hay.
+3. `app.rs`, `fn ui_tabs`: junto a `let mut close = None;` declara `let mut moved: Option<(usize, usize)> = None;`.
+   Cambia el sentido de la etiqueta `name` de `Sense::click()` a `Sense::click_and_drag()`. Después de crearla:
+   `name.dnd_set_drag_payload(i);` y
+   `if let Some(from) = name.dnd_release_payload::<usize>() { moved = Some((*from, i)); }`.
+4. `app.rs`, al final de `fn ui_tabs`, antes de aplicar `activate` y `close`:
+   `if let Some((from, to)) = moved { self.tabs.move_tab(from, to); }`.
+'''
+firmas = '''
+// crates/pcode-ide/src/state.rs — dentro de `impl Tabs`
+/// Mueve la pestaña `from` a la posición `to`; la pestaña activa sigue siendo la misma.
+pub fn move_tab(&mut self, from: usize, to: usize);
+'''
+ejemplo = '''
+pestañas [a, b, c, d], activa = 1 (b)
+move_tab(0, 2) -> [b, c, a, d], activa = 0 (sigue siendo b)
+move_tab(3, 0) sobre [a, b, c, d] con activa 1 -> [d, a, b, c], activa = 2 (b)
+move_tab(1, 3) sobre [a, b, c, d] con activa 1 -> [a, c, d, b], activa = 3 (se movió la activa)
+move_tab(2, 2) y move_tab(0, 9) -> sin cambios
+'''
+tests = [
+  "mueve_pestana_a_la_derecha_y_a_la_izquierda: los dos primeros ejemplos dejan el orden [b, c, a, d] y [d, a, b, c]",
+  "mueve_pestana_conserva_la_activa: en los tres primeros ejemplos, la ruta de current() es la misma antes y después",
+  "mueve_pestana_fuera_de_rango_no_hace_nada: move_tab(2, 2), move_tab(0, 9) y move_tab(9, 0) dejan el orden y la activa igual",
+]
+no_hagas = [
+  "No cambies `Tabs::open` ni `Tabs::close`",
+  "No pierdas el clic normal ni el clic central de la pestaña: `click_and_drag` los conserva",
+  "No muevas pestañas mientras se itera `self.tabs.list`: apunta el movimiento y aplícalo al final",
+]
+
+[[tarea]]
+id = "F9.39"
+nombre = "ide-atajos-configurables"
+titulo = "IDE: atajos de teclado configurables en `keybindings.toml` (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.15"]
+toca = []
+acepta = "cargo test -p pcode-ide keymap:: && grep -q 'keymap::' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: los atajos se leen de `keybindings.toml` y el IDE los usa en vez de la tabla fija.
+2. Comprueba que existen los informes de F9.39a y F9.39b.
+3. Escribe el informe con la salida de `acepta` y con un ejemplo de `keybindings.toml`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.39a"
+nombre = "ide-atajos-nucleo"
+titulo = "IDE: leer atajos («Ctrl+Mayús+P») y el archivo `keybindings.toml` (lógica pura)"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.15"]
+toca = ["crates/pcode-ide/src/keymap.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide keymap::"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`Command::label`: los atajos de hoy son textos como «Ctrl+S», «Ctrl+Mayús+E», «Ctrl+Alt+B», «Ctrl+`», «Ctrl+,», «Ctrl+=», «Ctrl+-», «F12», «Mayús+F5» o vacío)",
+  "crates/pcode-ide/src/settings.rs (`IdeSettings::parse`: cómo se lee un TOML con `toml` y se toleran errores)",
+]
+objetivo = '''
+1. Crea `keymap.rs` con `Chord`, `parse_chord`, `chord_text`, `parse_overrides` y `resolve` (firmas abajo) y sus
+   tests. En `lib.rs` añade `pub mod keymap;` en orden alfabético (después de `pub mod highlight;`).
+2. `parse_chord(s)`: parte `s` por `+`. Las partes menos la última son modificadores, sin distinguir mayúsculas:
+   `Ctrl` (también `Control` y `Cmd`) → `ctrl`; `Mayús` (también `Mayus` y `Shift`) → `shift`; `Alt` → `alt`. La
+   última parte es la tecla, que se resuelve con `egui::Key::from_name` (acepta `S`, `F12`, `,`, `-`, `=`, el acento
+   grave, `Space`, `Tab`…); si es una sola letra en minúscula, pásala a mayúscula antes. Caso especial: si `s` acaba
+   en `++`, la tecla es `+`. Cadena vacía, modificador desconocido o tecla desconocida → `None`.
+3. `chord_text(c)`: el texto en el orden `Ctrl+Mayús+Alt+<tecla>`, con `egui::Key::symbol_or_name()` para la tecla
+   (`Ctrl+Mayús+P`, `F12`).
+4. `parse_overrides(toml_text)`: lee la tabla `[atajos]` de un TOML: cada clave es el identificador de una orden y
+   cada valor una cadena. Devuelve `(identificador, parse_chord(valor))` por entrada, en orden alfabético de
+   identificador: `Some(chord)` si el valor es un atajo válido; `None` si el valor es la cadena vacía (significa
+   «sin atajo»). Las entradas con un valor no válido se descartan. TOML roto o sin tabla `[atajos]` → vector vacío.
+5. `resolve(overrides, id, default)`: el atajo que vale para la orden `id`: si `overrides` tiene una entrada para
+   `id`, su valor (que puede ser `None`); si no, `parse_chord(default)`.
+'''
+firmas = '''
+// crates/pcode-ide/src/keymap.rs
+//! Atajos de teclado: lectura de textos como «Ctrl+Mayús+P» y del archivo `keybindings.toml`.
+use eframe::egui::Key;
+
+/// Una combinación de teclas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Chord {
+    /// Ctrl (Cmd en macOS).
+    pub ctrl: bool,
+    /// Mayúsculas.
+    pub shift: bool,
+    /// Alt.
+    pub alt: bool,
+    /// Tecla.
+    pub key: Key,
+}
+
+/// Lee «Ctrl+Mayús+P»; `None` si no es un atajo válido.
+pub fn parse_chord(s: &str) -> Option<Chord>;
+/// Texto de un atajo, como se enseña en los menús.
+pub fn chord_text(c: &Chord) -> String;
+/// Atajos del usuario: (identificador de la orden, atajo o `None` para quitarlo).
+pub fn parse_overrides(toml_text: &str) -> Vec<(String, Option<Chord>)>;
+/// Atajo de una orden: el del usuario si lo cambió; si no, el de fábrica (`default`).
+pub fn resolve(overrides: &[(String, Option<Chord>)], id: &str, default: &str) -> Option<Chord>;
+'''
+ejemplo = '''
+parse_chord("Ctrl+Mayús+P") -> Some(Chord { ctrl: true, shift: true, alt: false, key: Key::P })
+parse_chord("ctrl+shift+p") -> lo mismo           parse_chord("F12") -> Some(Chord { …false…, key: Key::F12 })
+parse_chord("Ctrl+-")       -> key: Key::Minus    parse_chord("Ctrl++") -> key: Key::Plus
+parse_chord("")  -> None    parse_chord("Hiper+S") -> None    parse_chord("Ctrl+NoExiste") -> None
+chord_text(&parse_chord("alt+ctrl+s").unwrap()) -> "Ctrl+Alt+S"
+
+keybindings.toml:
+[atajos]
+guardar = "Ctrl+G"
+salir = ""
+raro = "Hiper+X"
+parse_overrides(ese texto) -> [("guardar", Some(Ctrl+G)), ("salir", None)]
+resolve(&o, "guardar", "Ctrl+S") -> Some(Ctrl+G)    resolve(&o, "salir", "Ctrl+Q") -> None
+resolve(&o, "buscar", "Ctrl+F")  -> Some(Ctrl+F)    resolve(&o, "tema", "") -> None
+'''
+tests = [
+  "lee_modificadores_y_tecla: los cuatro primeros ejemplos de parse_chord, con los alias en inglés y en minúsculas",
+  "teclas_de_simbolo: «Ctrl+-», «Ctrl++», «Ctrl+,», «Ctrl+=» y «Ctrl+`» dan Minus, Plus, Comma, Equals y Backtick",
+  "atajos_no_validos: la cadena vacía, un modificador desconocido y una tecla desconocida dan None",
+  "texto_en_orden_fijo: chord_text de «alt+ctrl+s» es «Ctrl+Alt+S» y parse_chord(chord_text(c)) devuelve c",
+  "lee_el_archivo: el TOML del ejemplo da las dos entradas (guardar y salir) y descarta «raro»",
+  "toml_roto_o_sin_tabla: «esto no es toml» y un TOML sin [atajos] dan vector vacío",
+  "resuelve_con_y_sin_cambios: los cuatro ejemplos de resolve",
+]
+no_hagas = [
+  "No leas archivos en este módulo: `parse_overrides` recibe el texto",
+  "No dependas de `Command` (está en `app.rs`): aquí las órdenes son identificadores de texto",
+  "No añadas dependencias (`toml` y `eframe` ya están)",
+]
+
+[[tarea]]
+id = "F9.39b"
+nombre = "ide-atajos-cableado"
+titulo = "IDE: usar los atajos de `keybindings.toml` en el teclado y enseñarlos en menús y paleta"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.39a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/keymap.rs"]
+acepta = "cargo test -p pcode-ide keymap:: && cargo test -p pcode-ide identificadores_de_ordenes && grep -q 'keymap::' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`enum Command`, `Command::ALL` y `Command::label`: devuelve (texto, atajo de fábrica); `fn shortcuts`: las tablas de teclas; `Ide::new`)",
+  "crates/pcode-ide/src/keymap.rs (lo crea F9.39a: `Chord { ctrl, shift, alt, key }`, `parse_chord`, `chord_text`, `parse_overrides`, `resolve`)",
+  "crates/pcode-ide/src/settings.rs (`IdeSettings::path() -> Option<PathBuf>`: `ide.toml`; `keybindings.toml` va en la misma carpeta)",
+]
+objetivo = '''
+1. `keymap.rs`: añade el estado global de los atajos del usuario y dos funciones (firmas abajo):
+   `static OVERRIDES: std::sync::OnceLock<Vec<(String, Option<Chord>, &'static str)>>` (identificador, atajo y su
+   texto para los menús). `install(overrides)` lo rellena una sola vez: el texto es `chord_text` del atajo (o `""`
+   si es `None`), convertido a `&'static str` con `Box::leak` (son pocas cadenas y se crean una vez al arrancar:
+   dilo en un comentario). `shown(id, default)` devuelve el texto instalado para `id` o, si no hay, `default`.
+   `load()` lee `keybindings.toml` de la carpeta de `IdeSettings::path()` y devuelve `parse_overrides(texto)` (vector
+   vacío si no existe).
+2. `app.rs`, `impl Command`: nuevo `pub fn id(self) -> &'static str` con un identificador estable en español, en
+   minúsculas y con guiones, por orden: `QuickOpen` → `ir-a-archivo`, `Save` → `guardar`, `SaveAll` →
+   `guardar-todo`, `CloseEditor` → `cerrar-editor`, `Find` → `buscar`, `Replace` → `reemplazar`, `GoToLine` →
+   `ir-a-linea`, `GoToDefinition` → `ir-a-definicion`, `ShowHover` → `informacion`, `ToggleSidebar` →
+   `barra-lateral`, `TogglePanel` → `panel`, `ToggleAgent` → `agente`, `Terminal` → `terminal`, `Explorer` →
+   `explorador`, `Search` → `buscar-en-proyecto`, `Git` → `git`, `Settings` → `ajustes`, `Problems` → `problemas`,
+   `ToggleTheme` → `tema`, `ZoomIn` → `letra-mas`, `ZoomOut` → `letra-menos`, `NewChat` → `nueva-conversacion`,
+   `UndoTurn` → `deshacer-turno`, `Quit` → `salir`. Para cualquier otra orden que exista en el enum, elige un
+   identificador con el mismo estilo. Test `identificadores_de_ordenes_unicos`.
+3. `app.rs`, `Command::label`: renombra el cuerpo actual a una función privada `fn label_default(self, t)` (sin
+   cambiar nada) y haz que `label` devuelva `(texto, crate::keymap::shown(self.id(), atajo_de_fabrica))`.
+4. `app.rs`: en `struct Ide`, campo `keymap: Vec<(crate::keymap::Chord, Command)>`. En `Ide::new`, antes de crear
+   `Ide { … }`: `let overrides = crate::keymap::load(); crate::keymap::install(overrides.clone());` y construye
+   `keymap` recorriendo `Command::ALL`: `crate::keymap::resolve(&overrides, c.id(), c.label_default(t).1)`; los
+   `Some(chord)` entran en la lista. Ordénala para que vayan primero los atajos con más modificadores
+   (`ctrl + shift + alt` contados, de mayor a menor).
+5. `app.rs`, `fn shortcuts`: sustituye las tablas fijas de órdenes (la de Mayús y Alt, la de `Modifiers::COMMAND`,
+   la de `Key::F12` y la del depurador) por: primero, la paleta: `if press(cs, Key::P) { cmds.push(None); }`;
+   después, un bucle sobre una copia de `self.keymap`: construye `Modifiers` a partir del `Chord`
+   (`Modifiers::COMMAND` si `ctrl`, `Modifiers::SHIFT` si `shift`, `Modifiers::ALT` si `alt`, unidos con `|`) y, si
+   `press(mods, chord.key)`, `cmds.push(Some(cmd))`. Conserva tal cual lo demás: `Ctrl` + `Key::Plus` como segundo
+   atajo de `ZoomIn`, el bloque de los fragmentos (Ctrl+Espacio y sus flechas), `Ctrl+Tab` y Esc.
+'''
+firmas = '''
+// crates/pcode-ide/src/keymap.rs
+/// Atajos del usuario leídos de `keybindings.toml` (vacío si no existe).
+pub fn load() -> Vec<(String, Option<Chord>)>;
+/// Deja instalados los atajos del usuario para que los menús los enseñen (solo la primera llamada cuenta).
+pub fn install(overrides: Vec<(String, Option<Chord>)>);
+/// Texto del atajo de una orden para menús y paleta: el del usuario o el de fábrica.
+pub fn shown(id: &str, default: &'static str) -> &'static str;
+// crates/pcode-ide/src/app.rs — dentro de `impl Command`
+/// Identificador estable de la orden (clave de `[atajos]` en `keybindings.toml`).
+pub fn id(self) -> &'static str;
+'''
+ejemplo = '''
+~/.config/pcode/keybindings.toml (junto a ide.toml):
+[atajos]
+guardar = "Ctrl+G"          # Guardar pasa a Ctrl+G (Ctrl+S deja de guardar)
+ir-a-linea = "Ctrl+L"       # antes Ctrl+G
+tema = "Ctrl+Alt+T"         # una orden que no tenía atajo
+salir = ""                  # sin atajo
+'''
+tests = [
+  "identificadores_de_ordenes_unicos: los id() de todas las órdenes de Command::ALL son distintos, no vacíos y solo llevan minúsculas, cifras y guiones; Command::Save.id() es «guardar»",
+  "sin_instalar_se_ve_el_de_fabrica: keymap::shown(«una-orden-que-no-existe», «Ctrl+S») devuelve «Ctrl+S»",
+]
+no_hagas = [
+  "No cambies la firma pública de `Command::label` (sigue devolviendo `(String, &'static str)`)",
+  "No compruebes un atajo con menos modificadores antes que uno con más: para egui, Ctrl+Mayús+F también «es» Ctrl+F",
+  "No quites Ctrl+Mayús+P (paleta), Ctrl+Espacio, Ctrl+Tab ni Esc: no son órdenes configurables",
+  "No llames a `keymap::install` en los tests (es global y solo cuenta la primera vez)",
+]
+
+[[tarea]]
+id = "F9.40"
+nombre = "ide-temas-de-extension"
+titulo = "IDE: usar los temas de color de las extensiones instaladas (cierre)"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.20"]
+toca = []
+acepta = "cargo test -p pcode-ide theme_ext:: && grep -q 'set_custom' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`. Los fragmentos ya se usan desde F9.20; faltaban los temas (lo dice su informe en *Pendiente*).
+2. Comprueba que existen los informes de F9.40a y F9.40b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.40a"
+nombre = "ide-tema-de-extension-nucleo"
+titulo = "IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura)"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.20"]
+toca = ["crates/pcode-ide/src/theme_ext.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide theme_ext::"
+contexto = [
+  "crates/pcode-ide/src/theme.rs (struct `Palette`: los campos de color que hay que rellenar; es `Copy`; constantes `DARK` y `LIGHT`)",
+  "crates/pcode-extensions/src/lib.rs (`pub fn strip_jsonc(text: &str) -> String`: quita comentarios y comas finales de un JSON de VS Code)",
+]
+objetivo = '''
+1. Crea `theme_ext.rs` con `parse_color`, `is_dark` y `palette_from_theme` (firmas abajo) y sus tests. En `lib.rs`
+   añade `pub mod theme_ext;` después de `pub mod theme;`.
+2. `parse_color`: acepta `#rgb`, `#rrggbb` y `#rrggbbaa` (hexadecimal, mayúsculas o minúsculas). `#rgb` duplica cada
+   cifra. Devuelve `Color32::from_rgba_unmultiplied(r, g, b, a)` (a = 255 si no viene). Cualquier otra cosa, `None`.
+3. `is_dark(ui_theme)`: `false` para `"vs"` y `"hc-light"`; `true` para todo lo demás (`vs-dark`, `hc-black`, vacío).
+4. `palette_from_theme(json, base)`: pasa `json` por `pcode_extensions::strip_jsonc` y lo lee con `serde_json`. Si no
+   es JSON válido o no tiene un objeto `colors`, `None`. Si lo tiene, parte de una copia de `base` y, para cada
+   campo, usa el primer color que exista y sea válido de esta tabla (si ninguno, se queda el de `base`):
+   `editor` ← `editor.background` · `side` ← `sideBar.background` · `input` ← `input.background` ·
+   `border` ← `panel.border`, `sideBar.border` · `fg` ← `editor.foreground`, `foreground` ·
+   `fg_dim` ← `descriptionForeground` · `accent` ← `focusBorder`, `button.background` ·
+   `on_accent` ← `button.foreground` · `hover` ← `list.hoverBackground` ·
+   `active` ← `list.activeSelectionBackground` · `selection` ← `editor.selectionBackground` ·
+   `line_number` ← `editorLineNumber.foreground` · `error` ← `editorError.foreground` ·
+   `warning` ← `editorWarning.foreground` · `git_modified` ← `gitDecoration.modifiedResourceForeground` ·
+   `git_added` ← `gitDecoration.untrackedResourceForeground` · `git_deleted` ← `gitDecoration.deletedResourceForeground`.
+   `bubble_user` y `code_bg` se quedan como en `base`.
+'''
+firmas = '''
+// crates/pcode-ide/src/theme_ext.rs
+//! Temas de color de extensiones de VS Code: de su JSON (`colors`) a la paleta del IDE.
+use crate::theme::Palette;
+use eframe::egui::Color32;
+
+/// Color de `#rgb`, `#rrggbb` o `#rrggbbaa`.
+pub fn parse_color(s: &str) -> Option<Color32>;
+
+/// Si un `uiTheme` de VS Code es oscuro.
+pub fn is_dark(ui_theme: &str) -> bool;
+
+/// Paleta a partir del JSON de un tema; lo que el tema no define se toma de `base`.
+pub fn palette_from_theme(json: &str, base: &Palette) -> Option<Palette>;
+'''
+ejemplo = '''
+parse_color("#fff")       -> Some(Color32::from_rgba_unmultiplied(255, 255, 255, 255))
+parse_color("#1e1e2e80")  -> Some(Color32::from_rgba_unmultiplied(0x1e, 0x1e, 0x2e, 0x80))
+parse_color("rojo")       -> None
+palette_from_theme(r##"{ // comentario
+  "colors": { "editor.background": "#101010", "foreground": "#eeeeee" } }"##, &DARK)
+   -> Some(p) con p.editor = rgb(0x10,0x10,0x10), p.fg = rgb(0xee,0xee,0xee) y p.side == DARK.side
+'''
+tests = [
+  "colores_hex: #fff, #1e1e2e y #1e1e2e80 dan los colores del ejemplo; «rojo», «#12» y «#gggggg» dan None",
+  "oscuro_segun_ui_theme: vs y hc-light son claros; vs-dark, hc-black y la cadena vacía son oscuros",
+  "tema_con_comentarios: el JSON del ejemplo cambia editor y fg y deja side como en la base",
+  "primera_clave_valida_gana: con editor.foreground y foreground a la vez, fg toma editor.foreground",
+  "sin_colors_no_hay_paleta: «{}» y «esto no es json» dan None",
+]
+no_hagas = [
+  "No toques `theme.rs` en esta tarea: solo se construye una `Palette`",
+  "No leas archivos: la función recibe el texto del JSON",
+  "No interpretes `tokenColors` (el resaltado no cambia en esta tarea)",
+]
+
+[[tarea]]
+id = "F9.40b"
+nombre = "ide-tema-de-extension-ajustes"
+titulo = "IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo"
+fase = "F9"
+hito = "1.2"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.40a"]
+toca = ["crates/pcode-ide/src/theme.rs", "crates/pcode-ide/src/settings.rs", "crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide tema_personalizado && cargo test -p pcode-ide tema_de_extension && grep -q 'set_custom' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/theme.rs (`pub fn palette(dark: bool) -> &'static Palette`: de aquí salen todos los colores)",
+  "crates/pcode-ide/src/app.rs (`fn ui_settings`: panel de Ajustes; `fn set_theme`; `Ide::new`: dónde se aplica el tema al arrancar)",
+  "crates/pcode-ide/src/theme_ext.rs (lo crea F9.40a: `palette_from_theme(json, &Palette) -> Option<Palette>`, `is_dark(ui_theme) -> bool`)",
+  "crates/pcode-extensions/src/lib.rs (`default_root()`, `list(root) -> Vec<Manifest>`; `Manifest.id`, `Manifest.themes: Vec<Theme { label, ui_theme, path }>`; el tema está en `root/<id>/<path sin ./>`)",
+]
+objetivo = '''
+1. `theme.rs`: añade `static CUSTOM: std::sync::RwLock<Option<&'static Palette>> = std::sync::RwLock::new(None);`
+   y `pub fn set_custom(p: Option<Palette>)`, que guarda `p.map(|p| &*Box::leak(Box::new(p)))` (se pierde una
+   paleta de pocos bytes por cambio de tema: dilo en un comentario). `palette(dark)` devuelve la de `CUSTOM` si hay
+   una, y si no lo de antes. Test `tema_personalizado_sustituye_y_se_quita`.
+2. `settings.rs`: campo nuevo en `IdeSettings`: `pub ext_theme: String` con `#[serde(rename = "tema_extension")]` y
+   su `///` («Tema de una extensión: `<id>/<ruta>`; vacío = el del IDE»). Por defecto, cadena vacía. Test
+   `tema_de_extension_se_guarda_y_se_lee`.
+3. `texts.rs`: campos nuevos al final de `Texts`: `ext_themes` (`"Temas de extensiones"` / `"Extension themes"`) y
+   `default_theme` (`"Tema del IDE"` / `"IDE theme"`), con su `///`.
+4. `app.rs`: nuevo método `fn apply_ext_theme(&mut self, ctx: &egui::Context)`: si `self.settings.ext_theme` está
+   vacío o contiene `..`, llama a `theme::set_custom(None)`. Si no, lee el archivo
+   `pcode_extensions::default_root()` + `ext_theme`, lo pasa a
+   `theme_ext::palette_from_theme(&texto, if self.settings.dark { &theme::DARK } else { &theme::LIGHT })` y llama a
+   `theme::set_custom(resultado)` (si algo falla, `None`). Después llama a
+   `theme::apply(ctx, self.settings.dark, self.settings.font_size)`.
+5. `app.rs`, `Ide::new`: después de crear `ide` (antes de `ide.list_dir("")`), llama a `ide.apply_ext_theme(ctx)`;
+   para eso declara `let mut ide = Ide { … }`.
+6. `app.rs`, `ui_settings`: debajo de los botones de tema oscuro y claro, un título `t.ext_themes` y una lista:
+   primero `ui.selectable_label(self.settings.ext_theme.is_empty(), t.default_theme)`; después, por cada extensión
+   de `pcode_extensions::list(&root)` y cada tema suyo, `ui.selectable_label(clave == self.settings.ext_theme,
+   &tema.label)` donde `clave = format!("{}/{}", m.id, tema.path.trim_start_matches("./"))`. Al pulsar uno: guarda la
+   clave (o vacío), pone `self.settings.dark = theme_ext::is_dark(&tema.ui_theme)` (no lo cambies al elegir el del
+   IDE), llama a `self.apply_ext_theme(&ctx)` y a `self.settings.save()`. Calcula la lista una sola vez por
+   fotograma, fuera de los cierres que usan `self`.
+'''
+firmas = '''
+// crates/pcode-ide/src/theme.rs
+/// Pone (o quita con `None`) una paleta de tema de extensión, que sustituye a la clara y a la oscura.
+pub fn set_custom(p: Option<Palette>);
+// crates/pcode-ide/src/settings.rs — campo nuevo de `IdeSettings`
+#[serde(rename = "tema_extension")]
+pub ext_theme: String,
+// crates/pcode-ide/src/app.rs — dentro de `impl Ide`
+/// Aplica el tema de extensión guardado en los ajustes (o lo quita).
+fn apply_ext_theme(&mut self, ctx: &egui::Context);
+'''
+tests = [
+  "tema_personalizado_sustituye_y_se_quita: tras set_custom(Some(p)) con p.editor distinto, palette(true).editor es el de p; tras set_custom(None) vuelve a ser DARK.editor (deja siempre None al acabar)",
+  "tema_de_extension_se_guarda_y_se_lee: IdeSettings con ext_theme = «ana.temas/themes/noche.json» sobrevive a to_toml + parse, y un TOML sin esa clave da cadena vacía",
+]
+no_hagas = [
+  "No cambies la firma de `palette` ni de `apply`",
+  "No leas la carpeta de extensiones más de una vez por fotograma",
+  "No cambies los colores del resaltado (`highlight.rs`)",
+  "No aceptes claves con `..`: el archivo debe quedar dentro de la carpeta de extensiones",
+]
+
+[[tarea]]
+id = "F9.41"
+nombre = "ide-explorador-de-tests"
+titulo = "IDE: explorador de tests (descubrir, ejecutar y marcar ✓ ✗) sobre los métodos `tests.*` del demonio (cierre)"
+fase = "F9"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.14", "F9.12"]
+toca = []
+acepta = "cargo test -p pcode-ide tests_view:: && grep -q 'Side::Tests' crates/pcode-ide/src/app.rs"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`: el estado del explorador pasa sus tests y el IDE tiene la vista lateral «Tests».
+2. Comprueba que existen los informes de F9.41a, F9.41b y F9.41c.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F9.41a"
+nombre = "ide-tests-estado"
+titulo = "IDE: estado del explorador de tests y captura de la salida de la terminal (lógica pura)"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.12"]
+toca = ["crates/pcode-ide/src/tests_view.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide tests_view::"
+contexto = [
+  "crates/pcode-ide/src/terminal.rs (`Terminal::apply`: los eventos `terminalOutput {id, text}` y `terminalExit {id, code}` del demonio)",
+  "crates/pcode-ide/src/problems.rs (lectura tolerante de listas de un `serde_json::Value`)",
+]
+objetivo = '''
+El demonio (F8.14) no ejecuta los tests: dice qué orden lanzar y entiende su salida. El IDE lanza la orden con
+`terminal.run`, junta la salida que llega por eventos y se la devuelve al demonio para que la interprete. Este
+módulo guarda ese estado; no hace peticiones.
+1. Crea `tests_view.rs` con lo de *Firmas* y sus tests. En `lib.rs` añade `pub mod tests_view;` en orden alfabético
+   (después de `pub mod terminal;`).
+2. `parse_runners(v)`: lista de `{"id", "label", "list"?, "runAll"}` (respuesta de `tests.runners`). `parse_items(v)`:
+   lista de `{"id", "name", "group", "runner"}`. `parse_results(v)`: lista de `{"id", "ok"}` → `(id, ok)`. En las
+   tres, lo que no sea una lista da vector vacío y los elementos sin `id` se saltan.
+3. Captura de una orden. `expect()` avisa de que se va a lanzar una orden cuyo identificador aún no se conoce: pone
+   `waiting = true` y vacía `backlog`. Mientras `waiting`, `apply(ev)` guarda una copia de cada evento
+   `terminalOutput` o `terminalExit` en `backlog` (como mucho 2000; los siguientes se descartan) y devuelve
+   `Applied::No` (otros módulos también los ven).
+4. `begin(terminal, runner, mode)`: crea `capture` con ese identificador, pone `waiting = false`, y repasa `backlog`
+   en orden aplicando solo los eventos cuyo `id` es `terminal` (por si la salida llegó antes que el identificador);
+   después vacía `backlog`. Si entre ellos estaba el `terminalExit`, devuelve `Some(captura terminada)` y deja
+   `capture` en `None`; si no, `None`.
+5. `apply(ev)` con una captura en marcha y `ev["id"]` igual a su `terminal`: `terminalOutput` añade `ev["text"]` a
+   `output` (si pasa de `MAX_OUTPUT` bytes, deja de añadir) y devuelve `Applied::Captured`; `terminalExit` saca la
+   captura (`take`) y devuelve `Applied::Finished(captura)`. Cualquier otro evento, `Applied::No`.
+6. `set_items(runner, items)`: sustituye los tests de ese ejecutor (los de otros se conservan) y borra los estados
+   de los identificadores que ya no existen. `set_results(results)`: pone `Status::Ok` o `Status::Fail` a cada
+   identificador (aunque no esté en `items`).
+7. `status_of(id)`: su estado o `Status::Pending`. `groups()`: los tests agrupados por `group`, grupos en orden
+   alfabético y tests en el orden en que están. `counts()`: `(total, correctos, fallidos)` sobre `items`.
+   `mark(status)`: `"✓"`, `"✗"` o `"·"`.
+'''
+firmas = '''
+// crates/pcode-ide/src/tests_view.rs
+//! Explorador de tests del IDE: ejecutores, tests, resultados y captura de la salida de la terminal.
+use serde_json::Value;
+use std::collections::BTreeMap;
+
+/// Tamaño máximo de la salida capturada de una orden.
+pub const MAX_OUTPUT: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Runner { pub id: String, pub label: String, pub list: Option<String>, pub run_all: String }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestItem { pub id: String, pub name: String, pub group: String, pub runner: String }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status { Pending, Ok, Fail }
+/// Para qué se lanzó la orden: listar los tests o ejecutarlos (es el `mode` de `tests.parse`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode { List, Run }
+impl Mode { /** `"list"` o `"run"`. */ pub fn as_str(self) -> &'static str; }
+/// Salida de una orden de tests que se está juntando.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Capture { pub terminal: u64, pub runner: String, pub mode: Mode, pub output: String }
+/// Qué hizo `apply` con un evento.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Applied { No, Captured, Finished(Capture) }
+
+pub fn parse_runners(v: &Value) -> Vec<Runner>;
+pub fn parse_items(v: &Value) -> Vec<TestItem>;
+pub fn parse_results(v: &Value) -> Vec<(String, bool)>;
+pub fn mark(s: Status) -> &'static str;
+
+#[derive(Debug, Default)]
+pub struct TestsState {
+    pub runners: Vec<Runner>, pub items: Vec<TestItem>, pub status: BTreeMap<String, Status>,
+    pub capture: Option<Capture>, pub waiting: bool, backlog: Vec<Value>,
+}
+impl TestsState {
+    pub fn expect(&mut self);
+    pub fn begin(&mut self, terminal: u64, runner: &str, mode: Mode) -> Option<Capture>;
+    pub fn apply(&mut self, ev: &Value) -> Applied;
+    /// Si hay una orden lanzada o en marcha (no se puede lanzar otra).
+    pub fn busy(&self) -> bool;
+    pub fn set_items(&mut self, runner: &str, items: Vec<TestItem>);
+    pub fn set_results(&mut self, results: &[(String, bool)]);
+    pub fn status_of(&self, id: &str) -> Status;
+    pub fn groups(&self) -> Vec<(String, Vec<&TestItem>)>;
+    pub fn counts(&self) -> (usize, usize, usize);
+}
+'''
+ejemplo = '''
+parse_runners(&json!([{"id": "cargo", "label": "Rust (cargo)", "list": "cargo test -- --list --format terse", "runAll": "cargo test"},
+                      {"id": "npm", "label": "npm test", "runAll": "npm test"}]))
+   -> [Runner { id: "cargo", list: Some("cargo test -- --list --format terse"), run_all: "cargo test", … }, Runner { id: "npm", list: None, … }]
+
+let mut s = TestsState::default();
+s.expect();                                                                  // se va a lanzar una orden
+s.apply(&json!({"tipo": "terminalOutput", "id": 7, "text": "test a::uno ... ok\n"})) -> Applied::No   (guardado en backlog)
+s.begin(7, "cargo", Mode::Run)                                               -> None; s.capture.output == "test a::uno ... ok\n"
+s.apply(&json!({"tipo": "terminalOutput", "id": 7, "text": "fin\n"}))        -> Applied::Captured
+s.apply(&json!({"tipo": "terminalOutput", "id": 9, "text": "otra orden"}))   -> Applied::No
+s.apply(&json!({"tipo": "terminalExit", "id": 7, "code": 0}))
+   -> Applied::Finished(Capture { terminal: 7, runner: "cargo", mode: Mode::Run, output: "test a::uno ... ok\nfin\n" }); s.busy() == false
+
+s.set_items("cargo", vec![uno (group "a"), dos (group "a"), suelto (group "")]);  s.set_results(&[("a::uno".into(), true), ("a::dos".into(), false)]);
+s.counts() -> (3, 1, 1)     s.groups() -> [("", [suelto]), ("a", [uno, dos])]     mark(s.status_of("a::dos")) -> "✗"
+'''
+tests = [
+  "lee_ejecutores_tests_y_resultados: el ejemplo de parse_runners; parse_items y parse_results con una lista válida; null da vector vacío en las tres",
+  "captura_la_salida_de_su_orden: tras begin(7…), los terminalOutput con id 7 se juntan en orden y los de otro id dan Applied::No",
+  "termina_con_terminal_exit: terminalExit del id capturado da Finished con toda la salida y deja capture en None",
+  "salida_que_llega_antes_que_el_identificador: el ejemplo con expect, un terminalOutput y begin: la salida anterior no se pierde",
+  "orden_que_acaba_antes_de_begin: con expect, terminalOutput y terminalExit de id 7 y después begin(7…), begin devuelve Some(captura) con la salida",
+  "sin_expect_no_guarda_nada: sin expect ni captura, apply da No y begin posterior empieza con salida vacía",
+  "resultados_y_recuento: el último bloque del ejemplo (counts, groups y mark)",
+  "set_items_sustituye_solo_su_ejecutor: los tests de otro ejecutor se conservan y los estados de tests que desaparecen se borran",
+  "salida_con_tope: tras añadir más de MAX_OUTPUT bytes, output.len() no pasa de MAX_OUTPUT más el tamaño del último trozo admitido",
+]
+no_hagas = [
+  "No hagas peticiones ni lances procesos en este módulo",
+  "No uses `egui`",
+  "No interpretes tú la salida de cargo o pytest: eso lo hace el demonio con `tests.parse`",
+  "Pon `///` en cada elemento público (en *Firmas* se han omitido algunos por espacio)",
+]
+
+[[tarea]]
+id = "F9.41b"
+nombre = "ide-tests-peticiones"
+titulo = "IDE: pedir ejecutores, lanzar las órdenes de tests con `terminal.run` y mandar su salida a `tests.parse`"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.41a", "F8.14"]
+toca = ["crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide tests_view:: && grep -q 'tests.parse' crates/pcode-ide/src/app.rs && grep -q 'Msg::TestParsed' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`fn run_terminal`: cómo se llama a `terminal.run` y se lee el `id`; `fn on_event`: la línea `if self.problems.apply(&ev) || self.term.apply(&ev)`; `enum Msg` y `fn on_msg`)",
+  "crates/pcode-ide/src/tests_view.rs (lo crea F9.41a: `TestsState` con `expect`, `begin`, `apply`, `busy`, `set_items`, `set_results`; `Mode::{List, Run}` con `as_str`; `Applied::{No, Captured, Finished(Capture)}`; `Capture { terminal, runner, mode, output }`; `parse_runners`, `parse_items`, `parse_results`)",
+]
+objetivo = '''
+1. `app.rs`: en `struct Ide`, campo `tests: crate::tests_view::TestsState` (`Default::default()` en `Ide::new`). En
+   `enum Msg`, con `///`: `TestRunners(Value)`, `TestStarted(u64, String, Mode)` (identificador de la terminal,
+   ejecutor y modo) y `TestParsed(String, Mode, Value)` (ejecutor, modo y respuesta de `tests.parse`).
+2. Tres métodos nuevos en `impl Ide`. Como todavía no los llama nadie (la vista es F9.41c), ponles encima
+   `#[allow(dead_code)] // los llama la vista de tests (F9.41c)`:
+   - `fn tests_load(&self)`: con `self.spawn`, `c.call("tests.runners", json!({}))` → `Msg::TestRunners(v)`; si
+     falla, `Msg::Toast(e, true)`.
+   - `fn tests_discover(&mut self, runner: &str)`: si `self.tests.busy()`, no hace nada. Busca el ejecutor en
+     `self.tests.runners`; si su `list` es `None`, no hace nada. Si es `Some(orden)`: `self.tests.expect()` y
+     `self.tests_launch(orden, runner, Mode::List)`.
+   - `fn tests_run(&mut self, runner: &str, test: Option<String>)`: si `self.tests.busy()`, no hace nada. Llama a
+     `self.tests.expect()` y, con `self.spawn`: `c.call("tests.command", json!({"runner": runner, "test": test}))`
+     (devuelve la orden como cadena), después `c.call("terminal.run", json!({"command": orden}))` y devuelve
+     `Msg::TestStarted(id, runner, Mode::Run)`. Si alguna de las dos llamadas falla, devuelve
+     `Msg::TestParsed(runner, Mode::Run, Value::Null)` (el paso 5 lo trata).
+3. Método auxiliar `fn tests_launch(&self, command: String, runner: &str, mode: Mode)`: con `self.spawn`,
+   `c.call("terminal.run", json!({"command": command}))`; el identificador es `v["id"].as_u64()`; devuelve
+   `Msg::TestStarted(id, runner, mode)` o, si falla, `Msg::TestParsed(runner, mode, Value::Null)`.
+4. `fn on_event`: justo antes de `if self.problems.apply(&ev) || self.term.apply(&ev)`, añade:
+   `match self.tests.apply(&ev) { Applied::Finished(cap) => { self.tests_parse(cap); return; } Applied::Captured => return, Applied::No => {} }`.
+   Método `fn tests_parse(&self, cap: Capture)`: con `self.spawn`,
+   `c.call("tests.parse", json!({"runner": cap.runner, "mode": cap.mode.as_str(), "output": cap.output}))` →
+   `Msg::TestParsed(cap.runner, cap.mode, v)`; si falla, `Msg::Toast(e, true)`.
+5. `fn on_msg`: `Msg::TestRunners(v)` → `self.tests.runners = parse_runners(&v)`. `Msg::TestStarted(id, runner,
+   mode)` → `if let Some(cap) = self.tests.begin(id, &runner, mode) { self.tests_parse(cap); }`.
+   `Msg::TestParsed(runner, mode, v)`: primero `self.tests.waiting = false;` (por si la orden no llegó a lanzarse);
+   después, con `Mode::List` → `self.tests.set_items(&runner, parse_items(&v))`; con `Mode::Run` →
+   `self.tests.set_results(&parse_results(&v))`.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Msg { /* … */
+    /// Ejecutores de tests del proyecto (respuesta de `tests.runners`).
+    TestRunners(Value),
+    /// Se lanzó una orden de tests: (terminal, ejecutor, modo).
+    TestStarted(u64, String, crate::tests_view::Mode),
+    /// El demonio interpretó la salida: (ejecutor, modo, respuesta de `tests.parse`).
+    TestParsed(String, crate::tests_view::Mode, Value),
+}
+impl Ide {
+    fn tests_load(&self);
+    fn tests_discover(&mut self, runner: &str);
+    fn tests_run(&mut self, runner: &str, test: Option<String>);
+    fn tests_launch(&self, command: String, runner: &str, mode: crate::tests_view::Mode);
+    fn tests_parse(&self, cap: crate::tests_view::Capture);
+}
+// Métodos del demonio (F8.14 y los que ya existían):
+//   tests.runners {} → [{id, label, list?, runAll}]
+//   tests.command {runner, test?} → "orden de shell"            (sin `test`: la orden de ejecutarlos todos)
+//   tests.parse {runner, mode: "list"|"run", output} → [{id, name, group, runner}] o [{id, ok}]
+//   terminal.run {command} → {id}; su salida llega como eventos terminalOutput {id, text} y terminalExit {id, code}
+'''
+tests = [
+  "(sin tests nuevos): la lógica se prueba en tests_view:: (F9.41a); aquí la aceptación comprueba que compila y que el cableado existe",
+]
+no_hagas = [
+  "No llames a `self.term.start` para estas órdenes: su salida no va a la terminal integrada, va a `self.tests`",
+  "No lances una orden si `self.tests.busy()`: solo una a la vez",
+  "No interpretes la salida en el IDE: siempre `tests.parse`",
+  "No dibujes nada todavía: la vista es F9.41c",
+]
+notas = '''
+Cuando una orden no llega a lanzarse, `Msg::TestParsed(…, Value::Null)` hace que el paso 5 ponga `waiting = false`
+sin cambiar ningún resultado.
+Cada cadena que entra en un cierre de `self.spawn` hay que copiarla antes (`let runner = runner.to_string();`).
+Importa lo que uses con `use crate::tests_view::{Applied, Capture, Mode, parse_items, parse_results, parse_runners};`.
+'''
+
+[[tarea]]
+id = "F9.41c"
+nombre = "ide-tests-vista"
+titulo = "IDE: vista lateral «Tests» con ejecutores, árbol de tests con ✓ ✗ y «pedir al agente que lo arregle»"
+fase = "F9"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.41b"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide textos_de_tests && grep -q 'Side::Tests' crates/pcode-ide/src/app.rs && grep -q 'fn ui_tests' crates/pcode-ide/src/app.rs"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`enum Side`; `fn ui_side`: los dos `match self.side`; `fn ui_activity`: la lista de botones y el `match s` del final; `fn run`: el brazo `Command::Explorer | Command::Search | Command::Git | Command::Settings`; `fn ui_search`: ejemplo de lista con `egui::ScrollArea` y la función `row`)",
+  "crates/pcode-ide/src/tests_view.rs (`TestsState { runners, items, … }` con `busy()`, `groups()`, `counts()`, `status_of(id)`; `mark(Status)`; `Status::Fail`; `Runner { id, label, list, run_all }`; `TestItem { id, name, group, runner }`)",
+]
+objetivo = '''
+1. `texts.rs`: al final de `Texts` (con `///`, en `ES` y `EN`): `tests` («Tests» / «Tests»), `tests_discover`
+   («Descubrir» / «Discover»), `tests_run_all` («Ejecutar todos» / «Run all»), `tests_none` («No se ha detectado
+   ningún ejecutor de tests en el proyecto» / «No test runner detected in this project»), `tests_empty` («Pulsa
+   «Descubrir» para listar los tests» / «Press “Discover” to list the tests») y `fix_test` («Arregla este test que
+   falla:» / «Fix this failing test:»). Test `textos_de_tests`.
+2. `app.rs`: variante nueva `Side::Tests` (con `///`) y orden nueva `Command::Tests` (con `///`), en `Command::ALL`
+   (su tamaño sube en 1) después de `Command::Git`, y en `label` con `(t.tests, "Ctrl+Mayús+T")`. En
+   `fn shortcuts`, primera tabla: `(cs, Key::T, Command::Tests)`. En `ui_title`, al menú `t.menu_view`.
+3. `app.rs`, `fn run`: añade `Command::Tests` al brazo `Command::Explorer | Command::Search | Command::Git |
+   Command::Settings` y a su `match cmd` interno (`Command::Tests => Side::Tests`); después de
+   `self.show_side = true;`, si `self.side == Side::Tests` y `self.tests.runners.is_empty()`, llama a
+   `self.tests_load()`.
+4. `app.rs`, `fn ui_side`: en los dos `match self.side`, `Side::Tests => self.t.tests` y
+   `Side::Tests => self.ui_tests(ui)`. En `fn ui_activity`: añade `(Side::Tests, "✓", t.tests)` a la lista de
+   botones y `Side::Tests => Command::Tests` al `match s` del final.
+5. `app.rs`, nuevo `fn ui_tests(&mut self, ui: &mut egui::Ui)`. Apunta en variables locales lo que se pulse y
+   actúa al final, fuera de los cierres:
+   - Sin ejecutores: etiqueta `t.tests_none` en `p.fg_dim`.
+   - Por cada ejecutor, una fila: su `label` en negrita y dos botones pequeños, `t.tests_discover` (solo si `list`
+     es `Some`) y `t.tests_run_all`; desactivados (`ui.add_enabled(false, …)`) si `self.tests.busy()`. Si está
+     ocupado, `ui.spinner()`.
+   - Una línea con el recuento de `self.tests.counts()`: `format!("✓ {ok}  ✗ {fail}  · {total}")` en `p.fg_dim`.
+   - Si no hay tests: etiqueta `t.tests_empty`. Si los hay, un `egui::ScrollArea::vertical().auto_shrink(false)` con
+     los grupos de `self.tests.groups()`: el nombre del grupo (o `/` si está vacío) en `p.fg_dim`, y por cada test
+     una fila clicable `format!("{} {}", mark(estado), test.name)`: en `p.error` si falló, en `p.git_added` si pasó,
+     en `p.fg` si está pendiente. Un clic ejecuta ese test. En los que fallaron, además, un botón sin marco `✦`
+     con `t.fix_test` como ayuda.
+   - Al final: descubrir → `self.tests_discover(&id)`; ejecutar todos → `self.tests_run(&id, None)`; clic en un
+     test → `self.tests_run(&test.runner, Some(test.id))`; `✦` → `self.prompt = format!("{} {}", t.fix_test, id)`,
+     `self.settings.show_agent = true` y `self.focus_prompt = true`.
+6. Quita los `#[allow(dead_code)]` que F9.41b puso sobre `tests_load`, `tests_discover` y `tests_run`.
+'''
+firmas = '''
+// crates/pcode-ide/src/app.rs
+pub enum Side { /* … */ /** Tests. */ Tests }
+pub enum Command { /* … */ Tests, /* … */ }
+impl Ide {
+    /// Vista lateral de tests: ejecutores, árbol con ✓ ✗ y recuento.
+    fn ui_tests(&mut self, ui: &mut egui::Ui);
+}
+'''
+tests = [
+  "textos_de_tests: tests, tests_discover, tests_run_all, tests_none, tests_empty y fix_test no están vacíos en ES ni en EN",
+]
+no_hagas = [
+  "No llames a `self.tests_run` ni a `self.tests_discover` dentro de un cierre que ya usa `self`: apunta la acción y hazla al final",
+  "No mandes el mensaje al agente tú: solo se rellena el cuadro de texto para que el usuario lo revise y lo envíe",
+  "No dependas solo del color: cada test lleva su marca ✓, ✗ o ·",
+  "No uses glifos fuera de ✓ ✗ · ✦",
+]
+
+[[tarea]]
+id = "F9.42"
+nombre = "ide-plegado"
+titulo = "IDE: plegar y desplegar bloques de código"
+fase = "F9"
+hito = "despues"
+estado = "esbozo"
+motivo = "El editor es un `egui::TextEdit` sobre el texto completo: no puede ocultar líneas. Hace falta decidir antes (ADR) si se escribe un widget de editor propio (también lo necesitan el multicursor y los puntos de ruptura con clic en el margen) o si el plegado se ofrece solo como esquema navegable. La parte pura (rangos plegables por sangría y llaves) se puede adelantar cuando se decida."
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/folding.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide folding::"
+objetivo = '''
+Calcular los rangos plegables de un archivo (por sangría en Python y por llaves en Rust, C y JS) y ocultar en el
+editor las líneas de los rangos plegados, con una marca ▸ o ▾ en el margen.
+'''
+tests = ["(por definir al desgranar)"]
+
+[[tarea]]
+id = "F9.43"
+nombre = "ide-multicursor"
+titulo = "IDE: multicursor básico (Ctrl+D añade la siguiente coincidencia; Alt+clic añade un cursor)"
+fase = "F9"
+hito = "despues"
+estado = "esbozo"
+motivo = "`egui::TextEdit` solo tiene un cursor y una selección. Depende de la misma decisión que F9.42: un widget de editor propio. Mientras tanto, «reemplazar todo» del archivo (F9.09) y del proyecto (F9.31) cubren el uso más común."
+ejecutor = "haiku"
+depende = ["F9.42"]
+toca = ["crates/pcode-ide/src/multicursor.rs", "crates/pcode-ide/src/app.rs"]
+acepta = "cargo test -p pcode-ide multicursor::"
+objetivo = '''
+Varios cursores en el editor: Ctrl+D selecciona la siguiente aparición de la palabra actual y escribir edita todas
+a la vez. La parte pura (aplicar una misma edición en varias posiciones manteniendo los desplazamientos) va en un
+módulo aparte con sus tests.
+'''
+tests = ["(por definir al desgranar)"]
+
+[[tarea]]
+id = "F9.44"
+nombre = "extensiones-wasm"
+titulo = "Extensiones: tools en módulos WASM sin red ni disco salvo lo declarado"
+fase = "F9"
+hito = "despues"
+estado = "esbozo"
+motivo = "Ejecutar WASM exige un runtime (wasmtime o wasmi) que no está en la lista de dependencias de AGENTS.md §7: es una decisión del propietario (ADR). F8.32 ya cubre las extensiones con servidores MCP locales, órdenes y skills; esto solo añadiría tools en proceso con aislamiento más fino."
+ejecutor = "coordinador"
+depende = ["F8.32"]
+toca = ["crates/pcode-extensions/src/wasm.rs", "docs/adr/ADR-0010-extensiones.md"]
+acepta = "cargo test -p pcode-extensions wasm::"
+objetivo = '''
+Que una extensión con manifiesto (F8.32) pueda traer tools como módulos WASM que se ejecutan dentro de pcode con las
+capacidades declaradas y aprobadas (sin red ni disco por defecto).
+'''
+tests = ["(por definir al desgranar)"]
