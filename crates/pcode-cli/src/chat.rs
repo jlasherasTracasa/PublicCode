@@ -338,6 +338,7 @@ async fn prepare(a: &ChatArgs) -> anyhow::Result<Prepared> {
     .with_questions(pcode_core::AskMode::Interactive)
     .with_memory()
     .with_context_tool()
+    .with_tool_search(pcode_tools::catalog::DEFAULT_MAX_VISIBLE)
     .with_verify_reminder();
     Ok(Prepared {
         agent,

@@ -136,6 +136,7 @@ pub struct Agent {
     memory: bool,
     verify_reminder: bool,
     context: Option<crate::context::ContextLedger>,
+    catalog: Option<pcode_tools::catalog::ToolCatalog>,
 }
 
 /// Instrucción para resumir la conversación al compactar. Recoge los modos de fallo de la compresión
@@ -187,6 +188,7 @@ impl Agent {
             memory: false,
             verify_reminder: false,
             context: None,
+            catalog: None,
         }
     }
     /// Ofrece la tool `preguntar` (F4.11) con este modo y el presupuesto por defecto.
@@ -207,6 +209,11 @@ impl Agent {
     /// Etiqueta cada resultado de tool con un id (`[rN]`) y ofrece la tool `contexto` (F4.01).
     pub fn with_context_tool(mut self) -> Self {
         self.context = Some(crate::context::ContextLedger::new());
+        self
+    }
+    /// Con más de `max_visible` tools, anuncia solo las nativas y `buscar_tools` (F4.10).
+    pub fn with_tool_search(mut self, max_visible: usize) -> Self {
+        self.catalog = Some(pcode_tools::catalog::ToolCatalog::new(max_visible));
         self
     }
     /// Si el turno cambió archivos y no ejecutó ninguna comprobación, antes de terminar se le pide al
@@ -509,6 +516,9 @@ impl Agent {
             let mut specs = self
                 .tools
                 .specs_filtered(|n, e| self.policy.tool_visible(n, e) && !(ro && writes(e)));
+            if let Some(c) = &self.catalog {
+                specs = c.visible(pcode_tools::catalog::dedupe(specs));
+            }
             if self.ask.is_some() && self.policy.tool_visible(ASK_TOOL, &[]) {
                 specs.push(AskState::spec());
             }
@@ -654,6 +664,29 @@ impl Agent {
                     && let Some(l) = self.context.as_mut()
                 {
                     let content = l.handle(&call.arguments, &mut messages);
+                    self.audit(&call, "allow");
+                    self.emit(AgentEvent::ToolResult {
+                        name: call.name.clone(),
+                        is_error: false,
+                        content: content.clone(),
+                    });
+                    messages.push(Message::tool_result(call.id.clone(), content));
+                    continue;
+                }
+                if call.name == pcode_tools::catalog::SEARCH_TOOL && self.catalog.is_some() {
+                    let all = pcode_tools::catalog::dedupe(self.tools.specs_filtered(|n, e| {
+                        self.policy.tool_visible(n, e) && !(ro && writes(e))
+                    }));
+                    let q = call
+                        .arguments
+                        .get("consulta")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let content = self
+                        .catalog
+                        .as_mut()
+                        .map(|c| c.search(&all, q, 5))
+                        .unwrap_or_default();
                     self.audit(&call, "allow");
                     self.emit(AgentEvent::ToolResult {
                         name: call.name.clone(),
@@ -822,6 +855,71 @@ mod tests {
             },
         );
         (a, p)
+    }
+
+    /// Tool falsa que parece de MCP (la descripción empieza por `[MCP `).
+    struct Falsa;
+    #[async_trait::async_trait]
+    impl pcode_tools::Tool for Falsa {
+        fn spec(&self) -> pcode_models::ToolSpec {
+            pcode_models::ToolSpec {
+                name: "clima_hoy".into(),
+                description: "[MCP clima] Tiempo de hoy en una ciudad".into(),
+                parameters: json!({"type": "object"}),
+            }
+        }
+        fn effects(&self) -> &'static [Effect] {
+            &[Effect::Read]
+        }
+        async fn call(&self, _: serde_json::Value, _: &ToolContext) -> ToolOutput {
+            ToolOutput::ok("sol")
+        }
+    }
+
+    fn anunciadas(req: &ChatRequest) -> Vec<String> {
+        req.tools.iter().map(|t| t.name.clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn buscar_tools_desbloquea_en_la_siguiente_peticion() {
+        let d = tempfile::tempdir().unwrap();
+        let script = vec![
+            tool("buscar_tools", json!({"consulta": "tiempo ciudad"})),
+            text("fin"),
+        ];
+        let (mut a, p) = agent(&d, script, Capabilities::default(), None);
+        a.tools.register(Arc::new(Falsa)).unwrap();
+        let mut a = a.with_tool_search(3);
+        a.run("qué tiempo hace").await;
+        let reqs = p.requests();
+        let primera = anunciadas(&reqs[0]);
+        assert!(primera.contains(&"buscar_tools".to_string()));
+        assert!(primera.contains(&"leer".to_string()));
+        assert!(!primera.contains(&"clima_hoy".to_string()));
+        assert!(anunciadas(&reqs[1]).contains(&"clima_hoy".to_string()));
+    }
+
+    #[tokio::test]
+    async fn buscar_tools_no_aparece_con_pocas_tools() {
+        let d = tempfile::tempdir().unwrap();
+        let (mut a, p) = agent(&d, vec![text("hecho")], Capabilities::default(), None);
+        a.tools.register(Arc::new(Falsa)).unwrap();
+        let mut a = a.with_tool_search(50);
+        a.run("nada").await;
+        let primera = anunciadas(&p.requests()[0]);
+        assert!(!primera.contains(&"buscar_tools".to_string()));
+        assert!(primera.contains(&"clima_hoy".to_string()));
+    }
+
+    #[tokio::test]
+    async fn buscar_tools_sin_activar_no_cambia_nada() {
+        let d = tempfile::tempdir().unwrap();
+        let (mut a, p) = agent(&d, vec![text("hecho")], Capabilities::default(), None);
+        a.tools.register(Arc::new(Falsa)).unwrap();
+        a.run("nada").await;
+        let primera = anunciadas(&p.requests()[0]);
+        assert!(primera.contains(&"clima_hoy".to_string()));
+        assert!(!primera.contains(&"buscar_tools".to_string()));
     }
 
     #[tokio::test]
