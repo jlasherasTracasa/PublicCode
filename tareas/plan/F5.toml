@@ -1150,46 +1150,424 @@ id = "F5.14"
 nombre = "ui-revision"
 titulo = "UI: revisión de cambios (diff unificado y lado a lado) y cola de aprobaciones"
 fase = "F5"
+hito = "1.6"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F5.13", "F5.03"]
-toca = ["apps/ui/src/views/Revision.tsx", "apps/ui/src/views/Aprobaciones.tsx", "apps/ui/src/components/Diff.tsx", "apps/ui/src/views/Revision.test.tsx"]
-acepta = "npm run -w apps/ui typecheck && npm run -w apps/ui test -- Revision && npm run -w apps/ui lint"
-lenguaje = "typescript"
-contexto = ["docs/interfaces.md (pantallas Revisión y Aprobaciones)", "apps/ui/src/protocol/"]
+depende = ["F5.03", "F8.01"]
+toca = []
+acepta = 'cargo test -p pcode-server approvals:: && cargo test -p pcode-server rpc_aprobacion_recordada && node --test crates/pcode-server/web/studio/test/diff.test.js && grep -q "Studio.diff" crates/pcode-server/web/index.html && grep -q "remember" crates/pcode-server/web/index.html'
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. `Diff`: parsea un diff unificado (cabeceras `@@`) y lo pinta unificado o lado a lado, con números
-   de línea, prefijos `+`/`-` además del color y texto siempre como texto (nunca HTML).
-2. Revisión: lista de `ChangeDto` con `+/-`; aplicar y descartar con diálogo de confirmación;
-   resultado de la revisión cruzada si existe.
-3. Aprobaciones: cola con acción, motivo y procedencia; botones permitir, permitir y recordar, y denegar.
+Se hace sobre Studio (`crates/pcode-server/web/index.html`), que ya tiene diff unificado y aprobaciones con «Permitir»/«Denegar».
+Falta «permitir y recordar» y el diff lado a lado.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F5.14a a F5.14e).
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.14a"
+nombre = "aprobaciones-recordar"
+titulo = "Aprobaciones: «permitir y recordar» en `ApprovalBroker`"
+fase = "F5"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.03"]
+toca = ["crates/pcode-server/src/approvals.rs"]
+acepta = "cargo test -p pcode-server approvals:: && grep -q 'pub fn decide_with' crates/pcode-server/src/approvals.rs"
+contexto = ["crates/pcode-server/src/approvals.rs (struct `ApprovalBroker`, métodos `new`, `request`, `pending` y `decide`, y los tests del final con la función `broker(ms)`)"]
+objetivo = '''
+Todo en `approvals.rs`. Una decisión recordada vale solo para la MISMA sesión y el MISMO texto de acción, y solo mientras viva
+el demonio (no se guarda en disco). Nunca se recuerda una denegación.
+1. Añade a `ApprovalBroker` el campo `remembered: Mutex<std::collections::HashSet<(i64, String)>>` e inicialízalo vacío en `new`.
+2. `decide_with(id, allow, remember)`: como `decide`, pero si `allow && remember`, antes de enviar la decisión inserta
+   `(dto.session, dto.action.clone())` en `remembered` (el `dto` es el `ApprovalDto` guardado en `pending` con ese id).
+   Devuelve `false` si el id no existe.
+3. `decide(id, allow)` pasa a ser `self.decide_with(id, allow, false)` (misma firma, mismo comportamiento).
+4. `request(...)`: al principio, si `remembered` contiene `(session, action.to_string())`, devuelve `true` inmediatamente, sin
+   crear una aprobación pendiente ni emitir eventos.
+5. `remembered(session)`: acciones recordadas de esa sesión, ordenadas alfabéticamente. `forget(session)`: borra las de esa sesión.
+6. Añade los tests de la lista al `mod tests` existente (usa `broker(5000)` y el patrón de `aprobacion_permitida`:
+   `tokio::spawn` de `request`, esperar a que `pending()` no esté vacío con `tokio::task::yield_now()` como mucho 10000 vueltas, decidir).
 '''
 firmas = '''
-export interface DiffLine { kind: "ctx" | "add" | "del"; oldNo: number | null; newNo: number | null; text: string }
-export interface DiffHunk { header: string; lines: DiffLine[] }
-export function parseUnifiedDiff(diff: string): DiffHunk[];
-export function Diff(props: { diff: string; mode: "unified" | "split" }): JSX.Element;
+// crates/pcode-server/src/approvals.rs, en `impl ApprovalBroker`
+/// Decide una aprobación; con `allow` y `remember`, la misma acción de esa sesión ya no se vuelve a preguntar.
+pub fn decide_with(&self, id: u64, allow: bool, remember: bool) -> bool;
+/// Decide una aprobación; `false` si no existe. (Ya existe: no cambies su firma.)
+pub fn decide(&self, id: u64, allow: bool) -> bool;
+/// Acciones recordadas de una sesión.
+pub fn remembered(&self, session: i64) -> Vec<String>;
+/// Olvida lo recordado para una sesión.
+pub fn forget(&self, session: i64);
 '''
-tests = ["parse_diff_numeros_de_linea", "split_empareja_lineas", "aplicar_pide_confirmacion", "aprobar_llama_decide", "diff_no_interpreta_html"]
+ejemplo = '''
+request(1, "bash git push", …) → pendiente id 1;  decide_with(1, true, true) → true  (la petición devuelve true)
+request(1, "bash git push", …) → true al momento, sin pendiente
+request(2, "bash git push", …) → vuelve a quedar pendiente (otra sesión)
+request(1, "bash git push --force", …) → vuelve a quedar pendiente (otra acción)
+remembered(1) == ["bash git push"];  forget(1);  remembered(1) == []
+'''
+tests = [
+  "recordar_permite_la_misma_accion_sin_preguntar: tras `decide_with(id, true, true)`, otra `request` igual devuelve `true` sin dejar nada en `pending()`",
+  "recordar_no_vale_para_otra_sesion_ni_otra_accion: la misma acción en la sesión 2, o una acción distinta en la 1, vuelve a quedar pendiente",
+  "denegar_con_recordar_no_recuerda: `decide_with(id, false, true)` deniega y `remembered(1)` queda vacío",
+  "olvidar_vuelve_a_preguntar: tras `forget(1)` la misma acción vuelve a quedar pendiente",
+]
+no_hagas = ["No recuerdes por prefijo ni por tipo de orden: solo el texto exacto (recordar `git push` no puede permitir `git push --force`)", "No guardes nada en disco", "No cambies los tests existentes ni la firma de `request`"]
+
+[[tarea]]
+id = "F5.14b"
+nombre = "aprobaciones-recordar-api"
+titulo = "API: `approvals.decide` acepta `remember`"
+fase = "F5"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.14a"]
+toca = ["crates/pcode-server/src/server.rs", "crates/pcode-protocol/src/lib.rs"]
+acepta = "cargo test -p pcode-server rpc_aprobacion_recordada && grep -q 'decide_with' crates/pcode-server/src/server.rs"
+contexto = [
+  "crates/pcode-server/src/server.rs (función `rpc`: brazo `methods::APPROVALS_DECIDE`; `mod tests`: test `aprobaciones_por_rpc`, el que hay que imitar)",
+  "crates/pcode-server/src/approvals.rs (`ApprovalBroker::decide_with(&self, id: u64, allow: bool, remember: bool) -> bool`, de F5.14a)",
+  "crates/pcode-protocol/src/lib.rs (`pub mod methods`: constante `APPROVALS_DECIDE`)",
+]
+objetivo = '''
+1. `crates/pcode-protocol/src/lib.rs`, en `pub mod methods`: cambia el comentario de `APPROVALS_DECIDE` por
+   `/// Decidir una aprobación: `{id, allowed, remember?}` → `true` si existía. Con `remember`, no se vuelve a preguntar por esa misma acción en esa sesión.`
+   (la constante no cambia).
+2. `server.rs`, función `rpc`, brazo `methods::APPROVALS_DECIDE`: lee además
+   `let remember = p.get("remember").and_then(|v| v.as_bool()).unwrap_or(false);` y sustituye `st.approvals.decide(a, ok)` por
+   `st.approvals.decide_with(a, ok, remember)`. El error `"se esperaba {id, allowed}"` no cambia.
+3. En `mod tests` de `server.rs` añade `rpc_aprobacion_recordada_no_vuelve_a_preguntar`, copiando `aprobaciones_por_rpc`: lanza
+   `b.request(1, "git push", "irreversible", "agente:s-1")` en un `tokio::spawn`, espera el id con el bucle de `approvals.list`,
+   decide con `{"id": id, "allowed": true, "remember": true}` y comprueba que la petición devuelve `true`. Después llama otra vez a
+   `s.approvals.request(1, "git push", "irreversible", "agente:s-1")` dentro de
+   `tokio::time::timeout(Duration::from_secs(2), …)` y comprueba que devuelve `Ok(true)` y que `approvals.list` está vacío.
+'''
+sin_firmas = "no añade API de Rust: solo un parámetro opcional (`remember`) en un método JSON-RPC que ya existe"
+ejemplo = '''
+{"method": "approvals.decide", "params": {"id": 3, "allowed": true, "remember": true}} → {"result": true}
+'''
+tests = ["rpc_aprobacion_recordada_no_vuelve_a_preguntar: tras decidir con `remember: true`, la misma acción de la misma sesión se permite sin quedar pendiente"]
+no_hagas = ["No cambies el nombre del método ni hagas obligatorio `remember`", "No toques el test `aprobaciones_por_rpc`"]
+
+[[tarea]]
+id = "F5.14c"
+nombre = "diff-js"
+titulo = "Studio: módulo `diff.js` (parsear un diff unificado y emparejarlo lado a lado, puro)"
+fase = "F5"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/diff.js", "crates/pcode-server/web/studio/test/diff.test.js"]
+acepta = "node --test crates/pcode-server/web/studio/test/diff.test.js"
+contexto = ["el módulo patrón `difusa.js` y su test `test/difusa.test.js` de la carpeta `web/studio` del demonio (los crea F8.01): misma forma de exportar y de probar"]
+objetivo = '''
+1. Crea `diff.js`: módulo ES sin imports ni DOM, con las dos funciones de abajo exportadas.
+2. `parseUnifiedDiff(text)`: devuelve un array de archivos `{ meta, hunks }`. Recorre las líneas de `text.split("\n")` (ignora
+   una última línea vacía). Una línea que empieza por `diff --git ` abre un archivo nuevo; si el texto no trae esa línea (por
+   ejemplo el diff de un archivo nuevo que empieza por `--- /dev/null`), todo va en un único archivo. Hasta el primer `@@`, las
+   líneas van a `meta` (array de strings). Una línea `@@ -a,b +c,d @@ …` abre un trozo `{ header, lines }` (`header` = la línea
+   entera) y fija los contadores `oldNo = a`, `newNo = c` (si falta `,b` o `,d` da igual). Dentro del trozo:
+   - empieza por `+` → `{ kind: "add", oldNo: null, newNo, text }` y suma 1 a `newNo`;
+   - empieza por `-` → `{ kind: "del", oldNo, newNo: null, text }` y suma 1 a `oldNo`;
+   - empieza por `\` (`\ No newline at end of file`) → se ignora;
+   - otra → `{ kind: "ctx", oldNo, newNo, text }` y suma 1 a los dos.
+   `text` es la línea SIN su primer carácter (`+`, `-` o espacio).
+3. `sideBySide(hunk)`: filas `{ left, right }` para pintar dos columnas. Una línea `ctx` va en las dos (`left === right`).
+   Un grupo seguido de líneas `del` y las `add` que van justo después se emparejan por orden: la primera borrada con la
+   primera añadida, etc.; si sobran de un lado, el otro es `null`.
+4. Crea `diff.test.js` con los tests de la lista.
+'''
+firmas = '''
+// crates/pcode-server/web/studio/diff.js
+// línea: { kind: "ctx" | "add" | "del", oldNo: number | null, newNo: number | null, text: string }
+export function parseUnifiedDiff(text) {}   // → [{ meta: string[], hunks: [{ header: string, lines: línea[] }] }]
+export function sideBySide(hunk) {}         // → [{ left: línea | null, right: línea | null }]
+'''
+lenguaje = "javascript"
+ejemplo = '''
+const d = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n uno\n-dos\n+DOS\n tres\n";
+parseUnifiedDiff(d)[0].meta  → ["diff --git a/a.txt b/a.txt", "--- a/a.txt", "+++ b/a.txt"]
+parseUnifiedDiff(d)[0].hunks[0].lines →
+  [{ kind: "ctx", oldNo: 1, newNo: 1, text: "uno" }, { kind: "del", oldNo: 2, newNo: null, text: "dos" },
+   { kind: "add", oldNo: null, newNo: 2, text: "DOS" }, { kind: "ctx", oldNo: 3, newNo: 3, text: "tres" }]
+sideBySide(parseUnifiedDiff(d)[0].hunks[0]) → 3 filas: (uno | uno), (dos | DOS), (tres | tres)
+'''
+notas = '''
+Esqueleto del test (igual que el test patrón de F8.01):
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseUnifiedDiff, sideBySide } from "../diff.js";
+test("diff_vacio", () => { assert.deepEqual(parseUnifiedDiff(""), []); });
+'''
+tests = [
+  "parse_diff_numeros_de_linea: el ejemplo da las cuatro líneas con sus números antiguos y nuevos",
+  "parse_diff_de_dos_archivos: un texto con dos `diff --git` da dos archivos, cada uno con su `meta` y sus trozos",
+  "parse_diff_de_archivo_nuevo_sin_cabecera_git: un diff que empieza por `--- /dev/null` da un archivo con todas las líneas `add`",
+  "ignora_la_marca_de_sin_salto_final: la línea que empieza por barra invertida no aparece ni cambia los números",
+  "split_empareja_lineas: el ejemplo da tres filas y la del medio empareja `dos` con `DOS`",
+  "split_con_mas_borradas_que_anadidas: dos `del` y una `add` dan dos filas y en la segunda `right` es `null`",
+  "diff_vacio: cadena vacía da un array vacío",
+  "diff_no_interpreta_html: una línea `+<b>x</b>` conserva el texto `<b>x</b>` tal cual (el módulo no genera HTML)",
+]
+no_hagas = ["No generes HTML ni uses `document`: solo datos", "No uses imports ni dependencias"]
+
+[[tarea]]
+id = "F5.14d"
+nombre = "diff-lado-a-lado-studio"
+titulo = "Studio: ver los diffs lado a lado o unificados, con números de línea"
+fase = "F5"
+hito = "1.6"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.14c"]
+toca = ["crates/pcode-server/web/index.html", "crates/pcode-server/src/web_assets.rs"]
+acepta = 'grep -q "Studio.diff" crates/pcode-server/web/index.html && grep -q "pcode.diffModo" crates/pcode-server/web/index.html && grep -q "diff.js" crates/pcode-server/src/web_assets.rs && cargo test -p pcode-server web_'
+contexto = [
+  "crates/pcode-server/web/index.html (función `pintaDiff(t)` y las reglas CSS `.diff`, `.diff .add`, `.diff .del`, `.diff .hunk`, `.diff .meta`: la vista unificada actual)",
+  "crates/pcode-server/web/index.html (funciones `temaGuardado` y `cambiaTema`: cómo se guarda una preferencia en `localStorage` con try/catch)",
+  "crates/pcode-server/web/studio/diff.js (`parseUnifiedDiff`, `sideBySide`)",
+]
+objetivo = '''
+1. `web_assets.rs`: añade a `ASSETS` la línea `("diff.js", include_str!("../web/studio/diff.js")),`. `index.html`: en el bloque
+   `<script type="module">` final, antes de `inicio();`: `import * as diff from "/studio/diff.js"; Studio.diff = diff;`.
+2. Preferencia: `modoDiff()` devuelve `"lado"` si `localStorage["pcode.diffModo"] === "lado"` (try/catch) y la ventana mide más
+   de 900 px (`innerWidth > 900`); si no, `"unificado"`.
+3. En `pintaDiff(t)`: después de vaciar la caja, añade una barra `div` de clase `diff-barra` con un botón (`aria-pressed`) cuyo
+   texto es `⇄ Lado a lado` o `≡ Unificado` según el modo al que se cambia; al pulsarlo, guarda el modo contrario en
+   `localStorage["pcode.diffModo"]` (`"lado"` o `"unificado"`) y llama a `pintaDiff(t)`.
+4. Si `modoDiff() === "unificado"`: deja la pintura actual como está (y lo que otras tareas hayan añadido a `pintaDiff`).
+5. Si `modoDiff() === "lado"`: `for (const f of Studio.diff.parseUnifiedDiff(t.text))`: un `div.meta` por línea de `f.meta`; por cada
+   trozo, un `div.hunk` con `h.header` y un `div` de clase `lado` (rejilla de 2 columnas) con dos celdas por cada fila de
+   `Studio.diff.sideBySide(h)`. Cada celda es un `div` de clase `celda` + (`add`, `del` o nada) con tres `span`: número de línea
+   (`oldNo` a la izquierda, `newNo` a la derecha), el prefijo `+`, `-` o espacio (el color no basta) y el texto. Una celda `null`
+   es un `div.celda.vacia`. Todo con `el(...)`/`textContent`.
+6. CSS: `.diff-barra { position: sticky; top: 0; display: flex; justify-content: flex-end; padding: 4px 12px; background: var(--superficie-3); }`,
+   `.diff .lado { display: grid; grid-template-columns: 1fr 1fr; }`, `.diff .celda { display: flex; gap: 8px; padding: 0 8px; overflow: hidden; }`,
+   `.diff .celda .num { min-width: 36px; text-align: right; color: var(--texto-2); user-select: none; }`,
+   `.diff .celda.vacia { background: var(--superficie-3); }`. Las clases `add` y `del` reutilizan los colores de `.diff .add` y `.diff .del`.
+7. `ORDENES`: `["Diff: cambiar entre unificado y lado a lado", "", () => { … }]` (invierte la preferencia y, si la pestaña activa
+   es un diff, la repinta).
+'''
+firmas = '''
+function modoDiff() {}     // → "lado" | "unificado" (preferencia de localStorage; siempre unificado en pantallas estrechas)
+function pintaDiff(t) {}   // ya existe: añade la barra y la vista lado a lado
+'''
+lenguaje = "javascript"
+tests = ["(sin tests nuevos): el parseo y el emparejado están probados en `diff.test.js`; `acepta` comprueba el cableado y que el demonio compila con el módulo nuevo"]
+no_hagas = ["No uses `innerHTML` ni `dangerouslySetInnerHTML`: el texto del diff va siempre con `textContent`", "No quites la vista unificada ni la cambies", "No dependas solo del color: cada línea lleva su prefijo `+` o `-`"]
+
+[[tarea]]
+id = "F5.14e"
+nombre = "aprobaciones-recordar-studio"
+titulo = "Studio: botón «Permitir y recordar» y procedencia en las aprobaciones"
+fase = "F5"
+hito = "1.6"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.14b", "F8.01"]
+toca = ["crates/pcode-server/web/index.html"]
+acepta = 'grep -q "Permitir y recordar" crates/pcode-server/web/index.html && grep -q "remember" crates/pcode-server/web/index.html && cargo test -p pcode-server web_sirve'
+contexto = ["crates/pcode-server/web/index.html (función `pintaConversacion`: el bucle `for (const a of S.aprob)` que pinta cada aprobación, y la función `decide(id, allowed)`)"]
+objetivo = '''
+Todo en `index.html`. API: `approvals.decide {id, allowed, remember?}`; cada aprobación de `S.aprob` es
+`{ id, session, action, reason, provenance }`.
+1. Cambia `decide` a `async function decide(id, allowed, remember)`: la llamada pasa a ser
+   `rpc("approvals.decide", { id, allowed, remember: !!remember })`; el resto igual.
+2. En `pintaConversacion`, dentro del bucle `for (const a of S.aprob)`: añade entre «Permitir» y «Denegar» un tercer botón
+   `el("button", "tonal", "Permitir y recordar")` con `title = "No volver a preguntar por esta misma acción en esta conversación"` y
+   `onclick = () => decide(a.id, true, true)`. El orden en la fila es: Permitir, Permitir y recordar, Denegar.
+3. En la misma tarjeta, debajo del `code` con la acción, añade `el("div", "meta", "Pedido por: " + a.provenance)` si
+   `a.provenance` no está vacío.
+4. Cuando el usuario recuerda una acción, muestra `aviso("Recordado para esta conversación: " + a.action)`.
+'''
+firmas = '''
+/** Decide una aprobación; con `remember`, la misma acción no se vuelve a preguntar en esa sesión. */
+async function decide(id, allowed, remember) {}
+'''
+lenguaje = "javascript"
+tests = ["(sin tests nuevos): `acepta` comprueba el botón, el parámetro y que el demonio sigue sirviendo la página; la lógica está probada en F5.14a y F5.14b"]
+no_hagas = ["No recuerdes nada en el navegador (`localStorage`): lo recuerda el demonio", "No añadas «denegar y recordar»", "No uses `innerHTML` con el texto de la acción"]
 
 [[tarea]]
 id = "F5.15"
 nombre = "ui-centro-control"
 titulo = "UI: centro de control multiagente (tablero de tareas, árbol de agentes, registro en vivo)"
 fase = "F5"
+hito = "1.4"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F5.13", "F5.04"]
-toca = ["apps/ui/src/views/CentroControl.tsx", "apps/ui/src/views/CentroControl.test.tsx", "apps/ui/src/store/flow.ts", "apps/ui/src/components/AgentTree.tsx"]
-acepta = "npm run -w apps/ui typecheck && npm run -w apps/ui test -- CentroControl && npm run -w apps/ui lint"
-lenguaje = "typescript"
-contexto = ["docs/interfaces.md (pantalla Centro de control)", "apps/ui/src/protocol/"]
+depende = ["F5.04", "F8.01"]
+toca = []
+acepta = 'node --test crates/pcode-server/web/studio/test/tablero.test.js && grep -q "Studio.tablero" crates/pcode-server/web/index.html && grep -q "vista-flujo" crates/pcode-server/web/index.html && grep -q "flow.stop" crates/pcode-server/web/index.html && cargo test -p pcode-server web_'
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Tablero con columnas pendiente, en marcha, aceptada, integrada y bloqueada; tarjetas con id,
-   título, backend, intento y tokens; se actualiza con `TaskUpdated`.
-2. Árbol de agentes (sesiones con `parent`) con estado y salto a la sesión.
-3. Panel «Requiere coordinador» y botón parar flujo (`flow.stop`, con confirmación).
-4. Navegación por teclado entre columnas y tarjetas (flechas) con `aria-` adecuados.
+Se hace sobre Studio. Los métodos `flow.status` y `flow.stop` y el evento `taskUpdated` son de F5.04.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F5.15a a F5.15c).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["tablero_coloca_por_estado", "task_updated_mueve_tarjeta", "arbol_anida", "parar_pide_confirmacion", "teclado_entre_columnas"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.15a"
+nombre = "tablero-js"
+titulo = "Studio: módulo `tablero.js` (columnas del flujo, árbol de agentes y foco por teclado, puro)"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/tablero.js", "crates/pcode-server/web/studio/test/tablero.test.js"]
+acepta = "node --test crates/pcode-server/web/studio/test/tablero.test.js"
+contexto = [
+  "el módulo patrón `difusa.js` y su test `test/difusa.test.js` de la carpeta `web/studio` del demonio (los crea F8.01): misma forma de exportar y de probar",
+  "crates/pcode-protocol/src/lib.rs (structs `TaskDto` y `SessionInfo`: campos que llegan en JSON, en camelCase)",
+]
+objetivo = '''
+1. Crea `tablero.js`: módulo ES sin imports ni DOM. Una tarea es `{ id, state, attempts }` (`TaskDto`); una sesión es
+   `{ id, title, backend, state, parent }` (`SessionInfo`, `parent` puede ser `null`).
+2. `COLUMNS`: `[["pending", "Pendiente"], ["running", "En marcha"], ["accepted", "Aceptada"], ["integrated", "Integrada"], ["blocked", "Bloqueada"]]`.
+3. `columnOf(state)`: pasa `state` a minúsculas y devuelve la clave de columna: empieza por `run` o `en marcha` → `running`;
+   por `accept` o `acept` → `accepted`; por `integr` → `integrated`; por `block` o `bloq` → `blocked`; cualquier otro
+   (incluido `pending`, `pendiente` o vacío) → `pending`.
+4. `board(tasks)`: objeto con las cinco claves de `COLUMNS`, cada una con sus tareas ordenadas por `id` (orden de texto).
+5. `upsertTask(tasks, task)`: array NUEVO: sustituye la tarea con el mismo `id` o la añade al final.
+6. `agentTree(sessions)`: `[{ session, children }]` anidado por `parent`. Son raíces las sesiones con `parent` nulo o cuyo
+   `parent` no está en la lista. Raíces e hijos ordenados por `id` numérico ascendente.
+7. `moveFocus(b, col, row, key)`: `b` es el resultado de `board`; `col` es el índice de columna (0–4) y `row` el de la tarjeta.
+   `ArrowLeft`/`ArrowRight` cambian de columna sin salirse (0–4) y ajustan `row` a `min(row, tarjetas de la nueva columna - 1)`
+   (0 si está vacía); `ArrowUp`/`ArrowDown` cambian `row` dentro de `[0, tarjetas - 1]`; `Home`/`End` van a la primera o
+   última tarjeta de la columna. Otra tecla devuelve la misma posición. Devuelve `{ col, row }`.
+8. Crea `tablero.test.js` con los tests de la lista.
+'''
+firmas = '''
+// crates/pcode-server/web/studio/tablero.js
+export const COLUMNS = [];                        // [[clave, etiqueta], …] en el orden del tablero
+export function columnOf(state) {}                // → "pending" | "running" | "accepted" | "integrated" | "blocked"
+export function board(tasks) {}                   // → { pending: [], running: [], accepted: [], integrated: [], blocked: [] }
+export function upsertTask(tasks, task) {}        // → tareas (array nuevo)
+export function agentTree(sessions) {}            // → [{ session, children: [...] }]
+export function moveFocus(b, col, row, key) {}    // → { col: number, row: number }
+'''
+lenguaje = "javascript"
+ejemplo = '''
+columnOf("Running(2)") → "running";  columnOf("Blocked: sin red") → "blocked";  columnOf("lo que sea") → "pending"
+board([{ id: "F1.02", state: "accepted", attempts: 1 }, { id: "F1.01", state: "running", attempts: 2 }])
+  → { pending: [], running: [{ id: "F1.01", … }], accepted: [{ id: "F1.02", … }], integrated: [], blocked: [] }
+agentTree([{ id: 3, parent: 1 }, { id: 1, parent: null }, { id: 2, parent: 9 }])
+  → [{ session: { id: 1, … }, children: [{ session: { id: 3, … }, children: [] }] }, { session: { id: 2, … }, children: [] }]
+moveFocus(b, 1, 0, "ArrowRight") → { col: 2, row: 0 };   moveFocus(b, 0, 0, "ArrowLeft") → { col: 0, row: 0 }
+'''
+notas = '''
+Esqueleto del test (igual que el test patrón de F8.01):
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { COLUMNS, columnOf, board, upsertTask, agentTree, moveFocus } from "../tablero.js";
+test("columna_por_estado", () => { assert.equal(columnOf("Running(2)"), "running"); });
+'''
+tests = [
+  "tablero_coloca_por_estado: el ejemplo de `board` deja cada tarea en su columna y las cinco claves existen",
+  "columna_por_estado: los tres casos del ejemplo de `columnOf`, más `Integrated` e `Aceptada`",
+  "task_updated_mueve_tarjeta: `upsertTask` con un id existente y otro estado hace que `board` la cambie de columna, sin duplicarla",
+  "upsert_no_muta: el array original conserva su longitud y su contenido",
+  "arbol_anida: el ejemplo de `agentTree` da dos raíces y la sesión 3 como hija de la 1",
+  "teclado_entre_columnas: `ArrowRight` y `ArrowLeft` cambian de columna sin salirse y ajustan la fila; `ArrowDown` no pasa de la última tarjeta",
+]
+no_hagas = ["No uses `document`, `window` ni imports", "No mutes los arrays recibidos"]
+
+[[tarea]]
+id = "F5.15b"
+nombre = "centro-control-tablero"
+titulo = "Studio: pestaña «Centro de control» con el tablero de tareas del flujo en vivo"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.15a", "F5.04"]
+toca = ["crates/pcode-server/web/index.html", "crates/pcode-server/src/web_assets.rs"]
+acepta = 'grep -q "Studio.tablero" crates/pcode-server/web/index.html && grep -q "vista-flujo" crates/pcode-server/web/index.html && grep -q "tablero.js" crates/pcode-server/src/web_assets.rs && cargo test -p pcode-server web_'
+contexto = [
+  "crates/pcode-protocol/src/lib.rs (`pub mod methods`: constantes `FLOW_…`; `Event::TaskUpdated` y `TaskDto`: la forma exacta de `flow.status` y del evento, de F5.04)",
+  "crates/pcode-server/web/index.html (funciones `abreAjustes`, `muestra` y `pintaPestanas`: cómo se añade una pestaña con vista propia, p. ej. `kind: \"ajustes\"` y `#ajustes`)",
+  "crates/pcode-server/web/index.html (función `conecta`: el `switch (e.tipo)` de eventos)",
+  "crates/pcode-server/web/studio/tablero.js (`COLUMNS`, `board`, `upsertTask`, `moveFocus`)",
+]
+objetivo = '''
+API de F5.04 (compárala con los comentarios de las constantes `FLOW_…` del protocolo; si la forma difiere, manda el protocolo y
+anótalo en *Decisiones*): `flow.status {}` → `{ tasks: [{id, state, attempts}], needsCoordinator: [ids] }`; evento SSE
+`taskUpdated { task: {id, state, attempts} }`.
+1. `web_assets.rs`: añade a `ASSETS` la línea `("tablero.js", include_str!("../web/studio/tablero.js")),`. `index.html`: en el bloque
+   `<script type="module">` final, antes de `inicio();`: `import * as tablero from "/studio/tablero.js"; Studio.tablero = tablero;`.
+2. Junto a `<div id="ajustes" …>` añade `<div id="vista-flujo" class="ajustes oculto" aria-label="Centro de control"></div>`.
+   En `muestra()`: `$("vista-flujo").classList.toggle("oculto", !t || t.kind !== "flujo"); if (t && t.kind === "flujo") pintaFlujo();`.
+   En `pintaPestanas`, el texto de esa pestaña es `"▦ Centro de control"`.
+3. Estado `S.flujo = { tasks: [], needs: [], foco: { col: 0, row: 0 } }`. `abreFlujo()` (imita `abreAjustes`): crea o activa la
+   pestaña `{ id: "flujo", kind: "flujo", path: "Centro de control" }` y llama a `cargaFlujo()`. `cargaFlujo()`:
+   `r = await rpc("flow.status")`; `S.flujo.tasks = r.tasks || []`; `S.flujo.needs = r.needsCoordinator || []`; `pintaFlujo()`.
+   Si falla, pinta `el("div", "vacio", "No hay ningún flujo en marcha: " + e.message)`.
+4. `pintaFlujo()`: título «Centro de control» y un `div` de clase `tablero` con `role="grid"` y una columna por elemento de
+   `Studio.tablero.COLUMNS` (`div.columna` con cabecera `Etiqueta · n`). Cada tarea es un `button` de clase `tarjeta` con el `id`
+   en negrita, el estado en texto y `intento N` (`attempts`); `tabIndex = 0` solo en la tarjeta del foco (`S.flujo.foco`), `-1` en
+   las demás; `aria-label = id + ", " + etiqueta de la columna`. Tras pintar, si la vista ya tenía el foco, vuelve a enfocar la
+   tarjeta del foco. Sin tareas: `el("div", "vacio", "El flujo no tiene tareas todavía.")`.
+5. Teclado: `$("vista-flujo").addEventListener("keydown", …)`: para las flechas, `Home` y `End`,
+   `S.flujo.foco = Studio.tablero.moveFocus(Studio.tablero.board(S.flujo.tasks), foco.col, foco.row, e.key)`, `e.preventDefault()` y `pintaFlujo()`.
+6. `conecta()`: añade `case "taskUpdated": S.flujo.tasks = Studio.tablero.upsertTask(S.flujo.tasks, e.task); if (tabActiva()?.kind === "flujo") pintaFlujo(); break;`.
+7. CSS: `.tablero { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 10px; overflow-x: auto; }`,
+   `.columna { background: var(--superficie-3); border-radius: 10px; padding: 8px; min-height: 120px; }`,
+   `.tarjeta { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 8px; border-radius: 8px; }`,
+   `.tarjeta:focus-visible { outline: 2px solid var(--primario); }`.
+   `ORDENES`: `["Flujo: centro de control", "", () => abreFlujo()]`.
+'''
+firmas = '''
+async function abreFlujo() {}    // abre o activa la pestaña «Centro de control»
+async function cargaFlujo() {}   // flow.status → S.flujo
+function pintaFlujo() {}         // tablero de cinco columnas navegable con las flechas
+'''
+lenguaje = "javascript"
+tests = ["(sin tests nuevos): la lógica está probada en `tablero.test.js`; `acepta` comprueba el cableado y que el demonio compila con el módulo nuevo"]
+no_hagas = ["No decidas en el cliente el estado de una tarea: solo se pinta lo que llega", "No uses `innerHTML`", "No dependas solo del color para el estado: cada tarjeta lleva el estado en texto"]
+
+[[tarea]]
+id = "F5.15c"
+nombre = "centro-control-agentes"
+titulo = "Studio: árbol de agentes, «Requiere coordinador» y parar el flujo en el centro de control"
+fase = "F5"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.15b"]
+toca = ["crates/pcode-server/web/index.html"]
+acepta = 'grep -q "agentTree" crates/pcode-server/web/index.html && grep -q "flow.stop" crates/pcode-server/web/index.html && cargo test -p pcode-server web_'
+contexto = [
+  "crates/pcode-server/web/index.html (función `pintaFlujo` y estado `S.flujo`, de F5.15b; función `eligeSesion(id)` y `agente(true)`: saltar a una conversación; constante `ESTADOS`: nombre de cada estado de sesión)",
+  "crates/pcode-server/web/index.html (función `conecta`: caso `sessionUpdated`, que mantiene `S.sesiones`)",
+  "crates/pcode-server/web/studio/tablero.js (`agentTree(sessions)` → `[{ session, children }]`)",
+]
+objetivo = '''
+Todo en `index.html`. API de F5.04: `flow.stop {}` (para el flujo). Las sesiones están en `S.sesiones`
+(`{ id, title, backend, state, parent }`) y se actualizan solas con el evento `sessionUpdated`.
+1. En `pintaFlujo()`, encima del tablero, añade una fila con el botón `el("button", "peligro", "■ Parar el flujo")`. Al pulsarlo:
+   `confirm("Se pararán las tareas en marcha del flujo. ¿Parar?")`; si acepta, `rpc("flow.stop")`, `aviso("Flujo parado")` y
+   `cargaFlujo()`; errores con `fallo(e)`.
+2. Debajo del tablero, sección «Requiere coordinador»: si `S.flujo.needs` tiene ids, una lista con una fila por id y el símbolo
+   `⚠` delante; si está vacía, el texto `Nada pendiente del coordinador.`.
+3. Debajo, sección «Agentes»: `Studio.tablero.agentTree(S.sesiones)` pintado como lista anidada (`ul role="tree"`, cada nodo un
+   `li role="treeitem"` con un `button`): texto `#id · título`, el estado con `ESTADOS[s.state] || s.state` y, si lo hay, el
+   backend. Los hijos van en un `ul role="group"` dentro del `li`, con sangría de 16 px. Al pulsar un nodo: `agente(true)` y
+   `eligeSesion(s.id)`. Sin sesiones: `Aún no hay agentes en marcha.`.
+4. En `conecta()`, caso `sessionUpdated`: añade al final `if (tabActiva()?.kind === "flujo") pintaFlujo();` para que el árbol se
+   refresque en vivo.
+'''
+sin_firmas = "solo amplía la función `pintaFlujo` de F5.15b y un caso de `conecta`: no añade funciones nuevas"
+tests = ["(sin tests nuevos): `agentTree` está probado en `tablero.test.js`; `acepta` comprueba que la vista usa el árbol y el botón de parar, y que el demonio sigue sirviendo la página"]
+no_hagas = ["No pares el flujo sin el `confirm`", "No uses `innerHTML` con títulos de sesiones", "No cambies `pintaSesiones` ni el selector de conversaciones"]
 
 [[tarea]]
 id = "F5.16"
@@ -1221,21 +1599,328 @@ id = "F5.17"
 nombre = "ui-skills-banco"
 titulo = "UI: gestor de skills y gráficas del banco"
 fase = "F5"
+hito = "1.4"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F5.13", "F2.14"]
-toca = ["apps/ui/src/views/Skills.tsx", "apps/ui/src/views/Banco.tsx", "apps/ui/src/views/Skills.test.tsx", "crates/pcode-server/src/skills_api.rs"]
-acepta = "cargo test -p pcode-server skills_api && npm run -w apps/ui test -- Skills && npm run -w apps/ui typecheck"
-lenguaje = "typescript"
-contexto = ["docs/adr/ADR-0004-skills-formato-unico.md", "docs/evaluacion.md"]
+depende = ["F2.14", "F8.01"]
+toca = []
+acepta = 'cargo test -p pcode-server skills_api:: && cargo test -p pcode-server bench_api:: && cargo test -p pcode-server rpc_skills && node --test crates/pcode-server/web/studio/test/banco.test.js && grep -q "skills.list" crates/pcode-server/web/index.html && grep -q "Studio.banco" crates/pcode-server/web/index.html'
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Demonio: `skills.list` (activas, en cuarentena con su `EVIDENCIA.md` si existe, y retiradas) y
-   `skills.export {target}`.
-2. Skills: tres pestañas; ver el `SKILL.md` renderizado (sin HTML crudo); exportar a cada agente.
-3. Banco: tabla y barras SVG simples (sin librería de gráficos) de aceptación a la primera y tokens
-   por backend a partir de `bench/resultados/*.jsonl` (método `bench.summary`, en el mismo archivo
-   del demonio). Accesible: tabla de datos además del gráfico.
+Se hace sobre Studio (pestañas «Skills» y «Banco») con métodos nuevos del demonio.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F5.17a a F5.17f).
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["skills_list_tres_estados", "exportar_llama_rpc", "banco_tabla_y_grafico"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.17a"
+nombre = "skills-api-nucleo"
+titulo = "Demonio: listar skills (activas, en cuarentena, retiradas) y exportarlas"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.14"]
+toca = ["crates/pcode-server/src/skills_api.rs", "crates/pcode-server/src/lib.rs"]
+toca_extra = ["crates/pcode-server/Cargo.toml"]
+acepta = "cargo test -p pcode-server skills_api:: && grep -q 'pub mod skills_api;' crates/pcode-server/src/lib.rs"
+contexto = [
+  "crates/pcode-skills/src/registry.rs (struct `Skill` con `name`, `description`, `dir`, `body`; `Registry::load(dirs: &[PathBuf])` y `Registry::all()`; `mod tests`: cómo se escribe un `SKILL.md` de prueba)",
+  "crates/pcode-skills/src/export.rs (enum `Target` y `pub fn export(reg: &Registry, target: Target, root: &Path) -> Result<Vec<PathBuf>, SkillError>`)",
+  "crates/pcode-server/src/workspace.rs (tipo `WsResult`: los errores se devuelven como texto)",
+]
+objetivo = '''
+1. `Cargo.toml` de `pcode-server`: añade en `[dependencies]` la línea `pcode-skills = { path = "../pcode-skills" }` (crate del
+   propio workspace).
+2. Crea `skills_api.rs` con las firmas de abajo y tests (con `tempfile::tempdir()`) en el mismo archivo.
+3. `list(root)`: para cada pareja (directorio, estado) de `[(ACTIVE_DIR, "activa"), (QUARANTINE_DIR, "cuarentena"), (RETIRED_DIR, "retirada")]`:
+   `pcode_skills::Registry::load(&[root.join(dir)])` (error → `Err(e.to_string())`; un directorio que no existe da un registro
+   vacío) y por cada skill de `reg.all()` un `SkillView` con `name`, `description`, `state`, `body`,
+   `path` = el directorio de la skill relativo a `root` (`dir.strip_prefix(root)`, y `\` cambiado por `/`) y `evidence` = contenido de `<dir de la skill>/EVIDENCIA.md` si
+   existe (`None` si no). Orden: activas, cuarentena, retiradas; dentro, por nombre (como las da `all()`).
+4. `parse_target(s)`: `"claude"` → `Target::Claude`, `"agents"` → `Target::AgentsMd`, `"copilot"` → `Target::Copilot`,
+   `"gemini"` → `Target::Gemini`, `"opencode"` → `Target::Opencode`; otro → `Err(format!("destino desconocido: {s}"))`.
+5. `export(root, target)`: `parse_target`, carga SOLO las activas (`Registry::load(&[root.join(ACTIVE_DIR)])`), llama a
+   `pcode_skills::export(&reg, target, root)` y devuelve las rutas escritas relativas a `root` con `/`. Errores como texto.
+6. `lib.rs`: añade `pub mod skills_api;` debajo de `pub mod settings;`.
+'''
+firmas = '''
+// crates/pcode-server/src/skills_api.rs
+use crate::workspace::WsResult;
+use std::path::Path;
+
+/// Dónde viven las skills según su estado (relativo a la raíz del proyecto).
+pub const ACTIVE_DIR: &str = ".claude/skills";
+pub const QUARANTINE_DIR: &str = ".pcode/skills/cuarentena";
+pub const RETIRED_DIR: &str = ".pcode/skills/retiradas";
+
+/// Una skill para la interfaz.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillView { pub name: String, pub description: String, pub state: String, pub path: String, pub body: String, pub evidence: Option<String> }
+
+pub fn list(root: &Path) -> WsResult<Vec<SkillView>>;
+pub fn parse_target(s: &str) -> WsResult<pcode_skills::Target>;
+/// Exporta las skills activas al formato de un agente; devuelve los archivos escritos.
+pub fn export(root: &Path, target: &str) -> WsResult<Vec<String>>;
+'''
+ejemplo = '''
+<raíz>/.claude/skills/adr/SKILL.md                      (frontmatter con `name: adr` y `description: Registra decisiones`)
+<raíz>/.pcode/skills/cuarentena/nueva/SKILL.md + EVIDENCIA.md ("pasa 3 de 5 evals")
+list(raíz) → [SkillView { name: "adr", state: "activa", path: ".claude/skills/adr", evidence: None, … },
+              SkillView { name: "nueva", state: "cuarentena", path: ".pcode/skills/cuarentena/nueva", evidence: Some("pasa 3 de 5 evals"), … }]
+export(raíz, "gemini") → ["GEMINI.md"]      export(raíz, "x") → Err("destino desconocido: x")
+'''
+tests = [
+  "skills_list_tres_estados: con una skill en cada uno de los tres directorios salen tres vistas con `state` activa, cuarentena y retirada, en ese orden",
+  "evidencia_solo_si_existe: la skill en cuarentena con `EVIDENCIA.md` trae su texto y la activa trae `None`",
+  "sin_directorios_lista_vacia: en un directorio temporal vacío `list` da `Ok` con vector vacío",
+  "destino_desconocido: `parse_target(\"x\")` da `Err` que contiene `destino desconocido`",
+  "exporta_solo_las_activas: `export(root, \"gemini\")` crea `GEMINI.md` con el nombre de la skill activa y sin el de la que está en cuarentena",
+]
+no_hagas = ["No exportes skills en cuarentena ni retiradas", "No cambies nada en `crates/pcode-skills`", "No añadas más dependencias que `pcode-skills`"]
+
+[[tarea]]
+id = "F5.17b"
+nombre = "banco-api-nucleo"
+titulo = "Demonio: resumen de los resultados del banco por backend"
+fase = "F5"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.02"]
+toca = ["crates/pcode-server/src/bench_api.rs", "crates/pcode-server/src/lib.rs"]
+acepta = "cargo test -p pcode-server bench_api:: && grep -q 'pub mod bench_api;' crates/pcode-server/src/lib.rs"
+contexto = [
+  "docs/evaluacion.md (sección «6. Informes»: el banco escribe un archivo de resultados por ejecución, llamado `<fecha>-<backend>.jsonl`)",
+  "crates/pcode-server/src/workspace.rs (función `activity`: ejemplo de leer un archivo de líneas JSON ignorando las que no se pueden leer)",
+]
+objetivo = '''
+1. Crea `bench_api.rs` con las firmas de abajo y tests en el mismo archivo.
+2. `backend_of(file_name)`: quita la extensión `.jsonl`; si el nombre empieza por una fecha `AAAA-MM-DD-` (4 dígitos, guion, 2
+   dígitos, guion, 2 dígitos, guion), devuelve lo que sigue; si no, el nombre sin extensión.
+3. `summarize(file_name, jsonl)`: cada línea no vacía es un objeto JSON con los campos `ok_primera` (bool), `ok_final` (bool),
+   `tokens` (número) y `ms` (número); los que falten cuentan `false` o 0. Las líneas que no son JSON válido se ignoran.
+   `tasks` = líneas válidas; `ok_first` y `ok_final` = cuántas tienen ese campo en `true`; `tokens` y `ms` = sumas.
+   `backend = backend_of(file_name)` y `file = file_name`.
+4. `summary(root)`: lee los archivos `*.jsonl` de `root/bench/resultados` (si el directorio no existe → `Ok(vec![])`), ordenados
+   por nombre, y devuelve un `summarize` por archivo. Error de lectura → `Err` con el texto.
+5. `lib.rs`: añade `pub mod bench_api;` debajo de `pub mod assist;`.
+'''
+firmas = '''
+// crates/pcode-server/src/bench_api.rs
+use crate::workspace::WsResult;
+use std::path::Path;
+
+/// Resumen de una ejecución del banco.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackendSummary { pub backend: String, pub file: String, pub tasks: u32, pub ok_first: u32, pub ok_final: u32, pub tokens: u64, pub ms: u64 }
+
+pub fn backend_of(file_name: &str) -> String;
+pub fn summarize(file_name: &str, jsonl: &str) -> BackendSummary;
+/// Un resumen por archivo de `bench/resultados/*.jsonl`.
+pub fn summary(root: &Path) -> WsResult<Vec<BackendSummary>>;
+'''
+ejemplo = '''
+backend_of("2026-11-01-claude-code.jsonl") == "claude-code";   backend_of("prueba.jsonl") == "prueba"
+summarize("2026-11-01-glm.jsonl", "{\"id\":\"F1.01\",\"ok_primera\":true,\"ok_final\":true,\"tokens\":1200,\"ms\":900}\n{\"id\":\"F1.02\",\"ok_primera\":false,\"ok_final\":true,\"tokens\":800,\"ms\":100}\nno es json\n")
+  == BackendSummary { backend: "glm", file: "2026-11-01-glm.jsonl", tasks: 2, ok_first: 1, ok_final: 2, tokens: 2000, ms: 1000 }
+'''
+tests = [
+  "backend_del_nombre_del_archivo: con fecha delante da lo que sigue a la fecha y sin fecha el nombre sin extensión",
+  "resume_un_archivo: el ejemplo da 2 tareas, 1 a la primera, 2 al final, 2000 tokens y 1000 ms",
+  "ignora_lineas_que_no_son_json: la línea `no es json` no cuenta como tarea",
+  "sin_directorio_de_resultados: en un directorio temporal vacío `summary` da `Ok` con vector vacío",
+  "un_resumen_por_archivo_ordenado: con dos archivos en `bench/resultados` salen dos resúmenes en orden de nombre",
+]
+no_hagas = ["No ejecutes el banco: solo se leen archivos", "No leas fuera de `bench/resultados`", "No añadas dependencias (`serde_json` ya está)"]
+
+[[tarea]]
+id = "F5.17c"
+nombre = "skills-banco-api"
+titulo = "API: `skills.list`, `skills.export` y `bench.summary`"
+fase = "F5"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.17a", "F5.17b"]
+toca = ["crates/pcode-server/src/server.rs", "crates/pcode-protocol/src/lib.rs"]
+acepta = "cargo test -p pcode-server rpc_skills && grep -q 'methods::BENCH_SUMMARY' crates/pcode-server/src/server.rs"
+contexto = [
+  "crates/pcode-server/src/server.rs (función `rpc`, `match req.method.as_str()`: brazos `methods::WORKSPACE_TASKS` y `methods::FS_WRITE`, los que hay que imitar)",
+  "crates/pcode-protocol/src/lib.rs (`pub mod methods`: constante `WORKSPACE_ACTIVITY`)",
+  "crates/pcode-server/src/skills_api.rs (`list`, `export`) y crates/pcode-server/src/bench_api.rs (`summary`)",
+]
+objetivo = '''
+1. `crates/pcode-protocol/src/lib.rs`, en `pub mod methods`, debajo de `WORKSPACE_ACTIVITY`, añade con su comentario `///`:
+   `SKILLS_LIST = "skills.list"` (`{}` → `{name, description, state, path, body, evidence?}[]`),
+   `SKILLS_EXPORT = "skills.export"` (`{target: claude|agents|copilot|gemini|opencode}` → rutas escritas) y
+   `BENCH_SUMMARY = "bench.summary"` (`{}` → `{backend, file, tasks, okFirst, okFinal, tokens, ms}[]`).
+2. `server.rs`, función `rpc`, `match req.method.as_str()`, después del brazo `methods::WORKSPACE_ACTIVITY`:
+   - `SKILLS_LIST`: `ws_reply(id, blocking(move || crate::skills_api::list(&root)).await)`.
+   - `SKILLS_EXPORT`: `target = str_param(&p, "target")`; `r = blocking(move || crate::skills_api::export(&root, &target)).await`;
+     si fue bien, `st.emit(Event::FilesChanged {})`; `ws_reply(id, r)`.
+   - `BENCH_SUMMARY`: `ws_reply(id, blocking(move || crate::bench_api::summary(&root)).await)`.
+3. En `mod tests` de `server.rs` añade `rpc_skills_y_banco`: raíz `tempfile::tempdir()`; escribe
+   `bench/resultados/2026-11-01-glm.jsonl` con una línea `{"ok_primera":true,"ok_final":true,"tokens":5,"ms":1}` y comprueba las
+   aserciones de la lista.
+'''
+firmas = '''
+// crates/pcode-protocol/src/lib.rs, en `pub mod methods`
+pub const SKILLS_LIST: &str = "skills.list";
+pub const SKILLS_EXPORT: &str = "skills.export";
+pub const BENCH_SUMMARY: &str = "bench.summary";
+
+// Ya existen (F5.17a y F5.17b):
+// crate::skills_api::list(root: &Path) -> WsResult<Vec<SkillView>>
+// crate::skills_api::export(root: &Path, target: &str) -> WsResult<Vec<String>>
+// crate::bench_api::summary(root: &Path) -> WsResult<Vec<BackendSummary>>
+'''
+tests = ["rpc_skills_y_banco: `skills.list` en un proyecto sin skills devuelve `[]`; `skills.export {target: \"x\"}` devuelve un error que contiene `destino desconocido`; `bench.summary` devuelve un resumen con `backend` `glm` y `okFirst` 1"]
+no_hagas = ["No añadas tipos al protocolo", "No toques otros brazos del `match`"]
+
+[[tarea]]
+id = "F5.17d"
+nombre = "banco-js"
+titulo = "Studio: módulo `banco.js` (porcentajes, barras y formato de tokens, puro)"
+fase = "F5"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.01"]
+toca = ["crates/pcode-server/web/studio/banco.js", "crates/pcode-server/web/studio/test/banco.test.js"]
+acepta = "node --test crates/pcode-server/web/studio/test/banco.test.js"
+contexto = ["el módulo patrón `difusa.js` y su test `test/difusa.test.js` de la carpeta `web/studio` del demonio (los crea F8.01): misma forma de exportar y de probar"]
+objetivo = '''
+1. Crea `banco.js`: módulo ES sin imports ni DOM, con las tres funciones de abajo exportadas. Un resumen es
+   `{ backend, file, tasks, okFirst, okFinal, tokens, ms }` (lo que devuelve `bench.summary`).
+2. `rate(part, total)`: porcentaje entero redondeado (`Math.round(100 * part / total)`); con `total` 0 devuelve 0.
+3. `formatTokens(n)`: menos de 1000 → el número tal cual (`"999"`); menos de 1 000 000 → miles con un decimal y `k` (`"12.3k"`);
+   si no, millones con un decimal y `M` (`"1.2M"`). Un decimal `.0` se conserva (`"2.0k"`).
+4. `bars(summaries, width, barHeight, gap)`: una barra horizontal por resumen para el porcentaje de aceptación a la primera:
+   `{ label: backend, value: rate(okFirst, tasks), x: 0, y: i * (barHeight + gap), width: Math.round(width * value / 100), height: barHeight }`.
+   Devuelve `{ bars, height }` con `height` = alto total (`n * barHeight + (n - 1) * gap`, 0 si no hay resúmenes).
+5. Crea `banco.test.js` con los tests de la lista.
+'''
+firmas = '''
+// crates/pcode-server/web/studio/banco.js
+export function rate(part, total) {}                          // → entero 0–100
+export function formatTokens(n) {}                            // → string
+export function bars(summaries, width, barHeight, gap) {}     // → { bars: [{ label, value, x, y, width, height }], height: number }
+'''
+lenguaje = "javascript"
+ejemplo = '''
+rate(1, 3) → 33;   rate(0, 0) → 0
+formatTokens(999) → "999";   formatTokens(12345) → "12.3k";   formatTokens(1234567) → "1.2M"
+bars([{ backend: "glm", tasks: 4, okFirst: 3 }, { backend: "claude-code", tasks: 4, okFirst: 4 }], 200, 16, 8)
+  → { bars: [{ label: "glm", value: 75, x: 0, y: 0, width: 150, height: 16 }, { label: "claude-code", value: 100, x: 0, y: 24, width: 200, height: 16 }], height: 40 }
+'''
+notas = '''
+Esqueleto del test (igual que el test patrón de F8.01):
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { rate, formatTokens, bars } from "../banco.js";
+test("porcentaje_con_total_cero", () => { assert.equal(rate(0, 0), 0); });
+'''
+tests = [
+  "porcentaje_redondeado: 1 de 3 da 33 y 2 de 3 da 67",
+  "porcentaje_con_total_cero: 0 de 0 da 0 (sin dividir por cero)",
+  "formato_de_tokens: 999, 12345 y 1234567 dan `999`, `12.3k` y `1.2M`",
+  "barras_proporcionales: el ejemplo da anchos 150 y 200 y posiciones `y` 0 y 24",
+  "sin_resumenes_no_hay_barras: un array vacío da `bars` vacío y `height` 0",
+]
+no_hagas = ["No generes SVG ni HTML en el módulo: solo números y textos", "No uses librerías de gráficos ni imports"]
+
+[[tarea]]
+id = "F5.17e"
+nombre = "skills-studio"
+titulo = "Studio: pestaña «Skills» con las tres listas, el `SKILL.md` y la exportación"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.17c", "F8.01"]
+toca = ["crates/pcode-server/web/index.html"]
+acepta = 'grep -q "skills.list" crates/pcode-server/web/index.html && grep -q "skills.export" crates/pcode-server/web/index.html && grep -q "vista-skills" crates/pcode-server/web/index.html && cargo test -p pcode-server web_sirve'
+contexto = [
+  "crates/pcode-server/web/index.html (funciones `abreAjustes`, `muestra` y `pintaPestanas`: cómo se añade una pestaña con vista propia, p. ej. `kind: \"ajustes\"` y `#ajustes`)",
+  "crates/pcode-server/web/index.html (función `md(text)`: pinta Markdown sencillo como nodos de texto, sin HTML crudo; función `pintaDocumento`: cómo se usa)",
+]
+objetivo = '''
+Todo en `index.html`. API: `skills.list {}` → `[{ name, description, state, path, body, evidence }]` con `state` `activa`, `cuarentena`
+o `retirada`; `skills.export { target }` → rutas escritas, con `target` `claude`, `agents`, `copilot`, `gemini` u `opencode`.
+1. Junto a `<div id="ajustes" …>` añade `<div id="vista-skills" class="ajustes oculto" aria-label="Skills"></div>`. En `muestra()`:
+   `$("vista-skills").classList.toggle("oculto", !t || t.kind !== "skills"); if (t && t.kind === "skills") pintaSkills();`.
+   En `pintaPestanas`, el texto de la pestaña es `"✧ Skills"`.
+2. `abreSkills()` (imita `abreAjustes`): crea o activa la pestaña `{ id: "skills", kind: "skills", path: "Skills" }`, carga
+   `S.skills = { lista: await rpc("skills.list"), estado: "activa", abierta: null }` (si falla, `fallo(e)` y lista vacía) y pinta.
+3. `pintaSkills()`: título «Skills»; tres botones `role="tab"` con `aria-selected`: `Activas (n)`, `En cuarentena (n)`,
+   `Retiradas (n)`, que cambian `S.skills.estado` y repintan. Debajo, la lista de skills de ese estado: un `button` de clase
+   `problema` por skill con el nombre en negrita y la descripción; al pulsarlo, `S.skills.abierta = s.name` y repinta.
+   Lista vacía: `No hay skills en este estado.`.
+4. Si hay una skill abierta, debajo se muestra: su ruta (`s.path + "/SKILL.md"`), el cuerpo con `md(s.body)` dentro de un
+   `div` de clase `documento-skill` y, si `s.evidence`, un apartado «Evidencia» con `md(s.evidence)`.
+5. Exportar (solo en la pestaña de activas): una fila «Exportar a:» con cinco botones — `Claude Code` (`claude`), `AGENTS.md`
+   (`agents`), `GitHub Copilot` (`copilot`), `Gemini` (`gemini`) y `opencode` (`opencode`). Al pulsar:
+   `confirm("Se escribirán las skills activas en el formato de " + nombre + ". ¿Exportar?")`; si acepta,
+   `rutas = await rpc("skills.export", { target })` y `aviso(rutas.length ? "Exportado: " + rutas.join(", ") : "Ya estaba al día", "ok")`;
+   errores con `fallo(e)`.
+6. `ORDENES`: `["Skills: ver y exportar", "", () => abreSkills()]`.
+'''
+firmas = '''
+async function abreSkills() {}   // abre o activa la pestaña «Skills» y carga skills.list
+function pintaSkills() {}        // tres pestañas por estado, lista, SKILL.md y botones de exportar
+'''
+lenguaje = "javascript"
+tests = ["(sin tests nuevos): `acepta` comprueba el cableado y que el demonio sigue sirviendo la página; el listado y la exportación están probados en F5.17a y F5.17c"]
+no_hagas = ["No pintes el `SKILL.md` con `innerHTML`: usa `md(...)`, que no interpreta HTML", "No exportes sin el `confirm` (escribe archivos del proyecto)", "No ofrezcas activar, mover ni borrar skills: esta tarea solo lista y exporta"]
+
+[[tarea]]
+id = "F5.17f"
+nombre = "banco-studio"
+titulo = "Studio: pestaña «Banco» con tabla y barras SVG por backend"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.17c", "F5.17d"]
+toca = ["crates/pcode-server/web/index.html", "crates/pcode-server/src/web_assets.rs"]
+acepta = 'grep -q "Studio.banco" crates/pcode-server/web/index.html && grep -q "bench.summary" crates/pcode-server/web/index.html && grep -q "banco.js" crates/pcode-server/src/web_assets.rs && cargo test -p pcode-server web_'
+contexto = [
+  "crates/pcode-server/web/index.html (funciones `abreAjustes`, `muestra` y `pintaPestanas`: cómo se añade una pestaña con vista propia)",
+  "crates/pcode-server/web/index.html (constante `SVG_TEMA` y los `<svg class=\"i\" …>` de la barra lateral: SVG en línea, sin recursos externos)",
+  "crates/pcode-server/web/studio/banco.js (`rate`, `formatTokens`, `bars`)",
+]
+objetivo = '''
+API: `bench.summary {}` → `[{ backend, file, tasks, okFirst, okFinal, tokens, ms }]` (un elemento por archivo de `bench/resultados`).
+1. `web_assets.rs`: añade a `ASSETS` la línea `("banco.js", include_str!("../web/studio/banco.js")),`. `index.html`: en el bloque
+   `<script type="module">` final, antes de `inicio();`: `import * as banco from "/studio/banco.js"; Studio.banco = banco;`.
+2. Junto a `<div id="ajustes" …>` añade `<div id="vista-banco" class="ajustes oculto" aria-label="Banco"></div>`. En `muestra()`:
+   `$("vista-banco").classList.toggle("oculto", !t || t.kind !== "banco"); if (t && t.kind === "banco") pintaBanco();`.
+   En `pintaPestanas`, el texto de la pestaña es `"▥ Banco"`.
+3. `abreBanco()` (imita `abreAjustes`): crea o activa la pestaña `{ id: "banco", kind: "banco", path: "Banco" }`, carga
+   `S.banco = await rpc("bench.summary")` (si falla, `fallo(e)` y `[]`) y pinta.
+4. `pintaBanco()`: título «Banco: aceptación por backend». Sin datos: `el("div", "vacio", "Todavía no hay resultados en bench/resultados.")`.
+   Con datos, primero la TABLA de datos (`<table>` con `<caption>`, `<th scope="col">`): columnas Backend, Archivo, Tareas,
+   «A la primera» (`rate(okFirst, tasks) + " %"`), «Al final» (`rate(okFinal, tasks) + " %"`), Tokens (`formatTokens(tokens)`) y
+   Tiempo (`Math.round(ms / 1000) + " s"`).
+5. Después el GRÁFICO: un `<svg>` creado con `document.createElementNS("http://www.w3.org/2000/svg", …)`, con `role="img"` y
+   `aria-label="Aceptación a la primera por backend"`, ancho 420 y alto `r.height` (de
+   `r = Studio.banco.bars(S.banco, 240, 18, 10)`). Por cada barra: un `<text>` con la etiqueta en `x = 0`, un `<rect>` en
+   `x = 140 + b.x`, `y = b.y`, `width = b.width`, `height = b.height`, relleno `var(--primario)`, y un `<text>` con `b.value + " %"`
+   a la derecha de la barra (`x = 140 + b.width + 6`). Los textos van en `y = b.y + 14` y con `fill = "currentColor"`.
+6. `ORDENES`: `["Banco: ver resultados", "", () => abreBanco()]`.
+'''
+firmas = '''
+async function abreBanco() {}   // abre o activa la pestaña «Banco» y carga bench.summary
+function pintaBanco() {}        // tabla de datos accesible y barras SVG de aceptación a la primera
+'''
+lenguaje = "javascript"
+tests = ["(sin tests nuevos): los cálculos están probados en `banco.test.js` y el resumen en el demonio; `acepta` comprueba el cableado y que el demonio compila con el módulo nuevo"]
+no_hagas = ["No uses librerías de gráficos ni recursos remotos", "No quites la tabla: el gráfico solo no es accesible", "No uses `innerHTML` para construir el SVG"]
 
 [[tarea]]
 id = "F5.18"
