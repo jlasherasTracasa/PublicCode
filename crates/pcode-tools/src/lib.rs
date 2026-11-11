@@ -1,6 +1,7 @@
 //! Tools nativas con efectos declarados.
 pub mod bash;
 pub mod bm25;
+pub mod catalog;
 pub mod edit;
 pub mod mcp;
 pub mod outline;
