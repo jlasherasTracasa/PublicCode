@@ -111,53 +111,467 @@ id = "F2.04"
 nombre = "sandbox-landlock"
 titulo = "Landlock dentro de la sandbox con `pcode __sandbox-exec`"
 fase = "F2"
+hito = "1.5"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F2.03", "F1.20"]
-toca = ["crates/pcode-sandbox/Cargo.toml", "crates/pcode-sandbox/src/restrict.rs", "crates/pcode-sandbox/src/prepare.sh", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-sandbox restrict && cargo test -p pcode-cli"
-contexto = ["docs/mini-sandboxes.md (N1 en detalle)", "crates/pcode-sandbox/src/run.rs"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-sandbox restrict:: && cargo test -p pcode-sandbox ayudante_ && cargo test -p pcode-cli --test sandbox_exec"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Dependencia nueva permitida en esta tarea: `landlock`.
-2. `restrict_self(rules)`: ABI de Landlock con el mejor esfuerzo (si el kernel no lo soporta,
-   devuelve `Ok(false)` y avisa con `tracing::warn!`). Lectura y ejecución en todo `/`; escritura
-   solo en `rules.writable` (root, tmp privado, `--escribible`).
-3. Subcomando oculto `pcode __sandbox-exec --escribible P… -- argv…`: llama a `restrict_self` y hace
-   `execvp(argv)`.
-4. `prepare.sh`: si existe la variable `PCODE_BIN`, termina con `exec "$PCODE_BIN" __sandbox-exec
-   --escribible … -- "$@"` en lugar de `exec "$@"`.
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F2.04a a F2.04d).
+3. Escribe el informe: qué tests se saltaron por falta de Landlock o de namespaces de usuario.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F2.04a"
+nombre = "landlock-restringir"
+titulo = "Landlock: `restrict_self` y ayuda para tests en proceso hijo"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.03"]
+toca = ["crates/pcode-sandbox/src/restrict.rs", "crates/pcode-sandbox/src/child_test.rs", "crates/pcode-sandbox/src/lib.rs"]
+toca_extra = ["crates/pcode-sandbox/Cargo.toml"]
+acepta = "cargo test -p pcode-sandbox restrict::"
+contexto = [
+  "crates/pcode-sandbox/src/run.rs (enum `SandboxError`: usa `SandboxError::Invalid(String)` para los errores de Landlock)",
+  "crates/pcode-sandbox/src/layer.rs (función `is_opaque`: cómo se escribe un bloque `unsafe` con `// SAFETY:` y `libc`)",
+]
+objetivo = '''
+1. `Cargo.toml` del crate: en `[target.'cfg(target_os = "linux")'.dependencies]` añade `landlock = "0.4"`
+   (dependencia permitida solo en esta tarea).
+2. `child_test.rs` (módulo solo de tests): `run_child` relanza ESTE binario de tests
+   (`std::env::current_exe()`) con los argumentos `--exact <test> --nocapture --test-threads=1` y la
+   variable `PCODE_HIJO=<role>`; devuelve el código de salida (o -1 si murió por una señal).
+   `child_role` devuelve `std::env::var("PCODE_HIJO").ok()`.
+3. `restrict.rs`, `landlock_abi`: en Linux,
+   `libc::syscall(libc::SYS_landlock_create_ruleset, std::ptr::null::<libc::c_void>(), 0usize, 1u32)`
+   (el 1 es `LANDLOCK_CREATE_RULESET_VERSION`); devuelve la versión, o 0 si el resultado es negativo.
+   Fuera de Linux devuelve 0.
+4. `restrict_self`: si `landlock_abi() == 0`, `tracing::warn!` y `Ok(false)`. Si no, con el crate
+   `landlock` (ABI `ABI::V1`, modo por defecto «mejor esfuerzo»): maneja `AccessFs::from_all(abi)`;
+   regla de lectura y ejecución (`AccessFs::from_read(abi)`) sobre `/`; regla `AccessFs::from_all(abi)`
+   sobre cada ruta de `rules.writable` que exista (las que no existen se ignoran); `restrict_self()`.
+   Devuelve `Ok(true)` si el estado no es `RulesetStatus::NotEnforced`. Cualquier error del crate se
+   convierte en `SandboxError::Invalid(format!("landlock: {e}"))`. Fuera de Linux: `Ok(false)`.
+5. `lib.rs`: `pub mod restrict;`, `#[cfg(test)] mod child_test;` y
+   `pub use restrict::{LandlockRules, landlock_abi, restrict_self};`.
+6. Tests en `restrict.rs` (`mod tests`). Los que restringen lo hacen SIEMPRE en el hijo (ver ejemplo):
+   Landlock no se puede quitar y rompería los demás tests. Si `landlock_abi() == 0`, el test termina sin
+   comprobar nada (`return`).
 '''
 firmas = '''
+// crates/pcode-sandbox/src/restrict.rs
+/// Qué puede escribir el proceso restringido.
+#[derive(Debug, Clone, Default)]
 pub struct LandlockRules { pub writable: Vec<std::path::PathBuf> }
-pub fn restrict_self(rules: &LandlockRules) -> Result<bool, SandboxError>;
+
+/// Versión de la ABI de Landlock del kernel (0 = no disponible).
+pub fn landlock_abi() -> i32;
+
+/// Restringe ESTE hilo y sus hijos: lectura en todo `/`, escritura solo en `rules.writable`.
+/// `Ok(false)` si el kernel no tiene Landlock.
+pub fn restrict_self(rules: &LandlockRules) -> Result<bool, crate::SandboxError>;
+
+// crates/pcode-sandbox/src/child_test.rs
+pub(crate) fn child_role() -> Option<String>;
+pub(crate) fn run_child(test: &str, role: &str) -> i32;
 '''
-tests = ["restrict_permite_escribir_en_writable (en un proceso hijo)", "restrict_deniega_fuera (en un proceso hijo)", "restrict_sin_soporte_es_ok_false"]
+ejemplo = '''
+// Uso del crate landlock 0.4:
+use landlock::{ABI, Access, AccessFs, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus, path_beneath_rules};
+let abi = ABI::V1;
+let st = Ruleset::default().handle_access(AccessFs::from_all(abi))?.create()?
+    .add_rules(path_beneath_rules(&["/"], AccessFs::from_read(abi)))?
+    .add_rules(path_beneath_rules(&writable, AccessFs::from_all(abi)))?
+    .restrict_self()?;
+let enforced = st.ruleset != RulesetStatus::NotEnforced;
+
+// Patrón de test en proceso hijo:
+#[test]
+fn restrict_deniega_fuera() {
+    if landlock_abi() == 0 { return; }
+    if let Some(role) = child_role() {            // somos el hijo
+        let (w, o) = role.split_once('|').unwrap();
+        restrict_self(&LandlockRules { writable: vec![w.into()] }).unwrap();
+        let denegado = std::fs::write(format!("{o}/b.txt"), "x").is_err();
+        std::process::exit(if denegado { 0 } else { 1 });
+    }
+    let (w, o) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let role = format!("{}|{}", w.path().display(), o.path().display());
+    assert_eq!(run_child("restrict::tests::restrict_deniega_fuera", &role), 0);
+}
+'''
+tests = [
+  "landlock_abi_no_es_negativo: `landlock_abi()` devuelve un número mayor o igual que 0",
+  "restrict_permite_escribir_en_writable: el hijo restringe a un directorio temporal y puede crear un archivo dentro (sale con 0)",
+  "restrict_deniega_fuera: el hijo no puede crear un archivo en otro directorio temporal que no está en `writable`",
+  "restrict_permite_leer_fuera: el hijo restringido puede leer un archivo que el padre creó fuera de `writable`",
+]
+no_hagas = [
+  "No llames a `restrict_self` en el proceso del test (solo en el hijo): no se puede deshacer",
+  "No uses `fork`: el hijo es el propio binario de tests relanzado",
+  "No añadas otras dependencias; `libc` ya está en el crate",
+]
+notas = '''
+Si un nombre de la API de `landlock` no compila tal cual, mira la documentación del crate descargado
+(`~/.cargo/registry/src/*/landlock-0.4*/src/lib.rs`) y anota el cambio en *Decisiones*.
+'''
+
+[[tarea]]
+id = "F2.04b"
+nombre = "landlock-exec"
+titulo = "Landlock: `exec_restricted` (restringe y sustituye el proceso por la orden)"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.04a"]
+toca = ["crates/pcode-sandbox/src/exec.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox exec::"
+contexto = [
+  "crates/pcode-sandbox/src/restrict.rs (firmas `LandlockRules`, `restrict_self`, `landlock_abi`: lo que se llama aquí)",
+  "crates/pcode-sandbox/src/child_test.rs (`run_child(test, role) -> i32` y `child_role()`: tests en proceso hijo)",
+]
+objetivo = '''
+1. Crea `exec.rs` con `exec_restricted` (firma abajo). Pasos, en este orden:
+   a) si `argv` está vacío, devuelve `SandboxError::Invalid("falta la orden".into())`;
+   b) `restrict_self(&LandlockRules { writable: writable.to_vec() })`: si da `Err(e)`, devuelve `e` (no se
+      ejecuta nada); si da `Ok(false)`, sigue (mejor esfuerzo; `restrict_self` ya avisó);
+   c) en Unix: `use std::os::unix::process::CommandExt;` y
+      `let e = std::process::Command::new(&argv[0]).args(&argv[1..]).exec();` — `exec` solo vuelve si
+      falla: devuelve `SandboxError::Io(e)`. En otras plataformas (`#[cfg(not(unix))]`) devuelve
+      `SandboxError::Invalid("solo disponible en Linux".into())`.
+2. La función NUNCA vuelve si todo va bien (el proceso pasa a ser la orden); por eso devuelve el error
+   directamente y no un `Result`.
+3. `lib.rs`: añade `pub mod exec;` y `pub use exec::exec_restricted;`.
+4. Tests en `exec.rs` con el patrón de proceso hijo: el test, si `child_role()` es `Some(role)`, parte
+   `role` por `|` en (dirW, dirO), llama a `exec_restricted(&[dirW.into()], &argv)` con
+   `argv = ["sh", "-c", "echo x > DIRW/a.txt; echo y > DIRO/b.txt; exit 0"]` (sustituye las rutas) y, si
+   vuelve, hace `std::process::exit(9)`. El padre crea los dos directorios temporales, llama a
+   `run_child("exec::tests::<nombre>", &role)` y comprueba los archivos.
+'''
+firmas = '''
+// crates/pcode-sandbox/src/exec.rs
+/// Aplica las restricciones a este proceso y lo sustituye por `argv`. Solo vuelve si algo falla.
+pub fn exec_restricted(writable: &[std::path::PathBuf], argv: &[String]) -> crate::SandboxError;
+'''
+tests = [
+  "exec_sin_orden_es_error: `exec_restricted(&[], &[])` devuelve `SandboxError::Invalid` con el texto «falta la orden»",
+  "exec_ejecuta_y_escribe_en_lo_permitido: tras el hijo, existe DIRW/a.txt con el contenido `x`",
+  "exec_no_escribe_fuera: tras el hijo, si `landlock_abi() > 0`, NO existe DIRO/b.txt",
+  "exec_orden_inexistente_devuelve_io: en el hijo, una orden que no existe hace que la función vuelva con `SandboxError::Io` (el hijo sale con 0 si es así)",
+]
+no_hagas = [
+  "No llames a `exec_restricted` en el proceso del test salvo el caso de `argv` vacío",
+  "No añadas todavía límites ni seccomp: es otra tarea",
+]
+
+[[tarea]]
+id = "F2.04c"
+nombre = "landlock-prepare"
+titulo = "Landlock: `prepare.sh` termina en el ayudante `pcode __sandbox-exec` si está configurado"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.04b"]
+toca = ["crates/pcode-sandbox/src/run.rs", "crates/pcode-sandbox/src/prepare.sh", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox ayudante_ && grep -q '__sandbox-exec' crates/pcode-sandbox/src/prepare.sh"
+contexto = [
+  "crates/pcode-sandbox/src/run.rs (función `run_with`: la cadena de `cmd.env(\"MS_DIR\", …)`; ahí se añade `PCODE_BIN`)",
+  "crates/pcode-sandbox/src/worktree.rs (`set_default_n0` y `default_n0`: patrón de ajuste global del proceso)",
+  "crates/pcode-sandbox/src/prepare.sh (última línea `exec \"$@\"`: es lo que cambia)",
+]
+objetivo = '''
+1. `run.rs`: añade `static EXEC_HELPER: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);`
+   y las funciones `set_exec_helper` y `exec_helper` (firmas abajo). Por defecto no hay ayudante.
+2. `run.rs`, función `run_with`: justo después de la cadena `cmd.env("MS_DIR", …)…env("GIT_CONFIG_VALUE_0", "*")`
+   y ANTES del bucle `for (k, v) in env`, añade:
+   `match exec_helper() { Some(h) => { cmd.env("PCODE_BIN", h); } None => { cmd.env_remove("PCODE_BIN"); } }`.
+   (`env_remove` evita que un `PCODE_BIN` heredado del entorno cuele un binario.)
+3. `prepare.sh`: sustituye la última línea `exec "$@"` por exactamente:
+   ```
+   if [ -n "$PCODE_BIN" ]; then
+     set -- -- "$@"
+     for p in "$MS_DIR" $ESCRIBIBLES "$MS_TMP" /dev; do set -- --escribible "$p" "$@"; done
+     exec "$PCODE_BIN" __sandbox-exec "$@"
+   fi
+   exec "$@"
+   ```
+   Así el ayudante recibe `--escribible <ruta>` por cada ruta escribible (el directorio de trabajo, las
+   de `ESCRIBIBLES`, el tmp privado y `/dev` para `/dev/null`) y después `-- orden…`.
+4. `lib.rs`: añade `exec_helper` y `set_exec_helper` a la línea `pub use run::{…}`.
+5. Tests en `mod tests` de `run.rs`, con el prefijo `ayudante_`. NO llames a `set_exec_helper` en ningún
+   test: es global y los demás tests corren en paralelo.
+'''
+firmas = '''
+// crates/pcode-sandbox/src/run.rs
+/// Binario `pcode` que `prepare.sh` usa como último paso (`pcode __sandbox-exec`). `None` lo desactiva.
+pub fn set_exec_helper(bin: Option<PathBuf>);
+/// Ayudante configurado para este proceso.
+pub fn exec_helper() -> Option<PathBuf>;
+'''
+tests = [
+  "ayudante_por_defecto_no_hay: `exec_helper()` devuelve `None` si nadie lo ha fijado",
+  "ayudante_prepare_lo_usa: la constante `PREPARE` contiene `__sandbox-exec`, contiene `--escribible` y su última línea no vacía es `exec \"$@\"`",
+  "ayudante_prepare_es_sh_valido: `sh -n -c PREPARE` (comprobación de sintaxis, sin ejecutar) termina con éxito",
+]
+no_hagas = [
+  "No añadas un campo a `SandboxSpec`: se construye literal en muchos sitios y dejaría de compilar",
+  "No cambies los pasos 1 a 4 de `prepare.sh` ni la línea `cd \"$MS_DIR\"`",
+  "No toques los tests que ya existen en `run.rs`",
+]
+
+[[tarea]]
+id = "F2.04d"
+nombre = "landlock-cli"
+titulo = "CLI: subcomando oculto `pcode __sandbox-exec` y activación del ayudante"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.04c"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/sandbox_exec.rs"]
+acepta = "cargo test -p pcode-cli --test sandbox_exec"
+contexto = [
+  "crates/pcode-cli/src/main.rs (enum `Cmd`, el `match cli.command` de `main` y la función `choose_sandbox_level`)",
+  "crates/pcode-cli/src/backend_run.rs (variante `SandboxCmd::Ejecutar`: cómo se declara `#[arg(last = true, required = true)] orden: Vec<String>`)",
+  "crates/pcode-cli/tests/run.rs (cómo se lanza el binario con `assert_cmd::Command::cargo_bin(\"pcode\")`)",
+]
+objetivo = '''
+Funciones que ya existen en `pcode_sandbox` y se usan aquí:
+`exec_restricted(writable: &[PathBuf], argv: &[String]) -> SandboxError` (solo vuelve si falla),
+`set_exec_helper(bin: Option<PathBuf>)`, `landlock_abi() -> i32`, `userns_available() -> bool`.
+
+1. `main.rs`, enum `Cmd`: añade la variante
+   `#[command(name = "__sandbox-exec", hide = true)] SandboxExec { #[arg(long)] escribible: Vec<std::path::PathBuf>, #[arg(last = true, required = true)] orden: Vec<String> }`
+   con el comentario de documentación «Uso interno: último paso de la mini sandbox».
+2. `main.rs`, en el `match cli.command`: rama
+   `Some(Cmd::SandboxExec { escribible, orden }) => { let e = pcode_sandbox::exec_restricted(&escribible, &orden); eprintln!("pcode: {e}"); std::process::exit(126) }`.
+3. `main.rs`, función `choose_sandbox_level`: al principio añade
+   `pcode_sandbox::set_exec_helper(std::env::current_exe().ok());`. Desde ahora toda sandbox N1 lanzada
+   por la CLI termina en el ayudante.
+4. Crea `tests/sandbox_exec.rs` con los tests de la lista. Usa dos `tempfile::tempdir()` distintos para
+   «dentro» y «fuera». Los tests que dependen de Landlock empiezan con
+   `if pcode_sandbox::landlock_abi() == 0 { return; }` y los que usan `pcode sandbox ejecutar`, con
+   `if !pcode_sandbox::userns_available() { return; }`.
+'''
+sin_firmas = "solo añade una variante privada al enum `Cmd` del binario; no hay API pública nueva"
+ejemplo = '''
+pcode __sandbox-exec --escribible /tmp/w -- sh -c 'echo x > /tmp/w/a; echo y > /tmp/o/b'
+  → /tmp/w/a existe; /tmp/o/b no existe (con Landlock); código de salida 0 o distinto según el shell.
+
+pcode sandbox ejecutar --estado /tmp/estado -- sh -c 'grep NoNewPrivs /proc/self/status'
+  → la salida contiene «NoNewPrivs:» seguido de 1 (Landlock activa no_new_privs).
+'''
+tests = [
+  "sandbox_exec_ejecuta_la_orden: `pcode __sandbox-exec -- sh -c 'echo hola'` sale con 0 y escribe `hola` en stdout",
+  "sandbox_exec_sin_orden_falla: `pcode __sandbox-exec` sin `--` ni orden termina con código distinto de 0",
+  "sandbox_exec_deniega_fuera_de_escribible: con `--escribible W`, la orden crea W/a pero no O/b (se salta sin Landlock)",
+  "sandbox_exec_no_sale_en_la_ayuda: la salida de `pcode --help` no contiene `__sandbox-exec`",
+  "sandbox_ejecutar_usa_el_ayudante: `pcode sandbox ejecutar --estado E -- sh -c 'grep NoNewPrivs /proc/self/status'` imprime una línea que termina en 1 (se salta sin userns o sin Landlock)",
+]
+no_hagas = [
+  "No pongas lógica de Landlock en la CLI: solo se llama a `pcode_sandbox::exec_restricted`",
+  "No cambies las demás variantes de `Cmd`",
+]
 
 [[tarea]]
 id = "F2.05"
 nombre = "sandbox-seccomp-limites"
 titulo = "Seccomp (lista de syscalls denegadas) y límites de recursos"
 fase = "F2"
+hito = "1.5"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F2.04"]
-toca = ["crates/pcode-sandbox/Cargo.toml", "crates/pcode-sandbox/src/seccomp.rs", "crates/pcode-sandbox/src/restrict.rs"]
-acepta = "cargo test -p pcode-sandbox seccomp"
-contexto = ["docs/mini-sandboxes.md", "crates/pcode-sandbox/src/restrict.rs"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-sandbox limits:: && cargo test -p pcode-sandbox seccomp:: && cargo test -p pcode-cli --test sandbox_exec"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Dependencia nueva permitida: `seccompiler`. Filtro que devuelve EPERM para: ptrace,
-   process_vm_readv, process_vm_writev, mount, umount2, pivot_root, kexec_load, kexec_file_load, bpf,
-   keyctl, add_key, request_key, init_module, finit_module, delete_module, setns, unshare,
-   perf_event_open, userfaultfd, reboot, swapon, swapoff. Solo x86_64 y aarch64.
-2. Límites con `nix::sys::resource::setrlimit`: NPROC (por defecto 4096), FSIZE (por defecto 8 GiB),
-   NOFILE (4096), CORE 0.
-3. `restrict_self` aplica Landlock, después los límites y por último seccomp.
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F2.05a a F2.05c).
+3. Escribe el informe: en qué arquitectura se probó y qué tests se saltaron.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F2.05a"
+nombre = "sandbox-limites"
+titulo = "Límites de recursos del proceso de la sandbox (`setrlimit`)"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.04a"]
+toca = ["crates/pcode-sandbox/src/limits.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox limits::"
+contexto = [
+  "crates/pcode-sandbox/src/child_test.rs (`run_child(test, role) -> i32` y `child_role()`: tests en proceso hijo)",
+  "crates/pcode-sandbox/src/layer.rs (función `is_opaque`: bloque `unsafe` con `// SAFETY:` y `libc`)",
+]
+objetivo = '''
+1. Crea `limits.rs` con `Limits`, su `Default` (nproc 4096, fsize 8 GiB = `8 << 30`, nofile 4096) y
+   `apply_limits` (firmas abajo).
+2. `apply_limits`, solo en Linux (`#[cfg(target_os = "linux")]`): para cada pareja
+   (`libc::RLIMIT_NPROC`, nproc), (`libc::RLIMIT_FSIZE`, fsize_bytes), (`libc::RLIMIT_NOFILE`, nofile) y
+   (`libc::RLIMIT_CORE`, 0): lee el límite actual con `libc::getrlimit`; el valor nuevo es
+   `min(pedido, límite duro actual)` (un proceso sin privilegios no puede subir el duro); llama a
+   `libc::setrlimit` con `rlim_cur = rlim_max = valor nuevo`. Si `setrlimit` devuelve distinto de 0:
+   `SandboxError::Io(std::io::Error::last_os_error())`. Cada `unsafe` lleva su `// SAFETY:`.
+   En otras plataformas la función devuelve `Ok(())` sin hacer nada.
+3. `lib.rs`: `pub mod limits;` y `pub use limits::{Limits, apply_limits};`.
+4. Tests en `limits.rs`. Los que aplican límites lo hacen en un proceso hijo (patrón: si
+   `child_role()` es `Some(_)`, haz el trabajo y termina con `std::process::exit(0 o 1)`; si no,
+   `assert_eq!(run_child("limits::tests::<nombre>", "x"), 0)`).
 '''
 firmas = '''
+// crates/pcode-sandbox/src/limits.rs
+/// Límites de recursos del proceso que corre dentro de la sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits { pub nproc: u64, pub fsize_bytes: u64, pub nofile: u64 }
 impl Default for Limits { /* 4096, 8 GiB, 4096 */ }
-pub fn apply_limits(l: &Limits) -> Result<(), SandboxError>;
-pub fn install_seccomp() -> Result<(), SandboxError>;
+
+/// Aplica los límites a este proceso (y `RLIMIT_CORE = 0`). No se pueden volver a subir.
+pub fn apply_limits(l: &Limits) -> Result<(), crate::SandboxError>;
 '''
-tests = ["seccomp_bloquea_ptrace (proceso hijo)", "seccomp_permite_lo_normal (proceso hijo hace write/read)", "limits_fsize (proceso hijo no puede escribir más que el límite)"]
+ejemplo = '''
+// Hijo de `limits_fsize_corta_la_escritura`:
+unsafe { libc::signal(libc::SIGXFSZ, libc::SIG_IGN); }   // SAFETY: ignorar una señal es seguro
+apply_limits(&Limits { fsize_bytes: 1024, ..Limits::default() }).unwrap();
+let r = std::fs::write(dir.join("grande"), vec![0u8; 8192]);
+let ok = r.is_err_and(|e| e.raw_os_error() == Some(libc::EFBIG));
+std::process::exit(if ok { 0 } else { 1 });
+'''
+tests = [
+  "limits_por_defecto: `Limits::default()` vale nproc 4096, fsize_bytes 8589934592 y nofile 4096",
+  "limits_fsize_corta_la_escritura: en el hijo, con fsize 1024, escribir 8192 bytes falla con EFBIG",
+  "limits_nofile_se_aplica: en el hijo, tras `apply_limits` con nofile 64, `getrlimit(RLIMIT_NOFILE)` da 64 en el límite blando",
+  "limits_core_a_cero: en el hijo, tras `apply_limits`, `getrlimit(RLIMIT_CORE)` da 0",
+]
+no_hagas = [
+  "No uses el crate `nix`: el crate ya tiene `libc`",
+  "No apliques límites en el proceso del test, solo en el hijo",
+]
+
+[[tarea]]
+id = "F2.05b"
+nombre = "sandbox-seccomp"
+titulo = "Seccomp: filtro que devuelve EPERM en las syscalls peligrosas"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.04a"]
+toca = ["crates/pcode-sandbox/src/seccomp.rs", "crates/pcode-sandbox/src/lib.rs"]
+toca_extra = ["crates/pcode-sandbox/Cargo.toml"]
+acepta = "cargo test -p pcode-sandbox seccomp::"
+contexto = [
+  "crates/pcode-sandbox/src/child_test.rs (`run_child(test, role) -> i32` y `child_role()`: tests en proceso hijo)",
+  "crates/pcode-sandbox/src/run.rs (enum `SandboxError`: los errores de seccomp van en `Invalid(String)`)",
+]
+objetivo = '''
+1. `Cargo.toml` del crate: en `[target.'cfg(target_os = "linux")'.dependencies]` añade
+   `seccompiler = "0.4"` (dependencia permitida solo en esta tarea).
+2. `seccomp.rs`, `denied_syscalls`: devuelve (nombre, número) de estas 22 syscalls, con las constantes
+   `libc::SYS_*`: ptrace, process_vm_readv, process_vm_writev, mount, umount2, pivot_root, kexec_load,
+   kexec_file_load, bpf, keyctl, add_key, request_key, init_module, finit_module, delete_module, setns,
+   unshare, perf_event_open, userfaultfd, reboot, swapon, swapoff.
+3. `install_seccomp`: primero `libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)` (con `// SAFETY:`).
+   Construye un `seccompiler::SeccompFilter` con un mapa `BTreeMap<i64, Vec<SeccompRule>>` que tiene cada
+   número de la lista con un `vec![]` vacío (= coincide siempre), acción por defecto
+   `SeccompAction::Allow`, acción al coincidir `SeccompAction::Errno(libc::EPERM as u32)` y la
+   arquitectura `std::env::consts::ARCH.try_into()`. Conviértelo en `BpfProgram` (`try_into`) y aplícalo
+   con `seccompiler::apply_filter`. Errores: `SandboxError::Invalid(format!("seccomp: {e}"))`.
+4. Todo lo anterior va tras
+   `#[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]`. En el resto
+   de plataformas `denied_syscalls` devuelve un vector vacío e `install_seccomp` devuelve `Ok(())` tras
+   `tracing::warn!("seccomp no disponible en esta plataforma")`.
+5. `lib.rs`: `pub mod seccomp;` y `pub use seccomp::{denied_syscalls, install_seccomp};`.
+6. Tests en `seccomp.rs`: los que instalan el filtro, en proceso hijo (el filtro no se puede quitar).
+'''
+firmas = '''
+// crates/pcode-sandbox/src/seccomp.rs
+/// Syscalls que el filtro deniega con EPERM: (nombre, número en esta arquitectura).
+pub fn denied_syscalls() -> Vec<(&'static str, i64)>;
+
+/// Instala el filtro en este proceso. Irreversible; lo heredan los hijos.
+pub fn install_seccomp() -> Result<(), crate::SandboxError>;
+'''
+ejemplo = '''
+// Hijo de `seccomp_bloquea_unshare`: `unshare(0)` es inofensivo y normalmente devuelve 0.
+install_seccomp().unwrap();
+let r = unsafe { libc::unshare(0) };                      // SAFETY: sin banderas no cambia nada
+let eperm = r == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+std::process::exit(if eperm { 0 } else { 1 });
+// Padre: assert_eq!(run_child("seccomp::tests::seccomp_bloquea_unshare", "x"), 0);
+'''
+tests = [
+  "seccomp_lista_completa: en Linux x86_64 o aarch64, `denied_syscalls()` tiene 22 entradas, sin números repetidos, e incluye `ptrace` y `mount`",
+  "seccomp_bloquea_unshare: en el hijo, tras instalar el filtro, `unshare(0)` devuelve -1 con EPERM",
+  "seccomp_permite_lo_normal: en el hijo, tras instalar el filtro, escribir y leer un archivo temporal funciona y `sh -c true` sale con 0",
+  "seccomp_antes_del_filtro_unshare_funciona: en el hijo, sin instalar el filtro, `unshare(0)` devuelve 0",
+]
+no_hagas = [
+  "No instales el filtro en el proceso del test, solo en el hijo",
+  "No bloquees `execve`, `clone` ni `fork`: la orden de la sandbox los necesita",
+  "No añadas más dependencias",
+]
+notas = '''
+Si alguna constante `libc::SYS_*` no existe en una de las dos arquitecturas, déjala tras
+`#[cfg(target_arch = "…")]` y anótalo en *Decisiones* (el test de 22 entradas se ajusta a esa
+arquitectura). Si un nombre de `seccompiler` no compila, mira `~/.cargo/registry/src/*/seccompiler-0.4*/src/lib.rs`.
+'''
+
+[[tarea]]
+id = "F2.05c"
+nombre = "sandbox-endurecer-exec"
+titulo = "`exec_restricted` aplica Landlock, después los límites y por último seccomp"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.04d", "F2.05a", "F2.05b"]
+toca = ["crates/pcode-sandbox/src/exec.rs", "crates/pcode-cli/tests/sandbox_exec.rs"]
+acepta = "cargo test -p pcode-sandbox exec:: && cargo test -p pcode-cli --test sandbox_exec && grep -q install_seccomp crates/pcode-sandbox/src/exec.rs"
+contexto = [
+  "crates/pcode-sandbox/src/exec.rs (función `exec_restricted`: se añaden dos pasos entre Landlock y `exec`)",
+  "crates/pcode-sandbox/src/limits.rs (`Limits::default()` y `apply_limits(&Limits) -> Result<(), SandboxError>`)",
+  "crates/pcode-sandbox/src/seccomp.rs (`install_seccomp() -> Result<(), SandboxError>`)",
+]
+objetivo = '''
+1. `exec.rs`, función `exec_restricted`: después de `restrict_self(…)` y antes del `exec`, añade en este
+   orden: `crate::apply_limits(&crate::Limits::default())` y `crate::install_seccomp()`. Si cualquiera
+   devuelve `Err(e)`, la función devuelve `e` y no ejecuta la orden. El orden importa: seccomp va el
+   último porque los pasos anteriores usan syscalls normales y después ya nada puede cambiarlo.
+2. Los tests que ya hay en `exec.rs` deben seguir pasando sin cambios.
+3. `tests/sandbox_exec.rs` (ya existe; lanza el binario con `assert_cmd::Command::cargo_bin("pcode")`):
+   añade los tests de la lista. El de `unshare` empieza con
+   `if !pcode_sandbox::userns_available() { return; }` (así se sabe que, sin filtro, `unshare --user`
+   funcionaría en esta máquina).
+'''
+sin_firmas = "no cambia ninguna firma: `exec_restricted` conserva la suya"
+ejemplo = '''
+pcode __sandbox-exec -- sh -c 'ulimit -c'            → stdout «0»
+pcode __sandbox-exec -- unshare --user true          → código de salida distinto de 0 (EPERM)
+pcode __sandbox-exec -- sh -c 'echo ok'              → stdout «ok», código 0
+'''
+tests = [
+  "sandbox_exec_core_a_cero: `pcode __sandbox-exec -- sh -c 'ulimit -c'` imprime `0`",
+  "sandbox_exec_bloquea_unshare: `pcode __sandbox-exec -- unshare --user true` termina con código distinto de 0 (se salta sin userns)",
+  "sandbox_exec_sigue_ejecutando_ordenes_normales: `pcode __sandbox-exec -- sh -c 'echo ok | cat'` imprime `ok` y sale con 0",
+]
+no_hagas = [
+  "No cambies el orden Landlock → límites → seccomp",
+  "No borres ni modifiques los tests que ya existen en `tests/sandbox_exec.rs`",
+]
 
 [[tarea]]
 id = "F2.06"
@@ -477,22 +891,158 @@ id = "F2.17"
 nombre = "sincronizar-instrucciones"
 titulo = "`pcode instrucciones sincronizar`: AGENTS.md → CLAUDE.md, GEMINI.md, copilot-instructions"
 fase = "F2"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-skills instructions:: && cargo test -p pcode-cli --test instrucciones"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F2.17a y F2.17b).
+3. Escribe el informe. No ejecutes `pcode instrucciones sincronizar` sobre este repo: generar
+   `GEMINI.md` y `.github/copilot-instructions.md` aquí lo hace el coordinador.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F2.17a"
+nombre = "instrucciones-nucleo"
+titulo = "Instrucciones derivadas de AGENTS.md: generar y comprobar (núcleo)"
+fase = "F2"
+hito = "1.4"
+talla = "M"
 ejecutor = "haiku"
 depende = ["F2.14"]
-toca = ["crates/pcode-skills/src/instructions.rs", "crates/pcode-skills/src/lib.rs", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-skills instructions && cargo test -p pcode-cli"
-contexto = ["AGENTS.md", "CLAUDE.md", "docs/backends-verificado.md"]
+toca = ["crates/pcode-skills/src/instructions.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills instructions::"
+contexto = [
+  "crates/pcode-skills/src/export.rs (constantes `INI` y `FIN` y función `replace_section`: la sección de skills que `export` escribe en GEMINI.md y copilot-instructions y que aquí hay que conservar)",
+  "crates/pcode-skills/src/registry.rs (enum `SkillError`: `Io` e `Invalid(String, String)`)",
+]
 objetivo = '''
-1. `AGENTS.md` es la fuente única.
-2. `CLAUDE.md`: garantiza que la primera línea es `@AGENTS.md` y conserva el resto.
-3. `GEMINI.md` y `.github/copilot-instructions.md`: cabecera `<!-- generado desde AGENTS.md por pcode; no editar -->`
-   más el contenido de AGENTS.md (o un `@AGENTS.md` si F0.03 confirma que esa CLI importa archivos).
-4. `--comprobar`: sale con 1 si algo está desfasado.
+`AGENTS.md` es la fuente única. De él salen `GEMINI.md` y `.github/copilot-instructions.md` (copias con
+cabecera) y se garantiza que `CLAUDE.md` lo importa.
+
+1. Crea `instructions.rs` con `GENERATED_HEADER`, `render_derived`, `ensure_claude_import` y
+   `sync_instructions` (firmas abajo).
+2. `render_derived(agents_md, existing)`: `GENERATED_HEADER` + `"\n\n"` + `agents_md` sin espacios
+   finales + `"\n"`. Si `existing` contiene una sección entre `<!-- skills:inicio -->` y
+   `<!-- skills:fin -->` y `agents_md` NO contiene `<!-- skills:inicio -->`, añade al final `"\n"` + esa
+   sección (marcadores incluidos) + `"\n"`. Así no se pierde lo que escribió la exportación de skills.
+3. `ensure_claude_import(claude_md)`: si la primera línea (sin espacios) ya es `@AGENTS.md`, devuelve el
+   texto igual; si el texto está vacío, devuelve `"@AGENTS.md\n"`; si no, devuelve
+   `"@AGENTS.md\n\n"` + el texto original.
+4. `sync_instructions(repo_root, check_only)`: lee `AGENTS.md` (si no existe:
+   `SkillError::Invalid("AGENTS.md".into(), "no existe".into())`). Calcula el contenido deseado de
+   `CLAUDE.md` (con `ensure_claude_import` sobre el actual, o cadena vacía si no existe), `GEMINI.md` y
+   `.github/copilot-instructions.md` (con `render_derived` sobre el actual o cadena vacía). Devuelve, en
+   ese orden, las rutas RELATIVAS de los archivos cuyo contenido actual difiere del deseado. Si
+   `check_only` es false, además los escribe (creando `.github/` si hace falta).
+5. `lib.rs`: `pub mod instructions;` y
+   `pub use instructions::{GENERATED_HEADER, ensure_claude_import, render_derived, sync_instructions};`.
+6. Tests en `instructions.rs`, siempre sobre un `tempfile::tempdir()`.
 '''
 firmas = '''
-pub fn sync_instructions(repo_root: &std::path::Path, check_only: bool) -> Result<Vec<std::path::PathBuf>, SkillError>;
+// crates/pcode-skills/src/instructions.rs
+/// Primera línea de los archivos derivados.
+pub const GENERATED_HEADER: &str = "<!-- generado desde AGENTS.md por pcode; no editar -->";
+
+/// Contenido de un archivo derivado (`GEMINI.md`, `copilot-instructions.md`).
+pub fn render_derived(agents_md: &str, existing: &str) -> String;
+
+/// `CLAUDE.md` con `@AGENTS.md` en la primera línea y el resto intacto.
+pub fn ensure_claude_import(claude_md: &str) -> String;
+
+/// Sincroniza (o solo comprueba) los archivos derivados; devuelve los desfasados, relativos a la raíz.
+pub fn sync_instructions(repo_root: &std::path::Path, check_only: bool)
+    -> Result<Vec<std::path::PathBuf>, crate::SkillError>;
 '''
-tests = ["sync_crea_gemini_y_copilot", "sync_respeta_resto_de_claude_md", "sync_idempotente", "comprobar_detecta_desfase"]
+ejemplo = '''
+render_derived("# Guía\nregla\n", "")
+  → "<!-- generado desde AGENTS.md por pcode; no editar -->\n\n# Guía\nregla\n"
+ensure_claude_import("## Notas\n- x\n")  → "@AGENTS.md\n\n## Notas\n- x\n"
+ensure_claude_import("@AGENTS.md\n\n## Notas\n")  → igual que la entrada
+sync_instructions(raíz con solo AGENTS.md, false)
+  → ["CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"]   (y los tres existen después)
+sync_instructions(la misma raíz, false) otra vez → []
+'''
+tests = [
+  "render_pone_cabecera_y_contenido: el primer ejemplo da exactamente esa cadena",
+  "render_conserva_la_seccion_de_skills: si `existing` tiene una sección `skills:inicio`…`skills:fin`, el resultado la incluye una sola vez",
+  "claude_anade_la_importacion_y_respeta_el_resto: el segundo ejemplo; y un texto que ya empieza por `@AGENTS.md` no cambia",
+  "sync_crea_gemini_y_copilot: en una raíz con solo AGENTS.md se crean los tres archivos y se devuelven sus tres rutas",
+  "sync_idempotente: una segunda llamada devuelve un vector vacío y no cambia los archivos",
+  "comprobar_detecta_desfase_sin_escribir: tras cambiar AGENTS.md, `check_only = true` devuelve GEMINI.md y copilot-instructions y GEMINI.md sigue con el contenido viejo",
+  "sin_agents_md_es_error: en una raíz vacía devuelve `SkillError::Invalid`",
+]
+no_hagas = [
+  "No toques `AGENTS.md`, `CLAUDE.md` ni `.github/` de este repo: los tests usan directorios temporales",
+  "No modifiques `export.rs`",
+  "No añadas dependencias",
+]
+
+[[tarea]]
+id = "F2.17b"
+nombre = "instrucciones-cli"
+titulo = "CLI: `pcode instrucciones sincronizar [--comprobar]`"
+fase = "F2"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.17a"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/instrucciones.rs"]
+toca_extra = ["crates/pcode-cli/Cargo.toml"]
+acepta = "cargo test -p pcode-cli --test instrucciones"
+contexto = [
+  "crates/pcode-cli/src/main.rs (enum `ExtCmd`, función `ext_cmd` y la rama `Some(Cmd::Extensiones(c))`: imita ese patrón de subórdenes)",
+  "crates/pcode-skills/src/instructions.rs (`sync_instructions(repo_root: &Path, check_only: bool) -> Result<Vec<PathBuf>, SkillError>`: devuelve los archivos desfasados)",
+  "crates/pcode-cli/tests/run.rs (cómo se lanza el binario con `assert_cmd` en un directorio temporal)",
+]
+objetivo = '''
+1. `Cargo.toml` de `pcode-cli`: si no está ya, añade en `[dependencies]`
+   `pcode-skills = { path = "../pcode-skills" }`.
+2. `main.rs`: enum nuevo `InstrCmd` (derive `Debug, Subcommand`) con una variante
+   `Sincronizar { #[arg(long = "comprobar")] check: bool }` («Genera GEMINI.md y
+   .github/copilot-instructions.md desde AGENTS.md y garantiza que CLAUDE.md lo importa»). En `Cmd`
+   añade `#[command(subcommand)] Instrucciones(InstrCmd)` («Instrucciones de los agentes: AGENTS.md es la
+   fuente única»).
+3. `main.rs`: función `fn instr_cmd(c: InstrCmd) -> anyhow::Result<i32>` que llama a
+   `pcode_skills::sync_instructions(&std::env::current_dir()?, check)`:
+   - sin `--comprobar`: imprime `✓ <ruta>` por cada archivo escrito, o `Todo al día.` si no hubo
+     ninguno; devuelve 0.
+   - con `--comprobar`: imprime `✗ <ruta> está desfasado` por cada uno y devuelve 1 si hay alguno; si
+     no, imprime `Todo al día.` y devuelve 0.
+   - un error (p. ej. falta AGENTS.md) se propaga con `?`.
+4. `main.rs`, en el `match cli.command`:
+   `Some(Cmd::Instrucciones(c)) => std::process::exit(instr_cmd(c)?),`.
+5. Crea `tests/instrucciones.rs` con los tests de la lista; cada uno trabaja en un
+   `tempfile::tempdir()` con un `AGENTS.md` de prueba (`.current_dir(dir)`).
+'''
+sin_firmas = "solo añade un subcomando al binario; la lógica está en `pcode_skills::sync_instructions`"
+ejemplo = '''
+$ pcode instrucciones sincronizar
+✓ CLAUDE.md
+✓ GEMINI.md
+✓ .github/copilot-instructions.md
+$ pcode instrucciones sincronizar --comprobar
+Todo al día.                                   (código 0)
+$ echo "otra regla" >> AGENTS.md && pcode instrucciones sincronizar --comprobar
+✗ GEMINI.md está desfasado
+✗ .github/copilot-instructions.md está desfasado      (código 1)
+'''
+tests = [
+  "sincronizar_crea_los_archivos: en un directorio con AGENTS.md, la orden sale con 0 y existen GEMINI.md y .github/copilot-instructions.md con la cabecera de generado",
+  "comprobar_al_dia_sale_con_0: tras sincronizar, `--comprobar` sale con 0 e imprime `Todo al día.`",
+  "comprobar_desfasado_sale_con_1: tras cambiar AGENTS.md, `--comprobar` sale con 1 y nombra GEMINI.md",
+  "sin_agents_md_falla: en un directorio vacío la orden termina con código distinto de 0",
+]
+no_hagas = [
+  "No ejecutes la orden en la raíz de este repo",
+  "No pongas la lógica de generación en la CLI",
+]
 
 [[tarea]]
 id = "F2.18"
@@ -518,47 +1068,458 @@ id = "F2.19"
 nombre = "proxy-salida"
 titulo = "`pcode-netproxy`: proxy CONNECT en socket Unix con lista de dominios y auditoría"
 fase = "F2"
+hito = "1.5"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F1.15"]
-toca = ["crates/pcode-sandbox/src/netproxy.rs", "crates/pcode-sandbox/src/lib.rs", "crates/pcode-sandbox/Cargo.toml"]
-acepta = "cargo test -p pcode-sandbox netproxy"
-contexto = ["docs/mini-sandboxes.md (Red)"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-sandbox netproxy::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Escucha en un socket Unix. Acepta `CONNECT host:puerto HTTP/1.1`: si `host:puerto` casa con la
-   lista (`*.dominio` admitido; puerto opcional) → `200 Connection established` y túnel
-   bidireccional (`tokio::io::copy_bidirectional`); si no → `403` y una entrada de auditoría.
-2. Peticiones HTTP planas (`GET http://host:puerto/… HTTP/1.1`): lo mismo, reenviándolas (para
-   LiteLLM en `http://127.0.0.1:30400`).
-3. Tiempo máximo de inactividad por conexión: 10 minutos.
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F2.19a a F2.19c).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F2.19a"
+nombre = "proxy-reglas"
+titulo = "Proxy de salida: lista de dominios y parseo de la primera línea (lógica pura)"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.03"]
+toca = ["crates/pcode-sandbox/src/netproxy.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox netproxy::tests::reglas_"
+contexto = ["crates/pcode-sandbox/src/lib.rs (cómo se declara un módulo y se reexporta con `pub use`)"]
+objetivo = '''
+1. Crea `netproxy.rs` con `host_allowed`, `ProxyRequest` y `parse_request_line` (firmas abajo). Sin red
+   ni E/S: solo funciones puras.
+2. `host_allowed(allow, host, port)`. Normaliza `host`: minúsculas y sin el punto final. Cada entrada de
+   `allow` es `patrón` o `patrón:puerto` (el puerto es lo que va tras el ÚLTIMO `:` si son solo cifras):
+   - `patrón` sin `*.`: coincide si es igual al host (sin distinguir mayúsculas).
+   - `*.dominio`: coincide con cualquier subdominio (`a.dominio`, `a.b.dominio`), NO con `dominio` solo.
+   - con puerto: el puerto debe ser ese. Sin puerto: solo vale para los puertos 80 y 443.
+   Una lista vacía no permite nada. Las entradas vacías se ignoran.
+3. `parse_request_line(line)` (la línea llega sin `\r\n`):
+   - `CONNECT host:puerto HTTP/1.x` → `Connect { host, port }`.
+   - `MÉTODO http://host[:puerto]/ruta HTTP/1.x` → `Http { host, port (80 si falta), rewritten }` con
+     `rewritten = "MÉTODO /ruta HTTP/1.x"` (si no hay ruta, `/`).
+   - cualquier otra cosa (tres partes que no encajan, `https://` en claro, puerto no numérico, host
+     vacío) → `None`.
+4. `lib.rs`: `pub mod netproxy;` y `pub use netproxy::{ProxyRequest, host_allowed, parse_request_line};`.
+5. Tests en `netproxy.rs` (`mod tests`), todos con el prefijo `reglas_`.
 '''
 firmas = '''
-pub struct NetProxy { pub socket: std::path::PathBuf, pub allow: Vec<String> }
-impl NetProxy { pub async fn serve(self, audit: Option<std::sync::Arc<std::sync::Mutex<pcode_policy::AuditLog>>>) -> std::io::Result<()>; }
+// crates/pcode-sandbox/src/netproxy.rs
+/// ¿Permite la lista conectar con `host:port`?
 pub fn host_allowed(allow: &[String], host: &str, port: u16) -> bool;
+
+/// Lo que pide la primera línea de una petición al proxy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyRequest {
+    /// `CONNECT host:puerto` (túnel, para HTTPS).
+    Connect { host: String, port: u16 },
+    /// Petición HTTP en claro con URL absoluta; `rewritten` es la línea que se envía al servidor.
+    Http { host: String, port: u16, rewritten: String },
+}
+
+/// Parsea la primera línea; `None` si no es una petición de proxy válida.
+pub fn parse_request_line(line: &str) -> Option<ProxyRequest>;
 '''
-tests = ["host_allowed_comodin_y_puerto", "proxy_connect_permitido_hace_tunel (servidor TCP de eco local)", "proxy_connect_denegado_403", "proxy_http_plano_reenvia"]
+ejemplo = '''
+host_allowed(&["*.github.com".into()], "api.github.com", 443)        → true
+host_allowed(&["*.github.com".into()], "github.com", 443)            → false
+host_allowed(&["github.com".into()], "github.com", 8080)             → false
+host_allowed(&["127.0.0.1:30400".into()], "127.0.0.1", 30400)        → true
+parse_request_line("CONNECT api.github.com:443 HTTP/1.1")
+  → Some(Connect { host: "api.github.com", port: 443 })
+parse_request_line("GET http://127.0.0.1:30400/v1/models HTTP/1.1")
+  → Some(Http { host: "127.0.0.1", port: 30400, rewritten: "GET /v1/models HTTP/1.1" })
+'''
+tests = [
+  "reglas_dominio_exacto: `github.com` permite github.com:443 y GitHub.com.:80, y no evil.com:443",
+  "reglas_comodin_solo_subdominios: `*.github.com` permite api.github.com y a.b.github.com, no github.com ni xgithub.com",
+  "reglas_puerto: sin puerto solo valen 80 y 443; `127.0.0.1:30400` permite solo el 30400",
+  "reglas_lista_vacia_no_permite_nada: con `allow` vacío cualquier host da false",
+  "reglas_parsea_connect: la línea CONNECT del ejemplo da `Connect` con host y puerto",
+  "reglas_parsea_http_absoluto: la línea GET del ejemplo da `Http` con la línea reescrita; sin puerto usa 80 y sin ruta usa `/`",
+  "reglas_rechaza_lo_demas: `GET /ruta HTTP/1.1`, `CONNECT host HTTP/1.1`, `GET https://a/ HTTP/1.1` y la cadena vacía dan None",
+]
+no_hagas = ["No abras sockets en esta tarea", "No añadas dependencias (ni `url` ni `regex`)"]
+
+[[tarea]]
+id = "F2.19b"
+nombre = "proxy-connect"
+titulo = "Proxy de salida: servidor en socket Unix con túnel CONNECT y aviso de cada decisión"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.19a"]
+toca = ["crates/pcode-sandbox/src/netproxy.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox netproxy::tests::proxy_connect_"
+contexto = [
+  "crates/pcode-sandbox/src/netproxy.rs (`host_allowed(allow, host, port) -> bool` y `parse_request_line(line) -> Option<ProxyRequest>`: ya existen)",
+]
+objetivo = '''
+1. En `netproxy.rs` añade `ProxyDecision`, `OnDecision`, `NetProxy`, `NetProxy::new` y `NetProxy::serve`
+   (firmas abajo). `serve` y sus funciones auxiliares van tras `#[cfg(unix)]`.
+2. `serve`: borra `self.socket` si existe, `tokio::net::UnixListener::bind(&self.socket)` y, en bucle,
+   acepta conexiones; cada una se atiende en `tokio::spawn`. Es un servidor: termina cuando quien lo
+   lanzó aborta la tarea.
+3. Cada conexión:
+   a) lee hasta encontrar `\r\n\r\n` (máximo 8192 bytes y 10 s con `tokio::time::timeout`); si no llega,
+      cierra sin responder.
+   b) primera línea → `parse_request_line`. `None` → responde `HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n`.
+   c) decide con `host_allowed(&allow, host, port)` y llama a `on_decision` (si hay) con
+      `ProxyDecision { host, port, allowed }`. Denegado → `HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n`.
+   d) `Connect` permitido: `tokio::net::TcpStream::connect((host, port))` con 10 s de máximo; si falla,
+      `HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n`. Si conecta: responde
+      `HTTP/1.1 200 Connection established\r\n\r\n`, envía al servidor los bytes que ya se hubieran leído
+      después de `\r\n\r\n` y une ambos extremos con `tokio::io::copy_bidirectional` dentro de
+      `tokio::time::timeout(self.max_conn, …)`.
+   e) `Http` permitido: por ahora responde `HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\n\r\n`
+      (lo implementa otra tarea).
+4. `lib.rs`: añade `NetProxy`, `ProxyDecision` y `OnDecision` al `pub use netproxy::{…}`.
+5. Tests con `#[tokio::test]`: socket en un `tempfile::tempdir()`, servidor de eco TCP falso en
+   `127.0.0.1:0`, `tokio::spawn(proxy.serve())`, espera a que exista el archivo del socket (máximo 50
+   intentos de 20 ms) y conecta con `tokio::net::UnixStream`.
+'''
+firmas = '''
+// crates/pcode-sandbox/src/netproxy.rs
+/// Una decisión del proxy (para el registro).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyDecision { pub host: String, pub port: u16, pub allowed: bool }
+
+/// Receptor de decisiones.
+pub type OnDecision = std::sync::Arc<dyn Fn(&ProxyDecision) + Send + Sync>;
+
+/// Proxy de salida que escucha en un socket Unix.
+pub struct NetProxy {
+    pub socket: std::path::PathBuf,
+    pub allow: Vec<String>,
+    pub on_decision: Option<OnDecision>,
+    /// Duración máxima de una conexión.
+    pub max_conn: std::time::Duration,
+}
+impl NetProxy {
+    /// Proxy sin receptor y con 30 minutos por conexión.
+    pub fn new(socket: std::path::PathBuf, allow: Vec<String>) -> NetProxy;
+    /// Atiende conexiones hasta que se aborte la tarea.
+    #[cfg(unix)]
+    pub async fn serve(self) -> std::io::Result<()>;
+}
+'''
+ejemplo = '''
+cliente → "CONNECT 127.0.0.1:45123 HTTP/1.1\r\nHost: x\r\n\r\n"      (45123 = puerto del eco, permitido)
+proxy   → "HTTP/1.1 200 Connection established\r\n\r\n"
+cliente → "hola"        proxy → "hola"                               (lo devuelve el eco a través del túnel)
+
+cliente → "CONNECT evil.example:443 HTTP/1.1\r\n\r\n"                 (no está en la lista)
+proxy   → "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"  y on_decision recibe allowed = false
+'''
+tests = [
+  "proxy_connect_permitido_hace_tunel: con `127.0.0.1:<puerto del eco>` en la lista, tras el 200 lo que se escribe vuelve igual",
+  "proxy_connect_denegado_403: un CONNECT a un host fuera de la lista recibe una respuesta que empieza por `HTTP/1.1 403`",
+  "proxy_connect_avisa_de_cada_decision: tras un CONNECT permitido y otro denegado, el receptor guardó dos decisiones con `allowed` true y false",
+  "proxy_connect_peticion_rota_400: la línea `HOLA\\r\\n\\r\\n` recibe una respuesta que empieza por `HTTP/1.1 400`",
+  "proxy_connect_destino_caido_502: CONNECT a un puerto permitido donde no escucha nadie recibe `HTTP/1.1 502`",
+]
+no_hagas = [
+  "No resuelvas ni conectes antes de comprobar la lista",
+  "No dependas de `pcode-policy`: el registro se hace con el receptor `on_decision`",
+  "No uses puertos fijos en los tests: siempre `127.0.0.1:0`",
+]
+
+[[tarea]]
+id = "F2.19c"
+nombre = "proxy-http-plano"
+titulo = "Proxy de salida: reenvío de peticiones HTTP en claro (URL absoluta)"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.19b"]
+toca = ["crates/pcode-sandbox/src/netproxy.rs"]
+acepta = "cargo test -p pcode-sandbox netproxy::tests::proxy_http_"
+contexto = [
+  "crates/pcode-sandbox/src/netproxy.rs (función que atiende cada conexión dentro de `NetProxy::serve`: la rama de `ProxyRequest::Http`, que hoy responde 501)",
+]
+objetivo = '''
+1. En `netproxy.rs`, en la función que atiende cada conexión, sustituye la respuesta 501 de la rama
+   `ProxyRequest::Http { host, port, rewritten }` (ya permitida por la lista) por el reenvío:
+   a) conecta con `tokio::net::TcpStream::connect((host, port))` (10 s de máximo; si falla, responde
+      `HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n`);
+   b) envía al servidor `rewritten` seguido de `\r\n`, después el resto de la cabecera tal como llegó
+      (todo lo que hay tras la primera línea, incluido el `\r\n\r\n` final) y los bytes ya leídos del cuerpo;
+   c) une ambos extremos con `tokio::io::copy_bidirectional` dentro de
+      `tokio::time::timeout(self.max_conn, …)`, igual que en la rama `Connect`.
+2. Sirve para llegar a un LiteLLM local (`http://127.0.0.1:30400`) desde dentro de la sandbox. No se
+   interpreta el cuerpo ni se reutiliza la conexión para otro host: una conexión, un destino.
+3. Añade los tests de la lista (prefijo `proxy_http_`) con un servidor HTTP falso: un
+   `tokio::net::TcpListener` en `127.0.0.1:0` que lee hasta `\r\n\r\n`, guarda la primera línea recibida y
+   responde `HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok`.
+'''
+sin_firmas = "no añade API: completa una rama de `NetProxy::serve`"
+ejemplo = '''
+cliente → "GET http://127.0.0.1:45200/hola HTTP/1.1\r\nHost: 127.0.0.1:45200\r\n\r\n"
+servidor falso recibe → "GET /hola HTTP/1.1\r\nHost: 127.0.0.1:45200\r\n\r\n"
+cliente recibe → "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+'''
+tests = [
+  "proxy_http_plano_reenvia: con el destino en la lista, el servidor falso recibe la primera línea `GET /hola HTTP/1.1` y el cliente recibe una respuesta que termina en `ok`",
+  "proxy_http_plano_denegado_403: la misma petición con la lista vacía recibe `HTTP/1.1 403` y el servidor falso no recibe ninguna conexión",
+  "proxy_http_plano_conserva_la_cabecera: la cabecera `X-Prueba: 1` enviada por el cliente llega al servidor falso",
+]
+no_hagas = ["No cambies la rama `Connect` ni los tests `proxy_connect_`", "No añadas dependencias (ni `hyper` ni `httparse`)"]
 
 [[tarea]]
 id = "F2.20"
 nombre = "puente-sandbox"
 titulo = "Puente TCP→Unix dentro de la sandbox y red `Filtered`"
 fase = "F2"
+hito = "1.5"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F2.19", "F2.04"]
-toca = ["crates/pcode-sandbox/src/bridge.rs", "crates/pcode-sandbox/src/run.rs", "crates/pcode-sandbox/src/prepare.sh", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-sandbox bridge && cargo test -p pcode-cli"
-contexto = ["docs/mini-sandboxes.md (Red)", "crates/pcode-sandbox/src/netproxy.rs"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-sandbox bridge:: && cargo test -p pcode-sandbox filtrada_ && cargo test -p pcode-cli --test puente && cargo test -p pcode-cli --test red_filtrada"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Subcomando oculto `pcode __puente --escucha 127.0.0.1:3128 --socket <ruta>`: acepta TCP y reenvía
-   cada conexión al socket Unix.
-2. Con `Network::Filtered`: `Sandbox::run` arranca un `NetProxy` en el host (socket en el estado), lo
-   monta dentro con `--escribible`, crea el netns (`--net`), `prepare.sh` lanza `__puente` en segundo
-   plano antes del `exec` y exporta `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` y `https_proxy`
-   apuntando a `http://127.0.0.1:3128`.
-3. Test de extremo a extremo: dentro de la sandbox, `curl` (si existe) o un pequeño cliente Rust
-   llega a un servidor local permitido y no a uno denegado.
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F2.20a a F2.20d).
+3. Escribe el informe: di si los tests de extremo a extremo se ejecutaron o se saltaron (sin
+   namespaces de usuario o sin `curl`).
 '''
-tests = ["puente_reenvia", "filtered_permite_dominio (se salta sin userns)", "filtered_deniega_otro (se salta sin userns)"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F2.20a"
+nombre = "puente-nucleo"
+titulo = "Puente: reenviar cada conexión TCP a un socket Unix"
+fase = "F2"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.03"]
+toca = ["crates/pcode-sandbox/src/bridge.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox bridge::"
+contexto = ["crates/pcode-sandbox/src/lib.rs (cómo se declara un módulo y se reexporta con `pub use`)"]
+objetivo = '''
+1. Crea `bridge.rs` con la función `bridge` (firma abajo), tras `#[cfg(unix)]`. Recibe un
+   `tokio::net::TcpListener` YA enlazado (así quien llama conoce el puerto) y la ruta de un socket Unix.
+2. En bucle: acepta una conexión TCP y, en un `tokio::spawn`, abre
+   `tokio::net::UnixStream::connect(&socket)` y une ambos extremos con
+   `tokio::io::copy_bidirectional`. Si no se puede abrir el socket Unix, cierra la conexión TCP sin más
+   (y `tracing::warn!`). Un error en una conexión no detiene el puente.
+3. El bucle solo termina si `accept` devuelve error (lo devuelve) o si quien lanzó la tarea la aborta.
+4. `lib.rs`: `pub mod bridge;` y `#[cfg(unix)] pub use bridge::bridge;`.
+5. Tests con `#[tokio::test]`: un servidor de eco falso en un socket Unix dentro de
+   `tempfile::tempdir()` (`tokio::net::UnixListener`), el puente en `127.0.0.1:0` lanzado con
+   `tokio::spawn`, y un cliente `tokio::net::TcpStream`. Toda espera lleva `tokio::time::timeout` de 5 s.
+'''
+firmas = '''
+// crates/pcode-sandbox/src/bridge.rs
+/// Reenvía cada conexión que llega a `listener` al socket Unix `socket`, en ambos sentidos.
+#[cfg(unix)]
+pub async fn bridge(listener: tokio::net::TcpListener, socket: std::path::PathBuf) -> std::io::Result<()>;
+'''
+ejemplo = '''
+eco Unix en /tmp/x/eco.sock · puente en 127.0.0.1:40123 → /tmp/x/eco.sock
+cliente TCP a 127.0.0.1:40123 escribe "hola" → lee "hola"
+'''
+tests = [
+  "puente_reenvia: lo que el cliente TCP escribe (`hola`) vuelve igual desde el eco del socket Unix",
+  "puente_dos_conexiones_a_la_vez: dos clientes TCP abiertos a la vez reciben cada uno su propio eco",
+  "puente_sin_socket_cierra_la_conexion: si la ruta del socket no existe, el cliente lee 0 bytes (conexión cerrada) y el puente sigue aceptando",
+]
+no_hagas = ["No enlaces el puerto dentro de `bridge`: el `TcpListener` llega ya creado", "No uses puertos fijos en los tests"]
+
+[[tarea]]
+id = "F2.20b"
+nombre = "puente-cli"
+titulo = "CLI: subcomando oculto `pcode __puente`"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.20a"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/puente.rs"]
+acepta = "cargo test -p pcode-cli --test puente"
+contexto = [
+  "crates/pcode-cli/src/main.rs (enum `Cmd` y el `match cli.command` de `main`: ahí va la variante nueva)",
+  "crates/pcode-sandbox/src/bridge.rs (`pub async fn bridge(listener: tokio::net::TcpListener, socket: PathBuf) -> std::io::Result<()>`)",
+]
+objetivo = '''
+1. `main.rs`, enum `Cmd`: añade la variante
+   `#[command(name = "__puente", hide = true)] Puente { #[arg(long)] escucha: std::net::SocketAddr, #[arg(long)] socket: std::path::PathBuf, #[arg(long)] listo: Option<std::path::PathBuf> }`
+   con el comentario «Uso interno: puente TCP→Unix de la red filtrada de la mini sandbox».
+2. `main.rs`, en el `match cli.command`, rama `Some(Cmd::Puente { escucha, socket, listo })`:
+   a) `let l = tokio::net::TcpListener::bind(escucha).await?;`
+   b) si `listo` es `Some(f)`: escribe en `f` la dirección real (`l.local_addr()?.to_string()`). Ese
+      archivo avisa a quien espera de que el puente ya escucha (y dice el puerto si se pidió el 0).
+   c) `pcode_sandbox::bridge(l, socket).await?; Ok(())`.
+   En plataformas sin Unix (`#[cfg(not(unix))]`) la rama hace `anyhow::bail!("solo disponible en Linux")`.
+3. Crea `tests/puente.rs` (solo Unix: `#![cfg(unix)]`). Cada test: crea un `tempfile::tempdir()`, un eco
+   en un `std::os::unix::net::UnixListener` atendido en un `std::thread`, lanza
+   `std::process::Command::new(assert_cmd::cargo::cargo_bin("pcode"))` con
+   `__puente --escucha 127.0.0.1:0 --socket <eco.sock> --listo <dir>/listo`, espera a que `listo` exista
+   y no esté vacío (máximo 100 intentos de 50 ms), lee la dirección, conecta con `std::net::TcpStream`
+   (con `set_read_timeout` de 5 s) y, al terminar, mata el proceso (`child.kill()`).
+'''
+sin_firmas = "solo añade una variante privada al enum `Cmd` del binario"
+ejemplo = '''
+pcode __puente --escucha 127.0.0.1:0 --socket /tmp/x/eco.sock --listo /tmp/x/listo
+  → /tmp/x/listo contiene «127.0.0.1:41877»; un cliente TCP a esa dirección habla con /tmp/x/eco.sock
+'''
+tests = [
+  "puente_cli_reenvia_al_socket: el cliente TCP escribe `hola` y lee `hola` a través del proceso `pcode __puente`",
+  "puente_cli_escribe_el_archivo_listo: el archivo `--listo` contiene una dirección `127.0.0.1:<puerto>` con puerto distinto de 0",
+  "puente_cli_no_sale_en_la_ayuda: la salida de `pcode --help` no contiene `__puente`",
+]
+no_hagas = [
+  "No dejes procesos vivos: cada test mata el `pcode __puente` que lanzó",
+  "No esperes sin límite a que aparezca el archivo `listo`",
+]
+
+[[tarea]]
+id = "F2.20c"
+nombre = "red-filtrada-sandbox"
+titulo = "Sandbox: `Network::Filtered` arranca el proxy y `prepare.sh` lanza el puente"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.04c", "F2.19c", "F2.20a"]
+toca = ["crates/pcode-sandbox/src/run.rs", "crates/pcode-sandbox/src/prepare.sh"]
+acepta = "cargo test -p pcode-sandbox filtrada_ && grep -q '__puente' crates/pcode-sandbox/src/prepare.sh"
+contexto = [
+  "crates/pcode-sandbox/src/run.rs (struct `Sandbox`, sus dos constructores `create_n1` y `open_existing`, y `run_with`: hoy `Filtered` se comporta como `Open`)",
+  "crates/pcode-sandbox/src/netproxy.rs (`NetProxy { socket, allow, on_decision, max_conn }`, `NetProxy::new(socket, allow)`, `async fn serve(self)`, `ProxyDecision { host, port, allowed }`)",
+  "crates/pcode-sandbox/src/prepare.sh (bloque final `if [ -n \"$PCODE_BIN\" ]`: el puente se lanza justo antes)",
+]
+objetivo = '''
+1. `run.rs`, struct `Sandbox`: campo nuevo `pub(crate) net_allow: Vec<String>` (ponlo a `vec![]` en
+   `create_n1` y en `open_existing`) y el método `with_net_allow` (firma abajo).
+2. `run.rs`, `run_with`: justo después del `if self.n0 { … }` inicial y ANTES de comprobar
+   `userns_available()`: si `self.spec.network == Network::Filtered` y `exec_helper()` es `None`, devuelve
+   `SandboxError::Invalid("la red filtrada necesita el ayudante de pcode (set_exec_helper)".into())`.
+   Nunca se degrada a red abierta.
+3. `run_with`, con `Filtered`: antes de construir `cmd`, crea `<estado>/proxy/`, añádelo a `writable` y
+   lanza con `tokio::spawn` un `NetProxy` con socket `<estado>/proxy/proxy.sock`, `allow = self.net_allow.clone()`
+   y un `on_decision` que añade una línea a `<estado>/red.jsonl`:
+   `{"host":"<host>","port":<puerto>,"allowed":<true|false>}` (escríbela con `format!` y `{:?}` para el
+   host; abre el archivo con `OpenOptions::new().create(true).append(true)`). Espera a que exista el
+   socket (máximo 40 intentos de 50 ms con `tokio::time::sleep`); si no aparece,
+   `SandboxError::Invalid("el proxy de salida no arrancó".into())`.
+4. `run_with`: el argumento `--net` de `unshare` se pasa con `Network::None` Y con `Network::Filtered`.
+   Con `Filtered` añade `cmd.env("PCODE_PUENTE", <ruta del socket>)`; en los demás casos
+   `cmd.env_remove("PCODE_PUENTE")`. Al terminar la orden (después del `match` del tiempo máximo), aborta
+   la tarea del proxy (`handle.abort()`).
+5. `prepare.sh`: justo ANTES del bloque `if [ -n "$PCODE_BIN" ]; then` añade exactamente:
+   ```
+   if [ -n "$PCODE_PUENTE" ] && [ -n "$PCODE_BIN" ]; then
+     "$PCODE_BIN" __puente --escucha 127.0.0.1:3128 --socket "$PCODE_PUENTE" --listo "$MS_TMP/puente.listo" &
+     i=0; while [ ! -s "$MS_TMP/puente.listo" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+     export HTTP_PROXY=http://127.0.0.1:3128 HTTPS_PROXY=http://127.0.0.1:3128
+     export http_proxy=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128
+   fi
+   ```
+6. Tests en `mod tests` de `run.rs`, con el prefijo `filtrada_`. No llames a `set_exec_helper`.
+'''
+firmas = '''
+// crates/pcode-sandbox/src/run.rs
+impl Sandbox {
+    /// Dominios permitidos cuando la red es `Network::Filtered` (`dominio`, `*.dominio`, `host:puerto`).
+    pub fn with_net_allow(mut self, allow: Vec<String>) -> Sandbox;
+}
+'''
+tests = [
+  "filtrada_sin_ayudante_es_error: `create_n1` con `Network::Filtered` y `run` de `[\"true\"]` devuelve `SandboxError::Invalid` que menciona el ayudante (no necesita userns)",
+  "filtrada_with_net_allow_guarda_la_lista: tras `with_net_allow(vec![\"a.com\".into()])` el campo `net_allow` vale `[\"a.com\"]`",
+  "filtrada_prepare_lanza_el_puente: `PREPARE` contiene `__puente`, `HTTPS_PROXY=http://127.0.0.1:3128` y la línea del puente va antes de `__sandbox-exec`",
+  "filtrada_prepare_es_sh_valido: `sh -n -c PREPARE` termina con éxito",
+]
+no_hagas = [
+  "No añadas campos a `SandboxSpec` ni datos a la variante `Network::Filtered`",
+  "No cambies el comportamiento de `Network::None` ni de `Network::Open`",
+  "No toques N0 (`run_worktree`): la copia de trabajo no aísla la red",
+]
+notas = '''
+El puente necesita la interfaz `lo` levantada: `prepare.sh` ya ejecuta `ip link set lo up` (hace falta
+`iproute2` en el sistema). La prueba de extremo a extremo con el binario real la hace la tarea F2.20d.
+'''
+
+[[tarea]]
+id = "F2.20d"
+nombre = "red-filtrada-cli"
+titulo = "CLI: `[sandbox] red = \"filtrar\"` y `pcode sandbox ejecutar --red-permitir`"
+fase = "F2"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.04d", "F2.20b", "F2.20c"]
+toca = ["crates/pcode-cli/src/backend_run.rs", "crates/pcode-cli/tests/red_filtrada.rs"]
+acepta = "cargo test -p pcode-cli net_allow_ && cargo test -p pcode-cli --test red_filtrada && grep -q 'red-permitir' crates/pcode-cli/src/backend_run.rs"
+contexto = [
+  "crates/pcode-cli/src/backend_run.rs (función `network`, el cálculo de `net` en `run_with_backend` y la variante `SandboxCmd::Ejecutar` con su rama en `sandbox_cmd`)",
+  "crates/pcode-cli/src/run.rs (`pub fn load_capabilities(path: &Path) -> Capabilities`: el campo `net_allow` es `[politica] red_permitir`)",
+]
+objetivo = '''
+API de la sandbox que se usa: `Sandbox::create(spec)?.with_net_allow(Vec<String>)` y `Network::Filtered`.
+
+1. `backend_run.rs`: añade la función pura `net_allow_list` (firma abajo): une las dos listas quitando
+   vacíos y repetidos, conservando el orden (primero `needs`, luego `policy`).
+2. `backend_run.rs`, función `network`: `"permitir"` → `Network::Open`; `"filtrar"` → `Network::Filtered`;
+   cualquier otro valor → `Network::None`.
+3. `run_with_backend`: el cálculo de `net` pasa a ser: si `cfg.sandbox.network == "filtrar"` →
+   `Network::Filtered` (aunque el backend necesite red); si no, lo de hoy (red abierta si
+   `be.caps().needs_network` no está vacío; si no, `network(cfg)`). Tras `Sandbox::create(…)?`, si `net`
+   es `Filtered`, encadena
+   `.with_net_allow(net_allow_list(&be.caps().needs_network, &crate::run::load_capabilities(std::path::Path::new("pcode.toml")).net_allow))`.
+4. `SandboxCmd::Ejecutar`: opción nueva repetible
+   `#[arg(long = "red-permitir", conflicts_with = "red")] red_permitir: Vec<String>` («Red filtrada:
+   solo estos dominios (`dominio`, `*.dominio`, `host:puerto`)»). En `sandbox_cmd`: si no está vacía,
+   `network: Network::Filtered` y `.with_net_allow(red_permitir)` tras `Sandbox::create`.
+5. Tests unitarios `net_allow_…` en `backend_run.rs` (`#[cfg(test)] mod tests`).
+6. Crea `tests/red_filtrada.rs` con las pruebas de extremo a extremo. Cada una empieza con
+   `if !pcode_sandbox::userns_available() || pcode_tools::which("curl").is_none() { return; }`. Servidor
+   HTTP falso: `std::net::TcpListener` en `127.0.0.1:0` atendido en un hilo que responde
+   `HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok`. Lanza `pcode` con
+   `.env_remove("no_proxy").env_remove("NO_PROXY")` (si no, curl se salta el proxy para 127.0.0.1),
+   directorio de trabajo en un `tempdir` y `--estado` en OTRO `tempdir`.
+'''
+firmas = '''
+// crates/pcode-cli/src/backend_run.rs
+/// Dominios permitidos de la red filtrada: los que necesita el backend y los de `[politica] red_permitir`.
+pub fn net_allow_list(needs: &[String], policy: &[String]) -> Vec<String>;
+'''
+ejemplo = '''
+net_allow_list(&["api.anthropic.com".into()], &["github.com".into(), "api.anthropic.com".into(), "".into()])
+  → ["api.anthropic.com", "github.com"]
+
+pcode sandbox ejecutar --estado E --red-permitir 127.0.0.1:P -- curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:P/
+  → stdout «200»
+pcode sandbox ejecutar --estado E --red-permitir 127.0.0.1:P -- curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:Q/
+  → stdout «403»  (Q no está permitido)
+'''
+tests = [
+  "net_allow_une_sin_repetir: el ejemplo de `net_allow_list` da las dos entradas en ese orden",
+  "net_allow_vacio: dos listas vacías dan un vector vacío",
+  "filtrada_permite_dominio: curl dentro de la sandbox llega al servidor falso permitido y devuelve 200 (se salta sin userns o sin curl)",
+  "filtrada_deniega_otro: curl a otro puerto no permitido recibe 403 del proxy y `<estado>/red.jsonl` contiene `\"allowed\":false` (se salta sin userns o sin curl)",
+  "red_y_red_permitir_son_incompatibles: `pcode sandbox ejecutar --estado E --red --red-permitir a.com -- true` termina con error de argumentos",
+]
+no_hagas = [
+  "No cambies el valor por defecto de `[sandbox] red` (`denegar`)",
+  "No abras conexiones a Internet en los tests: solo `127.0.0.1`",
+  "No toques `crates/pcode-config`: `red` ya es una cadena libre",
+]
 
 [[tarea]]
 id = "F2.21"

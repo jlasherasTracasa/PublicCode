@@ -1,0 +1,1205 @@
+# Tareas de la fase F12. Índice de fases e hitos: tareas/plan.toml. Tras editar: tools/tareas/generar.py
+
+[[tarea]]
+id = "F12.01"
+nombre = "detector-secretos"
+titulo = "Detector de secretos: patrones de claves y tokens, y entropía (lógica pura)"
+fase = "F12"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-policy/src/secrets.rs", "crates/pcode-policy/src/lib.rs"]
+toca_extra = ["crates/pcode-policy/Cargo.toml"]
+acepta = "cargo test -p pcode-policy secrets::tests::detecta_"
+contexto = ["crates/pcode-policy/src/lib.rs (cómo se declara un módulo y se reexporta con `pub use`)"]
+objetivo = '''
+1. `Cargo.toml` del crate: añade `regex.workspace = true` en `[dependencies]` (ya está en el workspace).
+2. Crea `secrets.rs` con `SecretHit`, `shannon_entropy` y `find_secrets` (firmas abajo). Puro: sin E/S.
+   Compila las expresiones una sola vez (`std::sync::LazyLock<Vec<(&'static str, regex::Regex)>>`).
+3. Patrones, en este orden (`kind` → expresión):
+   - `clave-privada` → `-----BEGIN [A-Z ]*PRIVATE KEY-----`
+   - `aws-access-key` → `\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`
+   - `github-token` → `\bgh[pousr]_[A-Za-z0-9]{36,}` y `\bgithub_pat_[A-Za-z0-9_]{22,}`
+   - `anthropic-key` → `\bsk-ant-[A-Za-z0-9_-]{20,}`
+   - `openai-key` → `\bsk-[A-Za-z0-9_-]{20,}`
+   - `google-api-key` → `\bAIza[0-9A-Za-z_-]{35}`
+   - `slack-token` → `\bxox[baprs]-[A-Za-z0-9-]{10,}`
+   - `jwt` → `\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`
+   - `asignacion` → `(?i)\b[a-z0-9_]*(?:password|passwd|secret|token|api_?key|clave)[a-z0-9_]*\s*[:=]\s*["']?([^\s"']{12,})`:
+     el acierto es SOLO el grupo 1 (el valor) y solo cuenta si `shannon_entropy(valor) >= 3.5` y el
+     valor no contiene (sin distinguir mayúsculas) `{env:`, `${`, `<`, `xxxx`, `changeme`, `example`, `ejemplo`.
+4. `find_secrets` devuelve los aciertos ordenados por `start`; si dos se solapan, se queda el que
+   empieza antes (a igual inicio, el del patrón que va antes en la lista). `start`/`end` son
+   posiciones en bytes de `text`.
+5. `shannon_entropy(s)`: entropía de Shannon en bits por carácter sobre los caracteres de `s`
+   (`-Σ p·log2(p)`); 0.0 para la cadena vacía.
+6. `lib.rs`: `pub mod secrets;` y `pub use secrets::{SecretHit, find_secrets};`.
+7. Tests (prefijo `detecta_`). IMPORTANTE: ningún token de prueba se escribe literal en el código;
+   constrúyelo en tiempo de ejecución (`format!("AKIA{}", "A".repeat(16))`,
+   `format!("ghp_{}", "a1B2".repeat(9))`, `format!("sk-ant-{}", "x9Z".repeat(10))`), para que el repo no
+   contenga nada que parezca una clave.
+'''
+firmas = '''
+// crates/pcode-policy/src/secrets.rs
+/// Un posible secreto encontrado en un texto.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretHit { pub kind: &'static str, pub start: usize, pub end: usize }
+
+/// Entropía de Shannon en bits por carácter.
+pub fn shannon_entropy(s: &str) -> f64;
+
+/// Secretos que parece contener `text` (claves, tokens, contraseñas asignadas), por orden de aparición.
+pub fn find_secrets(text: &str) -> Vec<SecretHit>;
+'''
+ejemplo = '''
+find_secrets("clave = " + "AKIA" + 16 × "A")            → [SecretHit { kind: "aws-access-key", start: 8, end: 28 }]
+find_secrets("password: {env:DB_PASS}")                  → []
+find_secrets("DB_PASSWORD=" + "q7Lm2Xv9Tz4Rb8Kd")        → [SecretHit { kind: "asignacion", start: 12, end: 28 }]
+find_secrets("token = aaaaaaaaaaaaaaaa")                 → []      (entropía 0)
+shannon_entropy("aabb")                                  → 1.0
+'''
+tests = [
+  "detecta_aws: la cadena `AKIA` más 16 letras A da un acierto `aws-access-key` con las posiciones exactas",
+  "detecta_github_anthropic_y_openai: un `ghp_…`, un `sk-ant-…` y un `sk-…` construidos en el test dan `github-token`, `anthropic-key` y `openai-key`",
+  "detecta_clave_privada: la cabecera `-----BEGIN RSA PRIVATE KEY-----` (construida con `format!`) da `clave-privada`",
+  "detecta_asignacion_con_entropia: `DB_PASSWORD=` más un valor aleatorio de 16 caracteres da `asignacion` que cubre solo el valor",
+  "detecta_que_no_es_secreto_un_marcador: `password: {env:DB_PASS}`, `token = <tu token>` y `api_key = changeme1234` no dan aciertos",
+  "detecta_que_baja_entropia_no_cuenta: `token = aaaaaaaaaaaaaaaa` no da aciertos",
+  "detecta_sin_solapes_y_en_orden: un `sk-ant-…` da un solo acierto (`anthropic-key`, no también `openai-key`) y dos secretos distintos salen por orden de posición",
+  "detecta_entropia: `shannon_entropy(\"aabb\")` es 1.0 y la de la cadena vacía es 0.0",
+  "detecta_texto_normal_limpio: un párrafo de código Rust corriente no da aciertos",
+]
+no_hagas = [
+  "No escribas tokens literales en los tests, ni siquiera falsos: constrúyelos con `format!` y `repeat`",
+  "No leas archivos ni variables de entorno",
+  "No añadas dependencias distintas de `regex`",
+]
+
+[[tarea]]
+id = "F12.02"
+nombre = "censurar-secretos-auditoria"
+titulo = "Censurar secretos: `redact` y su uso al escribir la auditoría"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.01", "F1.15"]
+toca = ["crates/pcode-policy/src/secrets.rs", "crates/pcode-policy/src/audit.rs", "crates/pcode-policy/src/lib.rs"]
+acepta = "cargo test -p pcode-policy censura_"
+contexto = [
+  "crates/pcode-policy/src/secrets.rs (`find_secrets(text) -> Vec<SecretHit>` con `kind`, `start`, `end` en bytes: ya existe)",
+  "crates/pcode-policy/src/audit.rs (método `AuditLog::append`: el parámetro `detail` es lo que se censura antes de crear la entrada)",
+]
+objetivo = '''
+1. `secrets.rs`: añade `redact` y `redact_json` (firmas abajo).
+   - `redact(text)`: sustituye cada acierto de `find_secrets(text)` por `[SECRETO:<kind>]`. Sin
+     aciertos devuelve el texto igual. Recorre los aciertos de atrás hacia delante (o construye la
+     cadena por trozos) para que las posiciones sigan valiendo.
+   - `redact_json(v)`: copia de `v` con `redact` aplicado a TODAS las cadenas que son valores (dentro de
+     objetos y listas, a cualquier profundidad). Las claves de los objetos, los números, los booleanos
+     y `null` no cambian.
+2. `audit.rs`, método `AuditLog::append`: como primera línea del cuerpo,
+   `let detail = crate::secrets::redact_json(&detail);`. Así el hash de la entrada se calcula ya sobre
+   el detalle censurado y `AuditLog::verify` sigue funcionando sin cambios.
+3. `lib.rs`: añade `redact` y `redact_json` al `pub use secrets::{…}`.
+4. Tests con el prefijo `censura_`: los de `redact` en `secrets.rs` y los de la auditoría en el
+   `mod audit_tests` de `audit.rs`. Los tokens de prueba se construyen en tiempo de ejecución
+   (`format!("AKIA{}", "A".repeat(16))`), nunca literales.
+'''
+firmas = '''
+// crates/pcode-policy/src/secrets.rs
+/// Texto con cada secreto sustituido por `[SECRETO:<tipo>]`.
+pub fn redact(text: &str) -> String;
+
+/// Igual que `redact`, sobre todas las cadenas de un valor JSON.
+pub fn redact_json(v: &serde_json::Value) -> serde_json::Value;
+'''
+ejemplo = '''
+redact("export AWS=" + "AKIA" + 16 × "A" + " # fin")   → "export AWS=[SECRETO:aws-access-key] # fin"
+redact("nada que ocultar")                               → "nada que ocultar"
+redact_json({"path":"a.env","content":"K=" + clave, "n": 3})
+  → {"path":"a.env","content":"K=[SECRETO:aws-access-key]","n":3}
+'''
+tests = [
+  "censura_sustituye_el_secreto: el primer ejemplo da exactamente esa cadena",
+  "censura_sin_secretos_no_cambia: un texto normal se devuelve igual",
+  "censura_dos_secretos_en_una_linea: dos claves distintas en el mismo texto quedan sustituidas las dos y el resto intacto",
+  "censura_json_recursivo: una clave dentro de una lista dentro de un objeto queda censurada y los números no cambian",
+  "censura_auditoria_no_guarda_el_secreto: tras `append` con un `detail` que contiene una clave, el archivo no contiene la clave y sí `[SECRETO:`",
+  "censura_auditoria_sigue_verificando: tras tres `append` (uno con secreto), `AuditLog::verify` devuelve 3",
+]
+no_hagas = [
+  "No cambies la función `compute` ni el formato de `AuditEntry`",
+  "No toques los tests de auditoría que ya existen",
+  "No escribas tokens literales en los tests",
+]
+
+[[tarea]]
+id = "F12.03"
+nombre = "secretos-en-el-agente"
+titulo = "Agente: pedir aprobación al escribir un secreto y censurar las salidas de las tools"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-core secreto_"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F12.03a y F12.03b).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F12.03a"
+nombre = "secretos-escritura"
+titulo = "Agente: escribir un archivo que contiene un secreto requiere aprobación"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.02"]
+toca = ["crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core secreto_escritura_"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `Agent::run_call`: el bloque que calcula `decision` con `check_effects`, `check_write` y `check_command`; y en `mod tests` los ayudantes `agent(&d, script, caps, hook)`, `tool(nombre, args)` y `text(…)`)",
+  "crates/pcode-policy/src/secrets.rs (`pcode_policy::find_secrets(text) -> Vec<SecretHit>`; cada acierto tiene `kind: &'static str`)",
+]
+objetivo = '''
+1. En `agent.rs`, método `run_call`: después del bloque que llama a `self.policy.check_command(&c)` y
+   antes del `match decision`, añade: si `decision` es `Decision::Allow` y `effects` contiene
+   `Effect::Write`, junta el texto de los argumentos `content` y `new` de la llamada (los que existan y
+   sean cadenas; son los de las tools `escribir` y `editar`) y pásalo por
+   `pcode_policy::find_secrets`. Si hay algún acierto:
+   `decision = Decision::Ask(format!("el contenido parece contener un secreto ({})", tipos))`, donde
+   `tipos` son los `kind` distintos, en orden de aparición, separados por `, `.
+2. No cambies nada más: el `match decision` ya existente hace el resto (con aprobador pregunta; sin
+   aprobador devuelve «requiere aprobación humana: …» y audita `ask-denied`; el archivo no se escribe).
+3. Una decisión `Deny` o `Ask` anterior (política) no se toca: el secreto solo se mira si iba a ser `Allow`.
+4. Tests en el `mod tests` de `agent.rs` con el prefijo `secreto_escritura_`, usando los ayudantes
+   `agent`, `tool` y `text`. La clave de prueba se construye en el test
+   (`format!("AKIA{}", "A".repeat(16))`), nunca literal.
+'''
+sin_firmas = "no añade API: cambia la decisión dentro de `Agent::run_call`"
+ejemplo = '''
+llamada: escribir { path: "config.py", content: "KEY = '" + "AKIA" + 16 × "A" + "'" }   (sin aprobador)
+resultado de la tool: "requiere aprobación humana: el contenido parece contener un secreto (aws-access-key)"
+config.py no existe.
+'''
+tests = [
+  "secreto_escritura_sin_aprobador_no_escribe: `escribir` con una clave en `content` devuelve un resultado que contiene `requiere aprobación humana` y `secreto`, y el archivo no existe",
+  "secreto_escritura_editar_tambien: `editar` cuyo argumento `new` contiene una clave tampoco modifica el archivo",
+  "secreto_escritura_normal_pasa: `escribir` con contenido sin secretos crea el archivo como antes",
+  "secreto_escritura_marcador_pasa: `escribir` con `password = {env:DB_PASS}` crea el archivo (no es un secreto)",
+]
+no_hagas = [
+  "No cambies la firma de `run_call` ni el `match decision`",
+  "No toques los tests que ya existen en `agent.rs`",
+  "No escribas tokens literales en los tests",
+]
+
+[[tarea]]
+id = "F12.03b"
+nombre = "secretos-salidas"
+titulo = "Agente: censurar los secretos de las salidas de las tools antes de enviarlas al modelo"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.03a"]
+toca = ["crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core secreto_salida_"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `Agent::run_turn`: la línea `let (mut out, wrote) = self.run_call(&call).await;` y lo que sigue hasta `messages.push(Message::tool_result(call.id.clone(), out.content))`)",
+  "crates/pcode-policy/src/secrets.rs (`pcode_policy::redact(text: &str) -> String`: sustituye cada secreto por `[SECRETO:<tipo>]`)",
+]
+objetivo = '''
+1. En `agent.rs`, método `run_turn`: justo después de la línea
+   `let (mut out, wrote) = self.run_call(&call).await;` añade
+   `out.content = pcode_policy::redact(&out.content);`. A partir de ahí todo lo que usa `out.content`
+   (la compresión de la salida de `bash`, el detector de atasco, el evento `AgentEvent::ToolResult` y el
+   mensaje `Message::tool_result` que va al modelo y a la transcripción guardada) recibe ya el texto
+   censurado.
+2. No censures los argumentos de la llamada ni los mensajes del usuario: solo las salidas de las tools.
+3. Tests en el `mod tests` de `agent.rs` con el prefijo `secreto_salida_`, usando los ayudantes
+   `agent(&d, script, caps, hook)`, `tool(nombre, args)` y `text(…)`. Crea en el directorio temporal un
+   archivo `datos.env` cuyo contenido incluye una clave construida en el test
+   (`format!("AKIA{}", "A".repeat(16))`) y haz que el modelo simulado lo lea con la tool `leer`
+   (`json!({"path":"datos.env"})`) o con `bash` (`cat datos.env`).
+'''
+sin_firmas = "no añade API: una línea en `Agent::run_turn`"
+ejemplo = '''
+datos.env:  "AWS_KEY=" + "AKIA" + 16 × "A"
+llamada:    leer { path: "datos.env" }
+mensaje de resultado en la transcripción: contiene "[SECRETO:aws-access-key]" y NO contiene la clave
+'''
+tests = [
+  "secreto_salida_de_leer_se_censura: tras leer `datos.env`, ningún mensaje de `report.transcript` contiene la clave y alguno contiene `[SECRETO:aws-access-key]`",
+  "secreto_salida_de_bash_se_censura: tras `cat datos.env` con la tool `bash`, la transcripción tampoco contiene la clave",
+  "secreto_salida_normal_no_cambia: la salida de leer un archivo sin secretos llega igual que antes (contiene su texto)",
+]
+no_hagas = [
+  "No muevas la censura dentro de `run_call`: debe aplicarse también a las salidas de error",
+  "No toques los tests que ya existen en `agent.rs`",
+  "No escribas tokens literales en los tests",
+]
+
+[[tarea]]
+id = "F12.04"
+nombre = "politica-gestionada"
+titulo = "Política gestionada: un archivo del equipo o del sistema que el proyecto y el usuario no pueden relajar"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-policy managed:: && cargo test -p pcode-cli --test politica_gestionada"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F12.04a a F12.04d).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F12.04a"
+nombre = "politica-gestionada-nucleo"
+titulo = "Política gestionada: formato, ruta y comprobación de modelos (núcleo)"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-policy/src/managed.rs", "crates/pcode-policy/src/lib.rs"]
+toca_extra = ["crates/pcode-policy/Cargo.toml"]
+acepta = "cargo test -p pcode-policy managed::"
+contexto = [
+  "crates/pcode-policy/src/caps.rs (struct `Capabilities` con sus nombres en TOML: `denegar_ordenes`, `no_escribir`, `red_permitir`, `tools_ocultas`…; y la función privada `set` que compila globs)",
+]
+objetivo = '''
+1. `Cargo.toml` del crate: mueve `toml.workspace = true` de `[dev-dependencies]` a `[dependencies]`.
+2. Crea `managed.rs` con `SYSTEM_POLICY`, `MANAGED_ENV`, `ManagedPolicy`, `managed_path`,
+   `parse_managed`, `load_managed` y los métodos `model_allowed` y `summary` (firmas abajo).
+3. Formato del archivo (TOML):
+   ```
+   modelos_permitidos = ["claude-*", "gpt-5*"]   # globs; vacío o ausente = cualquiera
+   sin_red = false
+   [politica]                                     # mismas claves que [politica] de pcode.toml
+   denegar_ordenes = ["git push*"]
+   red_permitir = ["api.anthropic.com"]
+   ```
+4. `managed_path(env_value, system)`: si `system` es un archivo que existe, devuelve `system` (el
+   archivo del sistema SIEMPRE gana: la variable de entorno no puede esquivarlo). Si no, y `env_value`
+   es `Some` y no está vacío, devuelve esa ruta. Si no, `None`.
+5. `parse_managed(text)`: `toml::from_str`; el error se devuelve como `String` con el prefijo
+   `política gestionada no válida: `. Las claves desconocidas son un error (`#[serde(deny_unknown_fields)]`
+   en `ManagedPolicy`): un error de escritura no debe relajar la política en silencio.
+6. `load_managed(path)`: `Ok(None)` si el archivo no existe; `Err` si no se puede leer o no se
+   entiende (fallo cerrado: quien llama debe negarse a continuar); `Ok(Some(p))` si todo va bien.
+7. `model_allowed(model)`: true si `allowed_models` está vacío o algún glob casa con `model`.
+8. `summary()`: líneas legibles, solo de lo que no está vacío, en este orden:
+   `modelos permitidos: a, b` · `sin red` · `órdenes denegadas: N` · `rutas no escribibles: N` ·
+   `dominios permitidos: a, b` · `tools ocultas: a, b`.
+9. `lib.rs`: `pub mod managed;` y `pub use managed::{MANAGED_ENV, ManagedPolicy, SYSTEM_POLICY, load_managed, managed_path};`.
+'''
+firmas = '''
+// crates/pcode-policy/src/managed.rs
+/// Ruta del archivo de política del sistema.
+pub const SYSTEM_POLICY: &str = "/etc/pcode/politica.toml";
+/// Variable de entorno con la ruta de la política del equipo (solo si no hay archivo del sistema).
+pub const MANAGED_ENV: &str = "PCODE_POLITICA";
+
+/// Política gestionada: capa que ni el proyecto ni el usuario pueden relajar.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ManagedPolicy {
+    #[serde(rename = "politica")] pub capabilities: crate::Capabilities,
+    #[serde(rename = "modelos_permitidos")] pub allowed_models: Vec<String>,
+    #[serde(rename = "sin_red")] pub offline: bool,
+}
+impl ManagedPolicy {
+    pub fn model_allowed(&self, model: &str) -> bool;
+    pub fn summary(&self) -> Vec<String>;
+}
+pub fn managed_path(env_value: Option<&str>, system: &std::path::Path) -> Option<std::path::PathBuf>;
+pub fn parse_managed(text: &str) -> Result<ManagedPolicy, String>;
+pub fn load_managed(path: &std::path::Path) -> Result<Option<ManagedPolicy>, String>;
+'''
+tests = [
+  "parsea_el_ejemplo: el TOML del objetivo da dos modelos permitidos, `offline` false, una orden denegada y un dominio",
+  "clave_desconocida_es_error: `modelos_permitido = []` (mal escrita) devuelve `Err` que empieza por `política gestionada no válida`",
+  "ruta_del_sistema_gana: si el archivo `system` existe, `managed_path(Some(\"otra\"), system)` devuelve `system`",
+  "ruta_por_variable_si_no_hay_sistema: sin archivo del sistema devuelve la de la variable; con variable vacía o `None`, `None`",
+  "modelo_permitido_por_glob: con `[\"claude-*\"]`, `claude-haiku-5-5` vale y `gpt-5` no; con la lista vacía vale cualquiera",
+  "cargar_inexistente_es_none_y_roto_es_error: una ruta que no existe da `Ok(None)` y un archivo con TOML inválido da `Err`",
+  "resumen_solo_lo_definido: el ejemplo da las líneas de modelos, órdenes denegadas y dominios, y no la de `sin red`",
+]
+no_hagas = [
+  "No leas la variable de entorno dentro de `managed_path`: llega como argumento (así se prueba sin tocar el entorno)",
+  "No cambies `Capabilities` ni `Policy`",
+]
+
+[[tarea]]
+id = "F12.04b"
+nombre = "politica-gestionada-run"
+titulo = "CLI: `pcode run` aplica la política gestionada como capa base y comprueba el modelo"
+fase = "F12"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F12.04a", "F1.20"]
+toca = ["crates/pcode-cli/src/managed.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/tests/politica_gestionada.rs"]
+acepta = "cargo test -p pcode-cli --test politica_gestionada run_"
+contexto = [
+  "crates/pcode-cli/src/run.rs (función `load_capabilities` y, en `run`, las líneas `let caps = load_capabilities(&a.config);`, `let model = pick_model(…)` y `Policy::new(caps)`)",
+  "crates/pcode-policy/src/caps.rs (`Policy::new(base)` y `Policy::child(caps)`: cada capa solo puede endurecer; la decisión es la más restrictiva)",
+  "crates/pcode-cli/tests/run.rs (funciones `script`, `resp` y `pcode`: cómo se lanza `pcode run` con un modelo simulado por `PCODE_MOCK_SCRIPT`)",
+]
+objetivo = '''
+API del núcleo que se usa (ya existe en `pcode_policy`): `SYSTEM_POLICY`, `MANAGED_ENV`,
+`managed_path(env_value: Option<&str>, system: &Path) -> Option<PathBuf>`,
+`load_managed(path) -> Result<Option<ManagedPolicy>, String>`, y en `ManagedPolicy` el campo
+`capabilities: Capabilities` y `model_allowed(&self, model: &str) -> bool`.
+
+1. Crea `managed.rs` en la CLI con `load` y `check_model` (firmas abajo).
+   - `load()`: ruta = `managed_path(std::env::var(MANAGED_ENV).ok().as_deref(), Path::new(SYSTEM_POLICY))`;
+     sin ruta → `Ok(None)`; con ruta → `load_managed`; un `Err(e)` se convierte en
+     `anyhow::bail!("{e} ({ruta})")` (fallo cerrado: pcode no arranca con una política rota).
+   - `check_model(model)`: si hay política y `!model_allowed(model)` →
+     `anyhow::bail!("el modelo {model} no está permitido por la política gestionada ({ruta})")`.
+2. `main.rs`: añade `mod managed;` junto a los demás `mod`.
+3. `run.rs`: función nueva `base_policy(config)`: si `crate::managed::load()?` da política,
+   `Policy::new(gestionada.capabilities).child(load_capabilities(config))`; si no,
+   `Policy::new(load_capabilities(config))`.
+4. `run.rs`, función `run`: sustituye `let caps = load_capabilities(&a.config);` por
+   `let policy = base_policy(&a.config)?;`, pasa `policy` a `Agent::new` en lugar de `Policy::new(caps)`
+   y, justo después de `let model = pick_model(…);`, añade `crate::managed::check_model(&model)?;`.
+5. Crea `tests/politica_gestionada.rs` con los tests de la lista (prefijo `run_`). Copia los ayudantes
+   `script`, `resp` y `pcode` de `tests/run.rs`. La política se escribe en un archivo del directorio
+   temporal y se pasa con `.env("PCODE_POLITICA", ruta)`. La denegación se comprueba leyendo
+   `<dir>/.pcode/audit.jsonl` (contiene `"decision":"deny"`).
+'''
+firmas = '''
+// crates/pcode-cli/src/managed.rs
+/// Política gestionada vigente y el archivo del que sale (`None` si no hay).
+pub fn load() -> anyhow::Result<Option<(std::path::PathBuf, pcode_policy::ManagedPolicy)>>;
+/// Error si la política gestionada no permite este modelo.
+pub fn check_model(model: &str) -> anyhow::Result<()>;
+
+// crates/pcode-cli/src/run.rs
+/// Política de las ejecuciones no interactivas: la gestionada (si hay) y encima `[politica]` del proyecto.
+pub fn base_policy(config: &std::path::Path) -> anyhow::Result<pcode_policy::Policy>;
+'''
+ejemplo = '''
+politica.toml:   [politica]
+                 denegar_ordenes = ["echo *"]
+guion simulado:  el modelo llama a bash {"command":"echo hola"} y después responde "listo"
+$ PCODE_POLITICA=politica.toml pcode run "haz algo"
+  → .pcode/audit.jsonl contiene una entrada de `bash` con "decision":"deny"
+
+politica.toml:   modelos_permitidos = ["permitido-*"]
+$ PCODE_POLITICA=politica.toml pcode run --modelo otro "x"
+  → código distinto de 0; stderr contiene «no está permitido por la política gestionada»
+'''
+tests = [
+  "run_gestionada_deniega_orden: con `denegar_ordenes = [\"echo *\"]` en la política gestionada, la auditoría registra `deny` para la llamada a bash",
+  "run_proyecto_no_relaja: aunque el `pcode.toml` del proyecto tenga `[politica] permitir_ordenes = [\"echo *\"]`, la orden sigue denegada",
+  "run_modelo_no_permitido_falla: con `modelos_permitidos = [\"permitido-*\"]`, `--modelo otro` termina con error y el mensaje de la política",
+  "run_modelo_permitido_pasa: con la misma política, `--modelo permitido-1` termina con código 0",
+  "run_politica_rota_no_arranca: una política con TOML inválido hace que `pcode run` termine con error que menciona `política gestionada no válida`",
+  "run_sin_politica_como_antes: sin `PCODE_POLITICA`, el mismo guion ejecuta `echo hola` (auditoría con `allow`)",
+]
+no_hagas = [
+  "No cambies `load_capabilities` ni la rama `--backend` de `run`",
+  "No escribas en `/etc`: los tests usan `PCODE_POLITICA`",
+]
+notas = '''
+Los tests sin `PCODE_POLITICA` deben pasar `.env_remove("PCODE_POLITICA")`. Si el equipo donde se
+ejecutan tiene `/etc/pcode/politica.toml`, ese archivo manda: dilo en el informe.
+'''
+
+[[tarea]]
+id = "F12.04c"
+nombre = "politica-gestionada-chat-spec"
+titulo = "CLI: la TUI, `pcode chat` y `pcode spec` aplican la política gestionada"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.04b"]
+toca = ["crates/pcode-cli/src/chat.rs", "crates/pcode-cli/src/spec_cmd.rs", "crates/pcode-cli/tests/politica_gestionada.rs"]
+acepta = "cargo test -p pcode-cli --test politica_gestionada chat_ && grep -q 'base_policy' crates/pcode-cli/src/spec_cmd.rs"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (función `interactive_policy` y, en `prepare`, las líneas `let model = pick_model(…)` e `interactive_policy(&a.config)`)",
+  "crates/pcode-cli/src/spec_cmd.rs (donde se construye el agente: `let model = pick_model(…)` y `Policy::new(crate::run::load_capabilities(&m.config))`)",
+  "crates/pcode-cli/tests/chat.rs (cómo se lanza `pcode chat` con un guion simulado y un mensaje)",
+]
+objetivo = '''
+Funciones que ya existen en la CLI: `crate::managed::load() -> anyhow::Result<Option<(PathBuf, ManagedPolicy)>>`,
+`crate::managed::check_model(model: &str) -> anyhow::Result<()>` y
+`crate::run::base_policy(config: &Path) -> anyhow::Result<Policy>`.
+
+1. `chat.rs`, función `interactive_policy`: cambia el tipo de retorno a `anyhow::Result<Policy>`. Al
+   final, en vez de devolver `p.child(crate::run::load_capabilities(project))`, guarda ese valor y, si
+   `crate::managed::load()?` da política, añade una capa más con `.child(gestionada.capabilities)`.
+   (El orden de las capas no importa: gana siempre la decisión más restrictiva.) Devuelve `Ok(…)`.
+2. `chat.rs`, función `prepare`: la llamada pasa a ser `interactive_policy(&a.config)?` y, justo
+   después de `let model = pick_model(…);`, añade `crate::managed::check_model(&model)?;`.
+3. `spec_cmd.rs`: sustituye `Policy::new(crate::run::load_capabilities(&m.config))` por
+   `crate::run::base_policy(&m.config)?` y, después de `let model = pick_model(…);`, añade
+   `crate::managed::check_model(&model)?;`.
+4. `tests/politica_gestionada.rs` (ya existe, con los ayudantes `script`, `resp` y `pcode`): añade los
+   tests de la lista con el prefijo `chat_`, lanzando `pcode chat` igual que en `tests/chat.rs`: los mensajes
+   del usuario llegan por la entrada estándar (`.write_stdin("haz algo\n/salir\n")`) y el guion simulado
+   necesita una respuesta del modelo por cada turno.
+'''
+sin_firmas = "no añade API pública: cambia el retorno de la función privada `interactive_policy`"
+tests = [
+  "chat_gestionada_deniega_orden: con `denegar_ordenes = [\"echo *\"]` en la política gestionada, `pcode chat` no ejecuta `echo hola` y la auditoría registra `deny`",
+  "chat_modelo_no_permitido_falla: con `modelos_permitidos = [\"permitido-*\"]`, `pcode chat --modelo otro` (con un mensaje por la entrada estándar) termina con error y el mensaje de la política",
+  "chat_sin_politica_como_antes: sin `PCODE_POLITICA`, el mismo guion termina con código 0",
+]
+no_hagas = [
+  "No cambies la capa `Capabilities::interactive_defaults()` ni el orden de las capas del usuario y del proyecto",
+  "No toques los tests `run_` que ya existen en `tests/politica_gestionada.rs`",
+]
+
+[[tarea]]
+id = "F12.04d"
+nombre = "politica-gestionada-doctor"
+titulo = "`pcode doctor` muestra la política gestionada vigente"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.04c"]
+toca = ["crates/pcode-cli/src/doctor.rs", "crates/pcode-cli/tests/politica_gestionada.rs"]
+acepta = "cargo test -p pcode-cli --test politica_gestionada doctor_"
+contexto = [
+  "crates/pcode-cli/src/doctor.rs (función `doctor`: las llamadas a `line(ok, what, detail)`; la línea nueva va justo después de la de «configuración del proyecto»)",
+  "crates/pcode-policy/src/managed.rs (`ManagedPolicy::summary(&self) -> Vec<String>`: líneas legibles de lo que restringe)",
+]
+objetivo = '''
+Función que ya existe: `crate::managed::load() -> anyhow::Result<Option<(PathBuf, ManagedPolicy)>>`
+(devuelve error si el archivo de política existe pero no se entiende).
+
+1. `doctor.rs`, función `doctor`: después del `line(true, "configuración del proyecto", …)` añade:
+   - `Ok(None)` → `line(true, "política gestionada", "ninguna (opcional: /etc/pcode/politica.toml o PCODE_POLITICA)")`;
+   - `Ok(Some((ruta, p)))` → `line(true, "política gestionada", &ruta.display().to_string())` y, debajo,
+     cada línea de `p.summary()` impresa con cuatro espacios de sangría (`println!("    {l}")`); si
+     `summary()` está vacío, una sola línea `    (no restringe nada)`;
+   - `Err(e)` → `line(false, "política gestionada", &e.to_string())` y el código de salida de `doctor`
+     pasa a ser 1 (pon `code = 1` donde corresponda: declara `let mut code = 0;` antes de este bloque
+     si hoy se declara después).
+2. `tests/politica_gestionada.rs` (ya existe): añade los tests de la lista con el prefijo `doctor_`.
+   Lanza `pcode doctor` en un directorio temporal con `.env("PCODE_POLITICA", ruta)` y comprueba la
+   salida estándar (no el código de salida: sin modelo configurado `doctor` devuelve 1 de todos modos).
+'''
+sin_firmas = "no añade API: unas líneas más en la salida de `pcode doctor`"
+ejemplo = '''
+✓ configuración del proyecto sin pcode.toml (opcional)
+✓ política gestionada        /tmp/x/politica.toml
+    modelos permitidos: claude-*
+    órdenes denegadas: 1
+'''
+tests = [
+  "doctor_muestra_la_politica: con una política con un modelo permitido y una orden denegada, la salida contiene `política gestionada`, la ruta, `modelos permitidos: claude-*` y `órdenes denegadas: 1`",
+  "doctor_sin_politica_dice_ninguna: sin `PCODE_POLITICA`, la salida contiene `política gestionada` y `ninguna`",
+  "doctor_politica_rota_la_marca: con un archivo de política inválido, la salida contiene `✗ política gestionada`",
+]
+no_hagas = ["No cambies las demás líneas de `pcode doctor`", "No toques los tests `run_` y `chat_` del archivo de tests"]
+
+[[tarea]]
+id = "F12.05"
+nombre = "auditoria-verificar-exportar"
+titulo = "`pcode auditoria verificar` y `pcode auditoria exportar`"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-policy exporta_ && cargo test -p pcode-cli --test auditoria"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F12.05a y F12.05b).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F12.05a"
+nombre = "auditoria-exportar-nucleo"
+titulo = "Auditoría: leer las entradas y exportarlas a JSON o CSV (núcleo)"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.15"]
+toca = ["crates/pcode-policy/src/audit.rs", "crates/pcode-policy/src/lib.rs"]
+acepta = "cargo test -p pcode-policy exporta_"
+contexto = [
+  "crates/pcode-policy/src/audit.rs (struct `AuditEntry`, `AuditLog::verify(path) -> Result<u64, AuditError>`, `AuditError::Broken(u64)` y el `mod audit_tests` con el ayudante `log`)",
+]
+objetivo = '''
+1. En `audit.rs` añade `ExportFormat`, `read_entries` y `export_entries` (firmas abajo).
+2. `read_entries(path)`: lee el archivo y devuelve todas las entradas en orden (una por línea no
+   vacía). Una línea que no se puede parsear → `AuditError::Broken(n)` con n = número de entrada (desde
+   1). NO comprueba la cadena de hashes (para eso está `AuditLog::verify`).
+3. `export_entries(entries, format, out)`; devuelve cuántas entradas escribió:
+   - `Json`: una lista JSON con todas las entradas (`serde_json::to_writer_pretty`) y un salto de línea final.
+   - `Csv`: cabecera `seq,ts_ms,actor,provenance,action,decision,detail,hash` y una fila por entrada;
+     `detail` es el JSON compacto (`detail.to_string()`). Cada campo de texto va entre comillas dobles
+     con las comillas internas duplicadas (`"` → `""`); `seq` y `ts_ms` van sin comillas. Fin de línea `\n`.
+   Los errores de escritura se devuelven como `AuditError::Io`.
+4. `lib.rs`: añade `ExportFormat`, `export_entries` y `read_entries` a la línea `pub use audit::{…}`.
+5. Tests en `mod audit_tests` con el prefijo `exporta_`, escribiendo en un `Vec<u8>`.
+'''
+firmas = '''
+// crates/pcode-policy/src/audit.rs
+/// Formato de exportación de la auditoría.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat { Json, Csv }
+
+/// Todas las entradas del registro, en orden (sin verificar la cadena).
+pub fn read_entries(path: &Path) -> Result<Vec<AuditEntry>, AuditError>;
+
+/// Escribe las entradas en el formato pedido; devuelve cuántas.
+pub fn export_entries(entries: &[AuditEntry], format: ExportFormat, out: &mut dyn std::io::Write) -> Result<u64, AuditError>;
+'''
+ejemplo = '''
+CSV de una entrada (actor "chat", acción "bash", detalle {"command":"echo \"hola\""}, decisión "allow"):
+seq,ts_ms,actor,provenance,action,decision,detail,hash
+1,1700000000000,"chat","agente:chat","bash","allow","{""command"":""echo \""hola\""""}","ab12…"
+'''
+tests = [
+  "exporta_lee_todas_las_entradas: tras tres `append`, `read_entries` devuelve tres entradas con `seq` 1, 2 y 3",
+  "exporta_linea_rota_es_broken: si la segunda línea del archivo no es JSON, `read_entries` devuelve `AuditError::Broken(2)`",
+  "exporta_json_es_una_lista: el JSON exportado se vuelve a leer como lista de `AuditEntry` igual a la original",
+  "exporta_csv_cabecera_y_filas: el CSV de dos entradas tiene tres líneas y la primera es la cabecera exacta",
+  "exporta_csv_duplica_comillas: un detalle con comillas aparece con las comillas duplicadas y la fila sigue en una sola línea",
+  "exporta_vacio: sin entradas, el JSON es una lista vacía, el CSV solo la cabecera y el resultado es 0",
+]
+no_hagas = ["No cambies `AuditLog::verify`, `append` ni `compute`", "No añadas dependencias (ni `csv`)"]
+
+[[tarea]]
+id = "F12.05b"
+nombre = "auditoria-cli"
+titulo = "CLI: `pcode auditoria verificar` y `pcode auditoria exportar`"
+fase = "F12"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F12.05a", "F1.20"]
+toca = ["crates/pcode-cli/src/audit_cmd.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/auditoria.rs"]
+acepta = "cargo test -p pcode-cli --test auditoria"
+contexto = [
+  "crates/pcode-cli/src/backend_run.rs (enum `SandboxCmd` y función `sandbox_cmd`: patrón de un subcomando con variantes en su propio archivo)",
+  "crates/pcode-cli/src/main.rs (enum `Cmd`, variante `Sandbox(backend_run::SandboxCmd)` y su rama en el `match cli.command`)",
+  "crates/pcode-policy/src/audit.rs (`AuditLog::verify(path) -> Result<u64, AuditError>`, `read_entries(path)`, `export_entries(entries, ExportFormat, out) -> Result<u64, AuditError>`, `AuditLog::open` y `append` para preparar datos en los tests)",
+]
+objetivo = '''
+1. Crea `audit_cmd.rs` con el enum `AuditCmd` y la función `audit_cmd` (firmas abajo).
+   Las dos variantes aceptan `--archivo <ruta>` (por defecto `.pcode/audit.jsonl`).
+2. `Verificar`: si el archivo no existe, imprime en stderr `sin auditoría en <ruta>` y devuelve 1. Si
+   `AuditLog::verify` da `Ok(n)`, imprime `✓ auditoría íntegra: <n> entradas` y devuelve 0. Si da
+   `Err(e)`, imprime en stderr `✗ <e>` (p. ej. «entrada 2 corrupta o manipulada») y devuelve 2.
+3. `Exportar { formato, salida, forzar }`: `--formato json|csv` (por defecto `json`; otro valor →
+   `anyhow::bail!("formato desconocido: {formato} (json o csv)")`), `--salida <archivo>` (si falta, a la
+   salida estándar) y `--forzar`. Primero verifica la cadena: si está rota y no hay `--forzar`, imprime
+   en stderr `✗ <error>; usa --forzar para exportar de todos modos` y devuelve 2 sin escribir nada. Si
+   no, `read_entries` + `export_entries` y, en stderr, `<n> entradas exportadas`; devuelve 0. Archivo
+   inexistente: igual que en `Verificar` (1).
+4. `main.rs`: `mod audit_cmd;`, en `Cmd` la variante
+   `#[command(subcommand)] Auditoria(audit_cmd::AuditCmd)` («Registro de auditoría: comprobar que nadie
+   lo ha manipulado y exportarlo») y, en el `match`,
+   `Some(Cmd::Auditoria(c)) => std::process::exit(audit_cmd::audit_cmd(c)?),`.
+5. Crea `tests/auditoria.rs`: cada test prepara `<tmp>/.pcode/audit.jsonl` con
+   `pcode_policy::AuditLog::open` y tres `append`, y lanza `pcode auditoria …` con
+   `assert_cmd::Command::cargo_bin("pcode")` y `.current_dir(tmp)`. Para romper la cadena, sustituye en
+   la segunda línea del archivo `"allow"` por `"deny"`.
+'''
+firmas = '''
+// crates/pcode-cli/src/audit_cmd.rs
+/// Subcomandos `pcode auditoria …`.
+#[derive(Debug, clap::Subcommand)]
+pub enum AuditCmd {
+    /// Comprueba la cadena de hashes del registro.
+    Verificar { #[arg(long, default_value = ".pcode/audit.jsonl")] archivo: std::path::PathBuf },
+    /// Exporta el registro a JSON o CSV.
+    Exportar {
+        #[arg(long, default_value = ".pcode/audit.jsonl")] archivo: std::path::PathBuf,
+        #[arg(long, default_value = "json")] formato: String,
+        #[arg(long)] salida: Option<std::path::PathBuf>,
+        #[arg(long)] forzar: bool,
+    },
+}
+/// Ejecuta el subcomando; devuelve el código de salida (0 bien, 1 sin registro, 2 cadena rota).
+pub fn audit_cmd(c: AuditCmd) -> anyhow::Result<i32>;
+'''
+ejemplo = '''
+$ pcode auditoria verificar
+✓ auditoría íntegra: 3 entradas                         (código 0)
+$ pcode auditoria verificar            (tras manipular la línea 2)
+✗ entrada 2 corrupta o manipulada                       (stderr, código 2)
+$ pcode auditoria exportar --formato csv --salida a.csv
+3 entradas exportadas                                    (stderr, código 0; a.csv tiene 4 líneas)
+'''
+tests = [
+  "verificar_integra_sale_con_0: con tres entradas válidas imprime `auditoría íntegra: 3 entradas` y sale con 0",
+  "verificar_manipulada_sale_con_2: tras cambiar `allow` por `deny` en la línea 2, sale con 2 y stderr menciona `entrada 2`",
+  "verificar_sin_archivo_sale_con_1: en un directorio sin `.pcode/` sale con 1 y stderr contiene `sin auditoría`",
+  "exportar_json_a_stdout: la salida estándar es una lista JSON de tres elementos",
+  "exportar_csv_a_archivo: con `--formato csv --salida a.csv` el archivo tiene la cabecera y tres filas",
+  "exportar_cadena_rota_exige_forzar: con la cadena rota sale con 2 y no crea el archivo; con `--forzar` sale con 0 y lo crea",
+  "exportar_formato_desconocido_falla: `--formato xml` termina con código distinto de 0",
+]
+no_hagas = [
+  "No reimplementes la verificación: se llama a `pcode_policy::AuditLog::verify`",
+  "No modifiques el registro: estas órdenes solo leen",
+]
+
+[[tarea]]
+id = "F12.06"
+nombre = "modo-sin-red"
+titulo = "Modo sin red: `--sin-red` impide las salidas del agente salvo la del proveedor del modelo"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-policy sin_red_ && cargo test -p pcode-cli --test sin_red"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F12.06a y F12.06b).
+3. Escribe el informe. Recuerda en él el límite del modo: en el agente en proceso es una lista de
+   órdenes denegadas (mejor esfuerzo); la garantía real la da la mini sandbox N1 sin red.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F12.06a"
+nombre = "sin-red-capa"
+titulo = "Política: capa `Capabilities::offline()` (sin tools de red ni órdenes que salen a la red)"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-policy/src/caps.rs"]
+acepta = "cargo test -p pcode-policy sin_red_"
+contexto = [
+  "crates/pcode-policy/src/caps.rs (función `Capabilities::interactive_defaults`: cómo se construye una capa con el cierre `v`; campos `deny_commands`, `deny_effects`; y `Policy::tool_visible`)",
+]
+objetivo = '''
+1. En `caps.rs`, dentro de `impl Capabilities`, añade `offline()` (firma abajo), con el mismo estilo que
+   `interactive_defaults`.
+2. La capa lleva:
+   - `deny_effects: vec![Effect::Network]` (las tools con efecto de red, como las de MCP, ni se
+     anuncian ni se pueden llamar);
+   - `deny_commands` con exactamente estos patrones: `curl*`, `wget*`, `ssh *`, `scp *`, `sftp *`,
+     `rsync *`, `nc *`, `ncat *`, `telnet *`, `ftp *`, `git push*`, `git fetch*`, `git pull*`,
+     `git clone*`, `git ls-remote*`, `git submodule update*`, `pip install*`, `pip3 install*`,
+     `npm install*`, `npm i *`, `npm ci*`, `npx *`, `yarn add*`, `yarn install*`, `pnpm add*`,
+     `pnpm install*`, `cargo install*`, `cargo add*`, `cargo fetch*`, `cargo update*`, `go get*`,
+     `go install*`, `apt *`, `apt-get *`, `brew *`, `docker pull*`, `docker push*`, `gh *`;
+   - el resto de campos, por defecto (`..Default::default()`).
+3. Documenta en el comentario `///` que es una lista de mejor esfuerzo: un programa arbitrario
+   (`python -c …`) puede abrir un socket; el aislamiento real es la mini sandbox N1 sin red.
+4. Tests en el `mod tests` de `caps.rs` con el prefijo `sin_red_`, usando
+   `Policy::new(Capabilities::default()).child(Capabilities::offline())`.
+'''
+firmas = '''
+// crates/pcode-policy/src/caps.rs
+impl Capabilities {
+    /// Capa del modo sin red: oculta las tools con efecto de red y deniega las órdenes de shell que
+    /// salen a la red (mejor esfuerzo; el aislamiento real es la sandbox N1 sin red).
+    pub fn offline() -> Capabilities;
+}
+'''
+ejemplo = '''
+p = Policy::new(Capabilities::default()).child(Capabilities::offline())
+p.check_command("curl -s https://example.com")        → Deny(…)
+p.check_command("cd /tmp && git push origin main")    → Deny(…)
+p.check_command("cargo test && git status")           → Allow
+p.tool_visible("mcp_x", &[Effect::Network])           → false
+p.tool_visible("leer", &[Effect::Read])               → true
+'''
+tests = [
+  "sin_red_deniega_descargas: `curl -s https://example.com` y `wget x` dan `Deny`",
+  "sin_red_deniega_git_remoto: `git push origin main`, `git fetch` y `git clone https://x` dan `Deny`, también dentro de `bash -c '…'`",
+  "sin_red_deniega_instalaciones: `pip install requests`, `npm install` y `cargo add serde` dan `Deny`",
+  "sin_red_permite_lo_local: `cargo test`, `git status`, `git commit -m x` y `ls` dan `Allow`",
+  "sin_red_oculta_tools_de_red: `tool_visible` es false con `Effect::Network` y true con solo `Effect::Read`",
+  "sin_red_no_cambia_escrituras: `check_write(\"src/a.rs\")` sigue dando `Allow`",
+]
+no_hagas = ["No cambies `interactive_defaults` ni `check_command`", "No toques los tests que ya existen en `caps.rs`"]
+
+[[tarea]]
+id = "F12.06b"
+nombre = "sin-red-cli"
+titulo = "CLI: opción `--sin-red` (y `PCODE_SIN_RED=1`) en `pcode run`, `pcode chat` y la TUI"
+fase = "F12"
+hito = "1.5"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F12.04c", "F12.06a"]
+toca = ["crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-cli/src/backend_run.rs", "crates/pcode-cli/tests/sin_red.rs"]
+acepta = "cargo test -p pcode-cli --test sin_red"
+contexto = [
+  "crates/pcode-cli/src/run.rs (struct `RunArgs`, función `base_policy` y función `run`, incluida la llamada a `crate::backend_run::run_with_backend`)",
+  "crates/pcode-cli/src/chat.rs (struct `ChatArgs`, `ChatArgs::default_args`, `interactive_policy` y su llamada en `prepare`)",
+  "crates/pcode-cli/src/backend_run.rs (función `run_with_backend`: el cálculo de `let net = …`)",
+  "crates/pcode-cli/tests/run.rs (funciones `script`, `resp` y `pcode` para lanzar la CLI con un modelo simulado; para `pcode chat`, el mensaje va por stdin como en crates/pcode-cli/tests/chat.rs)",
+]
+objetivo = '''
+Ya existen: `pcode_policy::Capabilities::offline()` (capa que deniega las órdenes de red) y
+`crate::managed::load() -> anyhow::Result<Option<(PathBuf, ManagedPolicy)>>` (el campo
+`ManagedPolicy::offline` es `sin_red` de la política gestionada).
+
+1. `run.rs`: función nueva `offline_requested(flag)` (firma abajo): true si `flag`, o si la variable
+   `PCODE_SIN_RED` vale `1` o `true`, o si la política gestionada tiene `offline == true`.
+2. `run.rs`: en `RunArgs` añade `#[arg(long = "sin-red")] pub offline: bool` («Sin red: el agente no
+   puede salir a la red; solo se habla con el proveedor del modelo»). En `run`, calcula
+   `let offline = offline_requested(a.offline)?;`; si es true, la política pasa a ser
+   `base_policy(&a.config)?.child(Capabilities::offline())`. Pasa `offline` como último argumento nuevo
+   de `run_with_backend`.
+3. `backend_run.rs`, `run_with_backend`: parámetro nuevo `offline: bool` al final. Si es true, `net` es
+   `Network::None` cuando el backend no necesita red y, cuando la necesita (`be.caps().needs_network`
+   no vacío), termina con
+   `anyhow::bail!("--sin-red: el backend {backend} necesita red; usa [sandbox] red = \"filtrar\"")`.
+   Si es false, todo como hoy.
+4. `chat.rs`: en `ChatArgs` añade el mismo campo `#[arg(long = "sin-red")] pub offline: bool` (y
+   `offline: false` en `default_args`). En `prepare`, si `crate::run::offline_requested(a.offline)?`,
+   añade `.child(pcode_policy::Capabilities::offline())` a la política que devuelve `interactive_policy`.
+5. Crea `tests/sin_red.rs` con los tests de la lista (copia los ayudantes `script`, `resp` y `pcode`
+   de `tests/run.rs`; la denegación se comprueba en `<dir>/.pcode/audit.jsonl`).
+'''
+firmas = '''
+// crates/pcode-cli/src/run.rs
+/// ¿Está pedido el modo sin red? (opción `--sin-red`, `PCODE_SIN_RED=1` o `sin_red` de la política gestionada).
+pub fn offline_requested(flag: bool) -> anyhow::Result<bool>;
+'''
+ejemplo = '''
+guion simulado: el modelo llama a bash {"command":"curl -s https://example.com"} y después responde "listo"
+$ pcode run --sin-red "haz algo"        → la auditoría registra "decision":"deny" para esa llamada; curl no se ejecuta
+$ pcode run "haz algo"                   → la auditoría registra "allow" (como hoy)
+$ PCODE_SIN_RED=1 pcode run "haz algo"   → igual que con --sin-red
+'''
+tests = [
+  "sin_red_run_deniega_curl: con `--sin-red`, la auditoría registra `deny` para la llamada `curl …` del guion",
+  "sin_red_por_variable: con `PCODE_SIN_RED=1` y sin la opción, también `deny`",
+  "sin_red_por_politica_gestionada: con una política gestionada `sin_red = true` (vía `PCODE_POLITICA`), también `deny`",
+  "sin_red_permite_ordenes_locales: con `--sin-red`, una llamada `echo hola` se registra con `allow`",
+  "sin_red_chat_deniega_curl: `pcode chat --sin-red` con el mismo guion (mensaje por la entrada estándar, como en `tests/chat.rs`) registra `deny`",
+  "sin_la_opcion_como_antes: sin `--sin-red` ni variables, la llamada `curl` del guion se registra con `allow` (usa `curl --version` en el guion para no salir a la red)",
+]
+no_hagas = [
+  "No hagas peticiones reales a Internet en los tests: el guion usa `curl --version` cuando la orden sí se ejecuta",
+  "No cambies el comportamiento sin la opción",
+]
+notas = '''
+El proveedor del modelo no pasa por la política (lo llama el propio `pcode`), por eso sigue
+funcionando. Los tests deben quitar `PCODE_SIN_RED` y `PCODE_POLITICA` del entorno cuando no los usan
+(`.env_remove(…)`).
+'''
+
+[[tarea]]
+id = "F12.07"
+nombre = "ordenes-denegadas-explicadas"
+titulo = "Órdenes de shell: explicar qué regla denegó y lista siempre denegada también fuera del modo interactivo"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-policy explica_ && cargo test -p pcode-policy siempre_ && cargo test -p pcode-cli --test politica_gestionada siempre_"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F12.07a y F12.07b).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F12.07a"
+nombre = "ordenes-explicar-regla"
+titulo = "Política: el motivo de una orden denegada o con pregunta dice qué regla la paró"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.06a"]
+toca = ["crates/pcode-policy/src/caps.rs"]
+acepta = "cargo test -p pcode-policy explica_ && cargo test -p pcode-core --test seguridad"
+contexto = [
+  "crates/pcode-policy/src/caps.rs (método `Capabilities::check_command`: los tres `format!` de `orden denegada`, `orden no permitida` y `orden con efectos difíciles de deshacer`; y la función privada `set`)",
+]
+objetivo = '''
+Hoy el motivo es «orden denegada: git push origin main» y el usuario no sabe qué regla de qué lista lo
+causó. Las listas ya son configurables en `[politica]` (`denegar_ordenes`, `preguntar_ordenes`,
+`permitir_ordenes`); falta la explicación.
+
+1. En `caps.rs` añade la función privada `first_match(pats: &[String], text: &str) -> Option<&str>`:
+   devuelve el PRIMER patrón de la lista (en su orden) cuyo glob casa con `text`
+   (`Glob::new(p).ok()?.compile_matcher().is_match(text)`; los patrones inválidos se saltan).
+2. En `check_command`, cambia SOLO los textos de los motivos:
+   - denegada: `orden denegada: {c} (regla `{pat}` de denegar_ordenes)`
+   - no permitida: `orden no permitida: {c} (no casa con ninguna regla de permitir_ordenes)`
+   - pregunta: `orden con efectos difíciles de deshacer: {c} (regla `{pat}` de preguntar_ordenes)`
+   donde `{pat}` es lo que devuelve `first_match` sobre la lista correspondiente. El principio de cada
+   motivo NO cambia (otros sitios lo muestran tal cual).
+3. La lógica de decisión no cambia: mismo resultado `Allow`/`Ask`/`Deny` para cualquier entrada.
+4. Tests en el `mod tests` de `caps.rs` con el prefijo `explica_`.
+'''
+sin_firmas = "no añade API pública: mejora los textos de `Decision::Deny` y `Decision::Ask` de `check_command`"
+ejemplo = '''
+caps: denegar_ordenes = ["git stash*", "git push*"]
+check_command("cd x && git push origin main")
+  → Deny("orden denegada: git push origin main (regla `git push*` de denegar_ordenes)")
+interactive_defaults: check_command("git reset --hard HEAD~1")
+  → Ask("orden con efectos difíciles de deshacer: git reset --hard HEAD~1 (regla `git reset --hard*` de preguntar_ordenes)")
+'''
+tests = [
+  "explica_regla_de_denegacion: el primer ejemplo da exactamente ese motivo",
+  "explica_regla_de_pregunta: el segundo ejemplo da exactamente ese motivo",
+  "explica_lista_de_permitidas: con `permitir_ordenes = [\"cargo *\"]`, `ls` da `Deny` cuyo motivo termina en `(no casa con ninguna regla de permitir_ordenes)`",
+  "explica_primera_regla_que_casa: con `[\"git *\", \"git push*\"]`, `git push` cita la regla `git *`",
+  "explica_sin_cambiar_la_decision: `cargo test && git status` con `interactive_defaults` sigue dando `Allow`",
+]
+no_hagas = [
+  "No cambies el principio de los mensajes (`orden denegada: `, `orden no permitida: `, `orden con efectos difíciles de deshacer: `)",
+  "No cambies `Decision` ni la firma de `check_command`",
+  "No toques los tests que ya existen",
+]
+
+[[tarea]]
+id = "F12.07b"
+nombre = "ordenes-siempre-denegadas"
+titulo = "Lista de órdenes siempre denegadas, también en `pcode run` y `pcode spec`"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.07a", "F12.04d"]
+toca = ["crates/pcode-policy/src/caps.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/tests/politica_gestionada.rs"]
+acepta = "cargo test -p pcode-policy siempre_ && cargo test -p pcode-cli --test politica_gestionada siempre_ && cargo test -p pcode-core --test seguridad"
+contexto = [
+  "crates/pcode-policy/src/caps.rs (función `Capabilities::interactive_defaults`: la lista `deny_commands` de lo catastrófico, de `rm -rf /` a `reboot`)",
+  "crates/pcode-cli/src/run.rs (función `base_policy`: la política de `pcode run` y `pcode spec`, que hoy no lleva esa lista)",
+]
+objetivo = '''
+Hoy lo catastrófico (`rm -rf /`, `mkfs*`…) solo se deniega en el uso interactivo: `pcode run` y
+`pcode spec` parten de una política vacía.
+
+1. `caps.rs`: añade `Capabilities::always_denied()` (firma abajo): una capa cuyo ÚNICO contenido es
+   `deny_commands` con los once patrones que hoy están en `interactive_defaults` (`rm -rf /`,
+   `rm -rf /*`, `rm -rf ~`, `rm -rf ~/`, `rm -fr /`, `mkfs*`, `dd * of=/dev/sd*`, `dd * of=/dev/nvme*`,
+   `format [a-zA-Z]:*`, `shutdown*`, `reboot`). En `interactive_defaults`, sustituye la lista literal por
+   `deny_commands: Capabilities::always_denied().deny_commands,` (misma lista, una sola fuente).
+2. `run.rs`, función `base_policy`: la primera capa pasa a ser SIEMPRE
+   `Policy::new(Capabilities::always_denied())`; encima, con `.child(…)`, la gestionada (si hay) y la
+   `[politica]` del proyecto, como hasta ahora. El `pcode.toml` no puede quitarla (las capas solo
+   endurecen); sí puede ampliarla con `denegar_ordenes`.
+3. Tests `siempre_…` en el `mod tests` de `caps.rs` y en `tests/politica_gestionada.rs` (ya existe, con
+   los ayudantes `script`, `resp` y `pcode`): el guion simulado llama a bash con una orden de la lista
+   y se comprueba `"decision":"deny"` en `<dir>/.pcode/audit.jsonl`.
+'''
+firmas = '''
+// crates/pcode-policy/src/caps.rs
+impl Capabilities {
+    /// Órdenes catastróficas que se deniegan siempre, en cualquier modo.
+    pub fn always_denied() -> Capabilities;
+}
+'''
+tests = [
+  "siempre_lista_de_once: `always_denied().deny_commands` tiene 11 patrones e incluye `rm -rf /` y `mkfs*`; el resto de campos están vacíos",
+  "siempre_interactivo_usa_la_misma_lista: `interactive_defaults().deny_commands` es igual a `always_denied().deny_commands`",
+  "siempre_deniega_lo_catastrofico: con `Policy::new(always_denied())`, `sudo rm -rf /` y `bash -c 'mkfs.ext4 /dev/sda1'` dan `Deny` y `rm -rf build/` da `Allow`",
+  "siempre_run_deniega_mkfs: `pcode run` con un guion que llama a bash con `mkfs.ext4 /dev/null-no-existe` registra `deny` en la auditoría, sin política gestionada ni `pcode.toml`",
+]
+no_hagas = [
+  "No cambies las listas `ask_commands` ni `deny_write` de `interactive_defaults`",
+  "No uses en los tests órdenes que harían daño si llegaran a ejecutarse: el dispositivo del test no existe",
+]
+
+[[tarea]]
+id = "F12.08"
+nombre = "sandbox-aplicar-sin-escape"
+titulo = "Sandbox: `aplicar` nunca trae al repo hooks ni configuración de git (escape por `.git/`)"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.03"]
+toca = ["crates/pcode-sandbox/src/layer.rs", "crates/pcode-sandbox/src/apply.rs", "crates/pcode-sandbox/src/lib.rs"]
+acepta = "cargo test -p pcode-sandbox escape_"
+contexto = [
+  "crates/pcode-sandbox/src/apply.rs (método `Sandbox::apply`: el bucle `for c in &changes` que copia cada cambio al repo)",
+  "crates/pcode-sandbox/src/layer.rs (struct `Change { path, kind }`: `path` es relativo con `/`)",
+  "crates/pcode-sandbox/src/run.rs (`Sandbox::create_n1(spec)`: crea la sandbox sin necesitar namespaces; la capa está en `<estado>/upper/`)",
+]
+objetivo = '''
+Hoy, si un agente dentro de la sandbox escribe `.git/hooks/pre-commit` o cambia `.git/config`
+(`core.hooksPath`, `core.sshCommand`…), `aplicar` lo copia al repo y ese código se ejecuta FUERA de la
+sandbox en el siguiente `git commit` del usuario. Los commits del agente (objetos, refs, índice) sí
+deben seguir aplicándose.
+
+1. `layer.rs`: función pura `is_escape_path` (firma abajo). Parte la ruta por `/`; si algún componente
+   es exactamente `.git`, mira lo que va DESPUÉS de él: es ruta de escape si no queda nada (el propio
+   directorio `.git`), si el primer componente siguiente es `hooks`, o si lo que queda es exactamente
+   `config`. Vale para repos anidados (`sub/.git/hooks/x`). En cualquier otro caso, false.
+2. `apply.rs`, método `apply`: antes del bucle, separa `changes` en aplicables y bloqueados con
+   `is_escape_path(&c.path)`. Los bloqueados NO se copian ni se borran en el repo; por cada uno,
+   `tracing::warn!("cambio no aplicado (ruta de git protegida): {}", c.path)`. `apply` devuelve solo los
+   aplicados. La capa se descarta igual al final.
+3. `apply.rs`: método nuevo `blocked_changes` (firma abajo): los cambios de `self.changes()?` para los
+   que `is_escape_path` es true.
+4. `lib.rs`: añade `is_escape_path` al `pub use layer::{…}`.
+5. Tests con el prefijo `escape_`: los puros en `layer.rs`; los de `apply` en `apply.rs` SIN
+   namespaces: crea la sandbox con `Sandbox::create_n1` sobre un directorio temporal (sin `.git`),
+   escribe a mano archivos bajo `<estado>/upper/` (p. ej. `upper/.git/hooks/pre-commit` y
+   `upper/nuevo.txt`) y llama a `apply()`.
+'''
+firmas = '''
+// crates/pcode-sandbox/src/layer.rs
+/// ¿Aplicar este cambio dejaría código que git ejecuta fuera de la sandbox (hooks, config)?
+pub fn is_escape_path(path: &str) -> bool;
+
+// crates/pcode-sandbox/src/apply.rs
+impl Sandbox {
+    /// Cambios de la capa que `apply` no llevará al repo por ser rutas de git protegidas.
+    pub fn blocked_changes(&self) -> Result<Vec<Change>, SandboxError>;
+}
+'''
+ejemplo = '''
+is_escape_path(".git/hooks/pre-commit")      → true
+is_escape_path(".git/config")                → true
+is_escape_path("sub/.git/hooks")             → true
+is_escape_path(".git")                       → true
+is_escape_path(".git/objects/ab/cdef")       → false
+is_escape_path(".git/refs/heads/main")       → false
+is_escape_path("src/.gitignore")             → false
+is_escape_path("docs/hooks/config")          → false
+'''
+tests = [
+  "escape_rutas_protegidas: los cuatro primeros casos del ejemplo dan true",
+  "escape_rutas_normales: los cuatro últimos casos del ejemplo dan false",
+  "escape_apply_no_trae_el_hook: con `upper/.git/hooks/pre-commit` y `upper/nuevo.txt`, tras `apply` existe `nuevo.txt` en el repo y no existe `.git/hooks/pre-commit`; el resultado solo lista `nuevo.txt`",
+  "escape_apply_no_trae_config: con `upper/.git/config` en la capa, el repo sigue sin `.git/config`",
+  "escape_blocked_changes_los_lista: `blocked_changes()` devuelve el cambio de `.git/hooks/pre-commit` y no el de `nuevo.txt`",
+  "escape_apply_si_trae_objetos: un archivo `upper/.git/objects/ab/cd` sí se copia al repo",
+]
+no_hagas = [
+  "No bloquees todo `.git/`: los commits que hace el agente dentro de la sandbox deben aplicarse",
+  "No cambies `discard`, `diff` ni `changes`",
+  "No toques los tests que ya existen",
+]
+
+[[tarea]]
+id = "F12.09"
+nombre = "lecturas-protegidas"
+titulo = "Lecturas protegidas: `no_leer` y `preguntar_leer`, y el agente comprueba la política al leer"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-policy lectura_ && cargo test -p pcode-core lectura_"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F12.09a y F12.09b).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F12.09a"
+nombre = "lecturas-protegidas-politica"
+titulo = "Política: listas `no_leer` y `preguntar_leer` con valores seguros en el uso interactivo"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.07b"]
+toca = ["crates/pcode-policy/src/caps.rs"]
+acepta = "cargo test -p pcode-policy lectura_"
+contexto = [
+  "crates/pcode-policy/src/caps.rs (struct `Capabilities`, método `check_read`, función `interactive_defaults` y las funciones privadas `set` y `norm`)",
+]
+objetivo = '''
+Hoy `check_read` solo tiene una lista de permitidos (`leer`); no se puede decir «todo menos los
+archivos con secretos».
+
+1. `caps.rs`, struct `Capabilities`: dos campos nuevos, con su comentario `///`:
+   `#[serde(rename = "no_leer")] pub deny_read: Vec<String>` (rutas que no se pueden leer) y
+   `#[serde(rename = "preguntar_leer")] pub ask_read: Vec<String>` (rutas que piden confirmación).
+2. `check_read(rel)`, en este orden (con `let r = norm(rel);`):
+   a) casa con `deny_read` → `Decision::Deny(format!("lectura prohibida: {rel}"))`;
+   b) `read` no está vacío y no casa → `Decision::Deny(format!("lectura no permitida: {rel}"))` (como hoy);
+   c) casa con `ask_read` → `Decision::Ask(format!("el archivo puede contener secretos: {rel}"))`;
+   d) si no, `Allow`.
+3. `interactive_defaults`: añade
+   `ask_read: v(&["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/.npmrc", "**/.netrc"])` y
+   `deny_read: v(&["**/id_rsa", "**/id_ed25519", "**/id_ecdsa", "**/.ssh/**", "**/.aws/credentials"])`.
+   (En `globset`, `**/x` también casa con `x` en la raíz.)
+4. Tests en el `mod tests` de `caps.rs` con el prefijo `lectura_`.
+'''
+firmas = '''
+// crates/pcode-policy/src/caps.rs  (campos nuevos de `Capabilities`)
+/// Rutas que no se pueden leer.
+#[serde(rename = "no_leer")]
+pub deny_read: Vec<String>,
+/// Rutas que piden confirmación humana antes de leerse.
+#[serde(rename = "preguntar_leer")]
+pub ask_read: Vec<String>,
+'''
+ejemplo = '''
+p = Policy::new(Capabilities::interactive_defaults())
+p.check_read(".env")                 → Ask("el archivo puede contener secretos: .env")
+p.check_read("config/.env.local")    → Ask(…)
+p.check_read("deploy/id_rsa")        → Deny("lectura prohibida: deploy/id_rsa")
+p.check_read("src/main.rs")          → Allow
+p.check_read(".envrc")               → Allow
+'''
+tests = [
+  "lectura_env_pide_confirmacion: `.env`, `./.env` y `config/.env.local` dan `Ask` con la capa interactiva",
+  "lectura_claves_privadas_denegada: `deploy/id_rsa` y `.ssh/config` dan `Deny` que empieza por `lectura prohibida`",
+  "lectura_normal_permitida: `src/main.rs`, `README.md` y `.envrc` dan `Allow`",
+  "lectura_no_leer_gana_a_leer: con `read = [\"**\"]` y `deny_read = [\"secretos/**\"]`, `secretos/a` da `Deny`",
+  "lectura_se_lee_de_toml: `no_leer = [\"a\"]` y `preguntar_leer = [\"b\"]` en TOML rellenan los dos campos",
+  "lectura_capa_vacia_no_restringe: `Capabilities::default().check_read(\".env\")` da `Allow`",
+]
+no_hagas = [
+  "No cambies `check_write` ni `check_command`",
+  "No toques los tests que ya existen: todos construyen `Capabilities` con `..Default::default()` y siguen compilando",
+]
+
+[[tarea]]
+id = "F12.09b"
+nombre = "lecturas-protegidas-agente"
+titulo = "Agente: comprobar `check_read` antes de ejecutar una tool de lectura"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F12.03b", "F12.09a"]
+toca = ["crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core lectura_"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `Agent::run_call`: el bloque que calcula `decision`; hoy llama a `check_effects`, `check_write` y `check_command`, pero NUNCA a `check_read`; ayudantes de test `agent`, `tool` y `text`)",
+  "crates/pcode-policy/src/caps.rs (`Policy::check_read(&self, p: &str) -> Decision`; campos `deny_read` y `ask_read` de `Capabilities`)",
+]
+objetivo = '''
+1. En `agent.rs`, método `run_call`: justo después de `let mut decision = self.policy.check_effects(effects);`
+   añade, con el mismo estilo que el bloque de `check_write`:
+   si `decision` es `Decision::Allow`, `effects` contiene `Effect::Read` y la llamada tiene el argumento
+   de texto `path`, entonces `decision = self.policy.check_read(&p);`.
+2. Nada más: el `match decision` existente ya convierte `Deny` en «denegado por la política: …» y `Ask`
+   en una pregunta al aprobador (o «requiere aprobación humana: …» si no hay aprobador), y audita.
+3. Las tools de lectura sin argumento `path` (o con `path` ausente) no cambian.
+4. Tests en el `mod tests` de `agent.rs` con el prefijo `lectura_`, usando los ayudantes
+   `agent(&d, script, caps, hook)`, `tool(nombre, args)` y `text(…)`. Crea los archivos en el
+   directorio temporal antes de ejecutar; la tool de lectura se llama `leer` y recibe
+   `json!({"path": "…"})`.
+'''
+sin_firmas = "no añade API: un bloque más en el cálculo de `decision` de `Agent::run_call`"
+ejemplo = '''
+caps: Capabilities { deny_read: vec!["secretos/**".into()], ..Default::default() }
+llamada: leer { path: "secretos/clave.txt" }
+resultado de la tool: "denegado por la política: lectura prohibida: secretos/clave.txt"
+'''
+tests = [
+  "lectura_denegada_por_politica: con `deny_read = [\"secretos/**\"]`, leer `secretos/clave.txt` devuelve un resultado con `denegado` y el contenido del archivo no aparece en la transcripción",
+  "lectura_con_pregunta_sin_aprobador: con `ask_read = [\"**/.env\"]`, leer `.env` devuelve `requiere aprobación humana` y el contenido no aparece",
+  "lectura_permitida_como_antes: con la capa vacía, leer `a.txt` devuelve su contenido",
+  "lectura_fuera_de_la_lista_permitida: con `read = [\"src/**\"]`, leer `otro.txt` devuelve `denegado`",
+]
+no_hagas = [
+  "No cambies la firma de `run_call` ni el `match decision`",
+  "No toques los tests que ya existen en `agent.rs`",
+]
+notas = '''
+Límite conocido (anótalo en el informe): la tool `bash` puede leer cualquier archivo con `cat`. Para
+eso están la censura de salidas (los secretos no llegan al modelo) y la mini sandbox.
+'''
+
+[[tarea]]
+id = "F12.10"
+nombre = "bash-sin-secretos-en-el-entorno"
+titulo = "Tool `bash`: no heredar las variables de entorno con secretos (`*_API_KEY`, `*_TOKEN`…)"
+fase = "F12"
+hito = "1.5"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.12"]
+toca = ["crates/pcode-tools/src/bash.rs"]
+acepta = "cargo test -p pcode-tools entorno_"
+contexto = [
+  "crates/pcode-tools/src/bash.rs (método `Bash::call`: la cadena `shell_command(cmd).current_dir(&ctx.root)…spawn()`; y la función `shell_command`)",
+]
+objetivo = '''
+Hoy las órdenes que lanza el agente heredan TODO el entorno de `pcode`, incluidas las claves de los
+proveedores (`ANTHROPIC_API_KEY`…): un `env` o `echo $OPENAI_API_KEY` las manda al modelo y a la
+transcripción.
+
+1. En `bash.rs` añade la función pura `secret_env_names` (firma abajo). Un nombre es secreto si, en
+   mayúsculas, termina en `_API_KEY`, `_APIKEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` o `_PASSWD`, o es
+   exactamente `API_KEY`, `TOKEN`, `SECRET` o `PASSWORD`, o contiene `SECRET_KEY` o `CREDENTIALS`; y NO
+   está en `allow` (comparación sin distinguir mayúsculas). Devuelve los nombres originales, en el orden
+   de entrada.
+2. Añade `scrub_env` (firma abajo): llama a `cmd.env_remove(nombre)` por cada nombre de
+   `secret_env_names(names, allow)`.
+3. En `Bash::call`: construye la orden en una variable (`let mut c = shell_command(cmd);`), llama a
+   `scrub_env(&mut c, &nombres, &permitidas)` y sigue con la cadena de siempre (`c.current_dir(…)…`).
+   `nombres` = los nombres de `std::env::vars_os()` que sean UTF-8 válido; `permitidas` = el valor de
+   la variable `PCODE_ENV_PERMITIR` partido por comas (sin espacios; vacío si no existe). Así el
+   usuario puede dejar pasar, por ejemplo, `GITHUB_TOKEN`.
+4. Tests en el `mod tests` de `bash.rs` con el prefijo `entorno_`. Para probar `scrub_env` sin tocar
+   el entorno del proceso de tests: crea `let mut c = shell_command("echo \"[$PCODE_PRUEBA_TOKEN]\"");`,
+   ponle la variable con `c.env("PCODE_PRUEBA_TOKEN", "valor")`, llama a `scrub_env` y ejecuta
+   (`c.output().await`): la salida debe ser `[]`. Estos tests van tras `#[cfg(unix)]`.
+'''
+firmas = '''
+// crates/pcode-tools/src/bash.rs
+/// Nombres de variables de entorno que parecen secretos y no están en `allow`.
+pub fn secret_env_names(names: &[String], allow: &[String]) -> Vec<String>;
+
+/// Quita de la orden las variables de entorno con secretos (no se heredan ni las puestas a mano).
+pub fn scrub_env(cmd: &mut tokio::process::Command, names: &[String], allow: &[String]);
+'''
+ejemplo = '''
+secret_env_names(&["PATH", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "HOME", "db_password", "TOKENIZERS_PARALLELISM"], &["github_token"])
+  → ["ANTHROPIC_API_KEY", "db_password"]
+'''
+tests = [
+  "entorno_detecta_nombres_de_secretos: el ejemplo devuelve exactamente esos dos nombres",
+  "entorno_lista_permitida_sin_mayusculas: `GITHUB_TOKEN` con `allow = [\"github_token\"]` no se quita",
+  "entorno_no_toca_variables_normales: `PATH`, `HOME`, `CARGO_HOME` y `TOKENIZERS_PARALLELISM` no son secretos",
+  "entorno_scrub_quita_la_variable: una orden con `PCODE_PRUEBA_TOKEN` puesta a mano imprime `[]` tras `scrub_env`",
+  "entorno_scrub_respeta_las_permitidas: con `allow = [\"PCODE_PRUEBA_TOKEN\"]` la misma orden imprime `[valor]`",
+]
+no_hagas = [
+  "No uses `std::env::set_var` en los tests (necesita `unsafe`, prohibido fuera de `pcode-sandbox`)",
+  "No cambies `shell_command` ni `shell_argv`: las usan otros módulos que sí necesitan el entorno completo",
+  "No toques los tests que ya existen",
+]

