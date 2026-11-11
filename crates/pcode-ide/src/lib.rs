@@ -7,6 +7,7 @@ pub mod git;
 pub mod highlight;
 pub mod lsp_pos;
 pub mod problems;
+pub mod remote;
 pub mod rpc;
 pub mod settings;
 pub mod snippets;

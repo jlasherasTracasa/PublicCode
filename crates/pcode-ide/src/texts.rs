@@ -173,6 +173,12 @@ pub struct Texts {
     pub definition_none: &'static str,
     /// «Para abrir otra carpeta: pcode ide <ruta>».
     pub open_folder_hint: &'static str,
+    /// Menú para abrir el IDE contra otro equipo por SSH.
+    pub connect: &'static str,
+    /// Aviso cuando `~/.ssh/config` no tiene servidores.
+    pub no_hosts: &'static str,
+    /// Aviso cuando no se pudo lanzar la conexión.
+    pub connect_failed: &'static str,
     /// «Abre un archivo del explorador o con Ctrl+P».
     pub no_file: &'static str,
     /// «Ctrl+P abrir · Ctrl+Mayús+P comandos · Ctrl+B barra · Ctrl+J panel · Ctrl+I agente».
@@ -266,6 +272,9 @@ pub const ES: Texts = Texts {
     hover_none: "Sin información en esta posición",
     definition_none: "No se encontró la definición",
     open_folder_hint: "Para abrir otra carpeta: pcode ide <ruta>",
+    connect: "Conectar a un servidor…",
+    no_hosts: "No hay servidores en ~/.ssh/config",
+    connect_failed: "No se pudo conectar",
     no_file: "Abre un archivo del explorador o con Ctrl+P",
     shortcuts: "Ctrl+P abrir · Ctrl+Mayús+P comandos · Ctrl+B barra · Ctrl+J panel · Ctrl+I agente",
 };
@@ -357,6 +366,9 @@ pub const EN: Texts = Texts {
     hover_none: "No information here",
     definition_none: "No definition found",
     open_folder_hint: "To open another folder: pcode ide <path>",
+    connect: "Connect to a server…",
+    no_hosts: "No servers in ~/.ssh/config",
+    connect_failed: "Could not connect",
     no_file: "Open a file from the explorer or with Ctrl+P",
     shortcuts: "Ctrl+P open · Ctrl+Shift+P commands · Ctrl+B side bar · Ctrl+J panel · Ctrl+I agent",
 };

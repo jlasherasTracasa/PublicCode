@@ -347,6 +347,8 @@ pub struct Ide {
     connected: bool,
     quit_armed: bool,
     recent_files: Vec<String>,
+    /// Servidores de `~/.ssh/config` (None hasta que se abre el menú «Conectar a un servidor…»).
+    ssh_hosts: Option<Vec<String>>,
     last_sync: Option<(String, Instant)>,
 }
 
@@ -405,6 +407,7 @@ impl Ide {
             connected: true,
             quit_armed: false,
             recent_files: vec![],
+            ssh_hosts: None,
             last_sync: None,
         };
         ide.list_dir("");
@@ -983,6 +986,26 @@ impl Ide {
                         menu_item(ui, t, c, &mut cmd);
                     }
                     ui.separator();
+                    ui.menu_button(t.connect, |ui| {
+                        // Se pregunta una vez, al abrir el submenú por primera vez.
+                        let pcode =
+                            crate::remote::pcode_path(std::env::current_exe().ok().as_deref());
+                        let hosts = self
+                            .ssh_hosts
+                            .get_or_insert_with(|| crate::remote::list_hosts(&pcode))
+                            .clone();
+                        if hosts.is_empty() {
+                            ui.label(RichText::new(t.no_hosts).color(p.fg_dim));
+                        }
+                        for h in hosts {
+                            if ui.button(&h).clicked() {
+                                if let Err(e) = crate::remote::connect(&pcode, &h) {
+                                    self.toast(format!("{}: {e}", t.connect_failed), true);
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
                     ui.label(RichText::new(t.open_folder_hint).small().color(p.fg_dim));
                 });
                 ui.menu_button(t.menu_edit, |ui| {
