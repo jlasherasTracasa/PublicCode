@@ -61,7 +61,7 @@ EXT_CODIGO = (".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".kt", ".sh", ".ps1")
 RAICES_REPO = ("crates/", "apps/", "tools/", "docs/", "tareas/", "informes/", "bench/", "packaging/", ".github/",
                ".claude/")
 ARCHIVOS_RAIZ = ("AGENTS.md", "CLAUDE.md", "README.md", "CHANGELOG.md", "Cargo.toml", "Cargo.lock", "install.sh",
-                 "install.ps1", "rust-toolchain.toml")
+                 "install.ps1", "rust-toolchain.toml", "action.yml")
 # Límites de una tarea para un modelo pequeño.
 MAX_TOCA, MIN_OBJETIVO, MAX_TEXTO, MIN_DESC_TEST = 4, 300, 7000, 12
 
@@ -360,6 +360,8 @@ def render(t, ids):
     ]
     if t.get("firmas"):
         partes += ["## Firmas (cópialas tal cual)", "", f"```{t.get('lenguaje', 'rust')}", t["firmas"].strip(), "```", ""]
+    elif t.get("sin_firmas"):
+        partes += [f"Sin firmas: {t['sin_firmas'].strip()}", ""]
     if t.get("ejemplo"):
         partes += ["## Ejemplo (entrada y resultado esperado)", "", "```", t["ejemplo"].strip(), "```", ""]
     partes += ["## Tests (con estos nombres)", "", lista([f"`{x.split(':', 1)[0].strip()}`:"

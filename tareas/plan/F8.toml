@@ -779,16 +779,215 @@ id = "F8.33"
 nombre = "github-pr"
 titulo = "GitHub: crear un PR con descripción generada y revisar PRs con el agente"
 fase = "F8"
+hito = "1.8"
+talla = "M"
 ejecutor = "coordinador"
-depende = ["F5.26", "F8.11"]
-toca = ["crates/pcode-flow/src/github.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-server/web/studio/git.js", "docs/usuario.md"]
-acepta = "cargo test -p pcode-flow github"
-contexto = ["crates/pcode-flow/src/ci.rs"]
+motivo_coordinador = "La publicación real (subir la rama, abrir el PR y publicar comentarios) hay que probarla con una cuenta y un repositorio de GitHub; las subtareas dejan hecho y probado todo lo que no necesita red."
+depende = ["F5.26"]
+toca = ["docs/usuario.md"]
+acepta = "cargo test -p pcode-flow pr:: && cargo test -p pcode-cli --test pr && grep -q 'pcode pr crear' docs/usuario.md"
+contexto = [
+  "crates/pcode-cli/src/pr_cmd.rs (`pcode pr crear` y `pcode pr revisar`, hechos por F8.33b y F8.33c)",
+  "docs/usuario.md (dónde documentar las órdenes nuevas)",
+]
 objetivo = '''
-`pcode pr crear` (rama, push con aprobación, título y cuerpo a partir del diff y de los commits) y `pcode pr revisar <n>`
-(el agente lee el diff y deja comentarios en borrador para que el usuario los publique); usa `gh` si está, o la API con token.
+1. En un repositorio de pruebas, con `GITHUB_TOKEN`: `pcode pr crear --publicar --si` debe subir la rama y
+   abrir el PR con el título y el cuerpo generados; `pcode pr revisar <n>` debe dejar el borrador en
+   `.pcode/revisiones/pr-<n>.md` y `pcode pr revisar <n> --publicar --si` publicar los comentarios.
+2. Corrige lo que difiera de la API real y documenta las dos órdenes en `docs/usuario.md` (tabla de flags,
+   permisos del token y aviso de que nada se publica sin `--publicar --si`).
+3. Anota en el informe que la parte de Studio (botón «Crear PR» en el panel de git) queda fuera: se planifica
+   aparte cuando exista el módulo de git de Studio.
 '''
-tests = ["(servidor falso) crear_pr", "comentarios_quedan_en_borrador"]
+tests = ["(manual): un PR real creado y revisado en un repositorio de pruebas, con sus enlaces en el informe"]
+
+[[tarea]]
+id = "F8.33a"
+nombre = "pr-textos"
+titulo = "PR: prompts y lectura de la descripción y de los comentarios de revisión (lógica pura)"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.26"]
+toca = ["crates/pcode-flow/src/pr.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow pr::"
+contexto = [
+  "crates/pcode-flow/src/review.rs (`review_prompt` y `parse_verdict`: mismo estilo de «prompt + lectura tolerante de la respuesta»)",
+  "crates/pcode-flow/src/github.rs (`pr_body`: estilo del Markdown de un PR)",
+]
+objetivo = '''
+1. Crea `pr.rs` con las firmas de abajo. Lógica pura.
+2. `pr_prompt(commits, diff)`: «Escribe el título y la descripción de un pull request para estos cambios.»,
+   `# Commits` (una línea `- ` por mensaje), `# Diff` (en un bloque de código; si pasa de `MAX_DIFF_CHARS`
+   caracteres se corta y se añade `[… diff recortado]`) y el formato de respuesta: primera línea
+   `TITULO: <una línea, máximo 70 caracteres, sin punto final>`, después una línea `CUERPO:` y debajo el
+   cuerpo en Markdown con las secciones `## Qué cambia`, `## Por qué` y `## Cómo probarlo`.
+3. `parse_pr_text(text)`: busca la primera línea que empieza por `TITULO:` y la primera línea `CUERPO:`
+   posterior; devuelve `(título sin espacios y recortado a 70 caracteres, todo lo que sigue a CUERPO: con
+   trim)`. Si falta alguna de las dos marcas, o el título o el cuerpo quedan vacíos → `None`.
+4. `pr_review_prompt(diff)`: «Revisa este pull request. Señala solo problemas reales: errores, riesgos de
+   seguridad, tests que faltan.» + el diff (mismo recorte) + formato: una línea por comentario
+   `- <archivo>:<línea>: <comentario>`, o `SIN COMENTARIOS`.
+5. `parse_review_comments(text)`: cada línea `- archivo:línea: comentario` → `DraftComment`; las líneas que no
+   encajan (o cuya línea no es un número) se ignoran; `SIN COMENTARIOS` → vacío.
+6. `render_drafts(pr, comments)`: Markdown del borrador: `# Revisión del PR #<pr> (borrador)`, la línea
+   `Nada de esto se ha publicado. Edita o borra comentarios y publícalos con: pcode pr revisar <pr> --publicar --si`
+   y una línea `- <archivo>:<línea>: <comentario>` por comentario (o `Sin comentarios.`). Debe cumplirse
+   `parse_review_comments(&render_drafts(n, &c)) == c`.
+7. `lib.rs`: añade `pub mod pr;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/pr.rs
+/// Caracteres de diff que se envían al modelo como máximo.
+pub const MAX_DIFF_CHARS: usize = 60_000;
+
+/// Comentario de revisión en borrador.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftComment { pub file: String, pub line: u32, pub body: String }
+
+pub fn pr_prompt(commits: &[String], diff: &str) -> String;
+pub fn parse_pr_text(text: &str) -> Option<(String, String)>;
+pub fn pr_review_prompt(diff: &str) -> String;
+pub fn parse_review_comments(text: &str) -> Vec<DraftComment>;
+pub fn render_drafts(pr: u64, comments: &[DraftComment]) -> String;
+'''
+ejemplo = '''
+parse_pr_text("Claro:\nTITULO: Exporta a CSV\nCUERPO:\n## Qué cambia\nAñade csv.rs\n") → Some(("Exporta a CSV", "## Qué cambia\nAñade csv.rs"))
+parse_pr_text("solo texto") → None
+parse_review_comments("- src/a.rs:12: falta comprobar el vacío\nruido\n- src/b.rs:x: no vale\n")
+  → [DraftComment { file: "src/a.rs", line: 12, body: "falta comprobar el vacío" }]
+parse_review_comments("SIN COMENTARIOS") → []
+'''
+tests = [
+  "prompt_de_pr_lleva_commits_diff_y_formato: el prompt contiene los mensajes, el diff y las marcas TITULO: y CUERPO:",
+  "prompt_recorta_el_diff_largo: un diff mayor que MAX_DIFF_CHARS aparece cortado con el aviso de recorte",
+  "lee_titulo_y_cuerpo: el primer caso del ejemplo",
+  "sin_marcas_no_hay_pr: un texto sin TITULO: o sin CUERPO: da None",
+  "titulo_largo_se_recorta: un título de 100 caracteres queda en 70",
+  "lee_comentarios_e_ignora_el_ruido: el tercer caso del ejemplo da un solo comentario",
+  "sin_comentarios: `SIN COMENTARIOS` da lista vacía",
+  "borrador_ida_y_vuelta: parse_review_comments(render_drafts(7, c)) devuelve c",
+]
+no_hagas = ["No llames a modelos, a git ni a GitHub aquí", "No añadas dependencias"]
+
+[[tarea]]
+id = "F8.33b"
+nombre = "pr-crear-cli"
+titulo = "CLI: `pcode pr crear` genera título y descripción del PR (y lo publica solo con `--publicar --si`)"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.33a"]
+toca = ["crates/pcode-cli/src/pr_cmd.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/pr.rs"]
+acepta = "cargo test -p pcode-cli --test pr crear"
+contexto = [
+  "crates/pcode-cli/src/ask.rs (función `ask`: una petición de chat sin tools con `build_provider`, `pick_model` y `ChatRequest`)",
+  "crates/pcode-cli/src/main.rs (enum `Cmd`, variante `Flow`; el `match` de `main` con `Some(Cmd::Flow(c)) => …`)",
+  "crates/pcode-flow/src/pr.rs (`pr_prompt`, `parse_pr_text`) y crates/pcode-backends/src/github_http.rs (`GitHubHttp::from_env`, `create_pr`; `parse_remote` en `github_api.rs`)",
+  "crates/pcode-cli/tests/spec.rs (auxiliares `resp` y `pcode`: guion del modelo simulado con `PCODE_MOCK_SCRIPT`)",
+]
+objetivo = '''
+1. Crea `pr_cmd.rs` con `PrCmd` y `pr_cmd` (firmas abajo). Variante `Crear { base: String, publish: bool, yes:
+   bool, model, provider, config }`: `--base` (por defecto `main`), `--publicar`, `--si`, `--modelo`,
+   `--proveedor`, `--config` (por defecto `pcode.toml`).
+2. Rama `Crear`, con `std::process::Command` de `git` en el directorio actual:
+   - commits = líneas de `git log --format=%s <base>..HEAD`; si no hay ninguno: stderr
+     `no hay commits que no estén en <base>` y devuelve 2;
+   - diff = `git diff <base>...HEAD`;
+   - una petición de chat (como en `ask`) con `pr_prompt(&commits, &diff)`; `parse_pr_text` sobre la respuesta;
+     si da `None`: stderr `el modelo no devolvió TITULO: y CUERPO:` y devuelve 2;
+   - imprime `# <título>`, una línea vacía y el cuerpo.
+3. Sin `--publicar` termina ahí con 0 (no toca nada). Con `--publicar` pero sin `--si`: stderr
+   `publicar sube la rama y abre el PR: repite con --publicar --si` y devuelve 2. Con los dos: rama actual
+   (`git rev-parse --abbrev-ref HEAD`), `git push origin <rama>` (sin forzar), `parse_remote` sobre
+   `git remote get-url origin`, `GitHubHttp::from_env(dueño, repo)?.create_pr(&rama, &base, &título, &cuerpo)`
+   e imprime `PR #<n> abierto`.
+4. `main.rs`: `mod pr_cmd;`, variante `#[command(subcommand)] Pr(pr_cmd::PrCmd)` («Pull requests: crear con
+   descripción generada y revisar.») y la rama `Some(Cmd::Pr(c)) => std::process::exit(pr_cmd::pr_cmd(c).await?),`
+   junto a la de `Flow`.
+5. Crea `tests/pr.rs` con los tests `crear_*`: repo temporal con `git init -b main`, un commit, una rama
+   `tema` con otro commit, y el guion del modelo simulado.
+'''
+firmas = '''
+// crates/pcode-cli/src/pr_cmd.rs
+/// Subcomandos de pull requests.
+#[derive(Debug, clap::Subcommand)]
+pub enum PrCmd { Crear { /* … */ } }
+
+/// Ejecuta un subcomando de pull requests.
+pub async fn pr_cmd(c: PrCmd) -> anyhow::Result<i32>;
+'''
+ejemplo = '''
+(en la rama `tema`, con un commit «añade csv» que no está en main; guion: "TITULO: Exporta a CSV\nCUERPO:\n## Qué cambia\nAñade csv.rs")
+$ pcode pr crear
+# Exporta a CSV
+
+## Qué cambia
+Añade csv.rs
+→ código 0, sin push ni petición a GitHub
+$ pcode pr crear --publicar        → código 2, stderr contiene "--publicar --si"
+(en main, sin commits propios) $ pcode pr crear → código 2, stderr "no hay commits que no estén en main"
+'''
+tests = [
+  "crear_imprime_titulo_y_cuerpo: el primer caso del ejemplo imprime el título con `# ` y el cuerpo",
+  "crear_publicar_exige_si: con --publicar y sin --si sale con 2 y no hace push (el repo no tiene remoto y aun así no falla por git)",
+  "crear_sin_commits_propios: en main sale con 2 y el mensaje de que no hay commits",
+  "crear_respuesta_sin_formato: un guion con «no sé» sale con 2 y el mensaje de TITULO: y CUERPO:",
+]
+no_hagas = ["No publiques nada sin `--publicar --si`", "No uses `git push --force`", "No uses `gh`: la API va por `GitHubHttp`", "No toques otras órdenes de `main.rs`"]
+
+[[tarea]]
+id = "F8.33c"
+nombre = "pr-revisar-cli"
+titulo = "CLI: `pcode pr revisar <n>` deja los comentarios en borrador y solo los publica con `--publicar --si`"
+fase = "F8"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.33b"]
+toca = ["crates/pcode-cli/src/pr_cmd.rs", "crates/pcode-cli/tests/pr.rs"]
+acepta = "cargo test -p pcode-cli --test pr revisar"
+contexto = [
+  "crates/pcode-cli/src/pr_cmd.rs (enum `PrCmd` y rama `Crear`: cómo se pide al modelo y cómo se construye `GitHubHttp` desde el remoto `origin`)",
+  "crates/pcode-flow/src/pr.rs (`pr_review_prompt`, `parse_review_comments`, `render_drafts`, `DraftComment`)",
+  "crates/pcode-backends/src/github_api.rs (`GitHubApi::pr_diff` y `GitHubApi::comment`)",
+]
+objetivo = '''
+1. En `pr_cmd.rs`, variante nueva `Revisar { number: u64, diff_file: Option<PathBuf>, publish: bool, yes: bool,
+   model, provider, config }`: número posicional, `--diff-archivo`, `--publicar`, `--si`, `--modelo`,
+   `--proveedor`, `--config`.
+2. Borrador = `.pcode/revisiones/pr-<n>.md` en el directorio actual.
+3. Sin `--publicar` (generar el borrador):
+   - diff = contenido de `--diff-archivo` si se da; si no, `GitHubHttp` desde el remoto `origin` (como en
+     `Crear`) y `pr_diff(number)`;
+   - una petición de chat con `pr_review_prompt(&diff)`; `parse_review_comments` sobre la respuesta;
+   - crea la carpeta, escribe `render_drafts(number, &comentarios)` en el borrador (aquí sí se sobrescribe:
+     es un borrador regenerado) e imprime `borrador: <ruta> (<k> comentarios, nada publicado)`. Devuelve 0.
+4. Con `--publicar`: sin `--si` → stderr `publicar escribe en el PR: repite con --publicar --si` y devuelve 2.
+   Si el borrador no existe → stderr `no hay borrador: ejecuta antes pcode pr revisar <n>` y devuelve 2. Con
+   todo: lee el borrador con `parse_review_comments` (lo que la persona haya dejado), y por cada comentario
+   llama a `comment(number, &format!("**{}:{}** — {}", file, line, body))`; imprime
+   `publicados <k> comentarios en el PR #<n>`. No se llama al modelo.
+5. Añade a `tests/pr.rs` los tests `revisar_*` (todos con `--diff-archivo` o sin llegar a la red).
+'''
+sin_firmas = "solo añade una variante de `PrCmd` y su rama; la API está en `pcode_flow::pr`"
+ejemplo = '''
+cambio.diff: un diff cualquiera.  Guion del modelo: "- src/a.rs:12: falta comprobar el vacío\n- src/b.rs:3: test que falta"
+$ pcode pr revisar 7 --diff-archivo cambio.diff
+borrador: .pcode/revisiones/pr-7.md (2 comentarios, nada publicado)
+→ el archivo contiene "# Revisión del PR #7 (borrador)" y "- src/a.rs:12: falta comprobar el vacío"
+$ pcode pr revisar 7 --publicar       → código 2, stderr contiene "--publicar --si"
+$ pcode pr revisar 8 --publicar --si  → código 2, stderr contiene "no hay borrador"
+'''
+tests = [
+  "revisar_deja_borrador: el primer caso del ejemplo crea el archivo con el título y los dos comentarios",
+  "revisar_sin_comentarios: un guion con `SIN COMENTARIOS` deja un borrador con `Sin comentarios.` y dice 0 comentarios",
+  "revisar_publicar_exige_si: con --publicar y sin --si sale con 2",
+  "revisar_publicar_sin_borrador: con --publicar --si y sin borrador sale con 2 y lo dice",
+]
+no_hagas = ["No publiques nada sin `--publicar --si`", "No llames al modelo al publicar: se publica lo que hay en el borrador", "No toques la rama `Crear`"]
 
 [[tarea]]
 id = "F8.34"

@@ -497,14 +497,133 @@ id = "F6.04"
 nombre = "regresion-nocturna"
 titulo = "Regresión nocturna de PublicBench con aviso automático"
 fase = "F6"
+hito = "1.4"
+talla = "M"
 ejecutor = "coordinador"
-depende = ["F3.13"]
+motivo_coordinador = "Necesita un runner propio con acceso a LiteLLM y a los secretos del repo, decidir la programación y el coste nocturno, y probar la apertura real de un issue en GitHub."
+depende = ["F3.13", "F0.04"]
 toca = [".github/workflows/bench-nocturno.yml", "docs/evaluacion.md"]
-acepta = "grep -q 'pcode bench' .github/workflows/bench-nocturno.yml"
-contexto = ["docs/evaluacion.md (Informes)"]
-objetivo = "Ejecución programada (runner propio con acceso a LiteLLM y a la imagen del proyecto) de `pcode bench --conjunto smoke` cada noche; compara con el último verde; si algo cae más de 3 pp, abre un issue con la tabla y las trayectorias de las tareas que empeoraron."
+acepta = "grep -q 'pcode bench ejecutar' .github/workflows/bench-nocturno.yml && grep -q 'pcode bench comparar' .github/workflows/bench-nocturno.yml"
+contexto = [
+  "docs/evaluacion.md (sección 6, «Informes»)",
+  "crates/pcode-cli/src/bench_cmd.rs (`pcode bench ejecutar` y `pcode bench comparar`, hechos por F3.13 y F6.04b)",
+]
+objetivo = '''
+1. Workflow programado (`schedule`) en un runner propio con acceso a LiteLLM y a la imagen del proyecto:
+   `pcode bench ejecutar --conjunto bench/smoke.jsonl --backend <backend> --salida actual.jsonl` cada noche.
+2. Descarga el último resultado verde (artefacto del workflow) y ejecuta
+   `pcode bench comparar anterior.jsonl actual.jsonl --umbral 3 --issue issue.md`.
+3. Si `comparar` sale con 2, abre un issue con `gh issue create --title … --body-file issue.md` y adjunta las
+   trayectorias de las tareas que empeoraron; si sale con 0, guarda `actual.jsonl` como nuevo último verde.
+4. `docs/evaluacion.md`, sección 6: cómo forzar una ejecución y dónde quedan los resultados.
+'''
 tests = ["(manual): una ejecución forzada genera la tabla y, con un resultado empeorado a mano, el issue"]
 papers = ["AgentLens (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F6.04a"
+nombre = "regresion-comparar-nucleo"
+titulo = "Banco: comparar dos ejecuciones y redactar el aviso de regresión (lógica pura)"
+fase = "F6"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F3.13"]
+toca = ["crates/pcode-flow/src/regress.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow regress::"
+contexto = [
+  "crates/pcode-flow/src/bench.rs (`BenchRow`, `summarize`, `Summary` y `report_markdown`)",
+  "docs/evaluacion.md (sección 6: la regresión nocturna avisa si algo empeora más de 3 puntos)",
+]
+objetivo = '''
+1. Crea `regress.rs` con `Regression`, `compare` e `issue_markdown` (firmas abajo). Lógica pura.
+2. `compare(prev, now, threshold_pp)`: con `summarize` de cada lado calcula `first_drop_pp = prev.first_pct -
+   now.first_pct` y `final_drop_pp = prev.final_pct - now.final_pct` (positivo = empeora). `worse` = ids, en
+   orden, que tenían `ok_final` en `prev` y no lo tienen en `now` (solo ids presentes en los dos lados).
+   `new_violations` = violaciones de `now` menos las de `prev` (0 si no aumentan). `regressed` = true si alguna
+   de las dos caídas es MAYOR que `threshold_pp` o si `new_violations > 0`.
+3. `issue_markdown(prev_name, now_name, prev, now, r)`: título `# Regresión en PublicBench`, una línea
+   `Aceptación a la primera: −X.X pp · aceptación final: −Y.Y pp · violaciones nuevas: N` (con el signo real:
+   una mejora sale como `+X.X pp`), la tabla de `report_markdown(&[(prev_name, prev), (now_name, now)])` y una
+   sección `## Tareas que empeoraron` con una línea `- <id>` por cada una (o `ninguna`).
+4. `lib.rs`: añade `pub mod regress;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/regress.rs
+use crate::bench::BenchRow;
+
+/// Diferencia entre dos ejecuciones del banco.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Regression {
+    pub first_drop_pp: f64,
+    pub final_drop_pp: f64,
+    pub worse: Vec<String>,
+    pub new_violations: u32,
+    pub regressed: bool,
+}
+
+/// Compara la ejecución anterior con la actual.
+pub fn compare(prev: &[BenchRow], now: &[BenchRow], threshold_pp: f64) -> Regression;
+/// Texto del aviso (cuerpo de un issue).
+pub fn issue_markdown(prev_name: &str, now_name: &str, prev: &[BenchRow], now: &[BenchRow], r: &Regression) -> String;
+'''
+ejemplo = '''
+prev: 10 filas, todas ok_first y ok_final.  now: las mismas, pero T3 falla (ok_first y ok_final false).
+compare(prev, now, 3.0) → Regression { first_drop_pp: 10.0, final_drop_pp: 10.0, worse: ["T3"], new_violations: 0, regressed: true }
+compare(prev, prev, 3.0) → regressed false, worse []
+20 filas con una sola caída (5 pp) y umbral 5.0 → regressed false (no es MAYOR que el umbral)
+issue_markdown(..) contiene "# Regresión en PublicBench", "−10.0 pp" y "- T3"
+'''
+tests = [
+  "detecta_caida_mayor_que_el_umbral: el primer caso del ejemplo",
+  "sin_cambios_no_hay_regresion: comparar una ejecución consigo misma da regressed false",
+  "caida_igual_al_umbral_no_avisa: una caída de exactamente el umbral no es regresión",
+  "violaciones_nuevas_son_regresion: mismas aceptaciones pero una violación más da regressed true",
+  "ids_nuevos_no_cuentan_como_peores: una tarea que solo está en now y falla no aparece en worse",
+  "aviso_lista_las_que_empeoraron: el texto contiene el título, la caída con signo y la línea de T3",
+]
+no_hagas = ["No llames a GitHub ni a `gh` aquí", "No dupliques el cálculo de porcentajes: usa `summarize`"]
+
+[[tarea]]
+id = "F6.04b"
+nombre = "regresion-comparar-cli"
+titulo = "CLI: `pcode bench comparar <anterior> <actual>` con umbral y cuerpo del issue"
+fase = "F6"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F6.04a"]
+toca = ["crates/pcode-cli/src/bench_cmd.rs", "crates/pcode-cli/tests/bench.rs"]
+acepta = "cargo test -p pcode-cli --test bench comparar"
+contexto = [
+  "crates/pcode-cli/src/bench_cmd.rs (enum `BenchCmd` y rama `Informe`: cómo se leen los archivos con `parse_rows`)",
+  "crates/pcode-flow/src/regress.rs (`compare` e `issue_markdown`)",
+]
+objetivo = '''
+1. En `bench_cmd.rs`, variante nueva `Comparar { anterior: PathBuf, actual: PathBuf, umbral: f64, issue:
+   Option<PathBuf> }` («Compara dos ejecuciones y avisa si la actual empeora.»): dos posicionales, `--umbral`
+   (puntos porcentuales, por defecto 3.0) y `--issue <archivo>`.
+2. Rama: lee los dos archivos con `parse_rows` (error de lectura o de formato → stderr y devuelve 2; mismo
+   tratamiento que en `Informe`), llama a `pcode_flow::regress::compare` y genera el texto con
+   `issue_markdown` (los nombres son los de los archivos sin extensión).
+3. Imprime siempre el texto en stdout. Si `regressed`: con `--issue`, además lo escribe en ese archivo; imprime
+   en stderr `regresión: <n> tareas empeoraron` y devuelve 2. Si no: imprime en stderr `sin regresión` y
+   devuelve 0 (y no escribe el archivo de `--issue`).
+4. Añade a `tests/bench.rs` los tests `comparar_*`.
+'''
+sin_firmas = "solo añade una variante de `BenchCmd` y su rama; la API está en `pcode_flow::regress`"
+ejemplo = '''
+anterior.jsonl: T1 y T2 aceptadas a la primera.   actual.jsonl: T1 aceptada, T2 fallida.
+$ pcode bench comparar anterior.jsonl actual.jsonl --issue aviso.md
+→ código 2; stdout contiene "# Regresión en PublicBench" y "- T2"; existe aviso.md con el mismo texto
+$ pcode bench comparar anterior.jsonl anterior.jsonl --issue aviso2.md → código 0, stderr "sin regresión", no existe aviso2.md
+'''
+tests = [
+  "comparar_regresion_sale_con_2: el primer caso del ejemplo da código 2, el texto y el archivo del aviso",
+  "comparar_sin_regresion_sale_con_0: el segundo caso da código 0 y no crea el archivo",
+  "comparar_archivo_inexistente: un archivo que no existe da código 2 y un error en stderr",
+]
+no_hagas = ["No abras issues ni llames a `gh`: eso lo hace el workflow", "No toques las ramas `Ejecutar` e `Informe`"]
 
 [[tarea]]
 id = "F6.05"

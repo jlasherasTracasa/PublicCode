@@ -1,0 +1,1757 @@
+# Tareas de la fase F11. Índice de fases e hitos: tareas/plan.toml. Tras editar: tools/tareas/generar.py
+
+[[tarea]]
+id = "F11.01"
+nombre = "flow-comprobar"
+titulo = "`pcode flow comprobar`: lint de tareas aptas para un modelo pequeño"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F3.10"]
+toca = []
+acepta = "cargo test -p pcode-flow lint:: && cargo test -p pcode-flow brief:: && cargo test -p pcode-cli --test flow comprobar"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de cada subtarea (F11.01a, F11.01b, F11.01c).
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.01a"
+nombre = "tarea-secciones"
+titulo = "Flujos: leer las secciones de una tarea (`Brief`) desde su Markdown"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F3.10"]
+toca = ["crates/pcode-flow/src/brief.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow brief::"
+contexto = [
+  "crates/pcode-flow/src/task.rs (`TaskDef` y `parse_task`: `body` es el texto entero de la tarea cuando no hay frontmatter)",
+  "tareas/F3.10-cli-flow.md (un archivo de tarea real: ficha, `## Toca`, `## Contexto`, `## Objetivo`)",
+]
+objetivo = '''
+1. Crea `brief.rs` con `Brief` y `parse_brief` (firmas abajo). No uses `regex`: recorre las líneas a mano.
+2. Ficha: la primera línea que empieza por `**Fase**` se parte por ` · `; cada trozo es `**Clave** valor`.
+   `Ejecutor` → `executor`, `Talla` → `size`, `Hito` → `milestone`. Si no hay ficha, `executor = ""`.
+3. Una línea que empieza por `> **Por qué es del coordinador:**` da `coordinator_reason` (el resto, sin
+   espacios). Una línea que empieza por `Sin firmas:` pone `no_signatures = true`.
+4. Secciones: una línea `## Título…` abre sección hasta la siguiente `## `. Se reconoce por cómo empieza el
+   título en minúsculas: `toca`, `contexto`, `objetivo`, `firmas`, `ejemplo`, `tests`, `notas`, `subtareas`.
+   - `toca`: cada línea `- ` aporta la ruta entre el primer par de comillas invertidas. Si la línea contiene
+     `(configuración)` va a `extra`; si la ruta empieza por `informes/` se ignora; el resto va a `touches`.
+   - `contexto`: cada línea `- ` (sin el guion) va a `context`, salvo `(nada)`.
+   - `objetivo` y `notas`: el texto de la sección, con `trim()`.
+   - `firmas` y `ejemplo`: las líneas de la sección que no empiezan por tres comillas invertidas, unidas con
+     `\n` y con `trim()`.
+   - `tests`: cada línea `- ` se guarda sin el guion y sin comillas invertidas (`- `a`: b` → `a: b`).
+   - `subtareas`: pone `closing = true`.
+5. `lib.rs`: añade `pub mod brief;` (orden alfabético) y `pub use brief::{Brief, parse_brief};`.
+'''
+firmas = '''
+// crates/pcode-flow/src/brief.rs
+/// Secciones de una tarea escrita en Markdown (lo que necesita el lint y el control de `toca`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Brief {
+    pub executor: String,
+    pub size: Option<String>,
+    pub milestone: Option<String>,
+    pub coordinator_reason: Option<String>,
+    pub closing: bool,
+    pub touches: Vec<String>,
+    pub extra: Vec<String>,
+    pub context: Vec<String>,
+    pub objective: String,
+    pub signatures: String,
+    pub no_signatures: bool,
+    pub example: String,
+    pub notes: String,
+    pub tests: Vec<String>,
+}
+
+/// Lee las secciones del cuerpo de una tarea (`TaskDef::body`).
+pub fn parse_brief(body: &str) -> Brief;
+'''
+ejemplo = '''
+entrada:
+  # T1 — Saludo
+  **Fase** F1 · **Ejecutor** haiku · **Talla** S · **Depende de** —
+  ## Toca (los únicos archivos)
+  - `src/a.rs`
+  - `Cargo.toml` (configuración)
+  - `informes/T1.md`
+  ## Tests (con estos nombres)
+  - `saluda`: entra «Ana» y sale «hola Ana»
+salida: executor "haiku", size Some("S"), touches ["src/a.rs"], extra ["Cargo.toml"],
+        tests ["saluda: entra «Ana» y sale «hola Ana»"]
+'''
+tests = [
+  "lee_la_ficha: la entrada del ejemplo da ejecutor haiku, talla S y milestone None",
+  "toca_separa_configuracion_e_informe: la entrada del ejemplo da touches con una ruta y extra con Cargo.toml",
+  "firmas_sin_las_vallas: una sección Firmas con un bloque de código devuelve solo el código",
+  "tests_sin_comillas_invertidas: la línea del ejemplo queda como `saluda: entra «Ana» y sale «hola Ana»`",
+  "subtareas_marca_cierre: una sección `## Subtareas` pone closing a true",
+  "cuerpo_vacio: la cadena vacía da Brief::default()",
+  "lee_una_tarea_real_del_repo: `tareas/F3.10-cli-flow.md` (con CARGO_MANIFEST_DIR) da 4 rutas en touches",
+]
+no_hagas = ["No añadas dependencias (ni `regex`)", "No cambies `TaskDef` ni `parse_task`"]
+
+[[tarea]]
+id = "F11.01b"
+nombre = "lint-tareas"
+titulo = "Flujos: reglas del lint de tareas (`lint_task`, `lint_all`)"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.01a"]
+toca = ["crates/pcode-flow/src/lint.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow lint::"
+contexto = [
+  "tools/tareas/generar.py (función `calidad`: las mismas reglas en Python; cópialas, no inventes otras)",
+  "crates/pcode-flow/src/brief.rs (`Brief` y `parse_brief`: de dónde salen las secciones)",
+]
+objetivo = '''
+1. Crea `lint.rs` con las firmas de abajo. `lint_task` devuelve los problemas de UNA tarea; `b` es
+   `parse_brief(&t.body)`. Longitudes con `.chars().count()`. Cada problema lleva `rule` y `message`:
+   - `acepta`: `t.accept` tiene más de una línea, o (quitando espacios) contiene `||true` o acaba en `;true`.
+   - `pendiente`: el cuerpo contiene `PENDIENTE:` («quedan partes sin rellenar»).
+   - Si `b.executor == "coordinador"`: `coordinador` si `coordinator_reason` es None; y no se mira nada más.
+   - `talla`: `size` no es `S` ni `M`.
+   - `toca`: vacío sin ser de cierre (`b.closing`); más de `MAX_TOUCHES`; rutas repetidas; o una ruta cuyo
+     nombre de archivo (lo que sigue a la última `/`) no aparece en objetivo + firmas + notas.
+   - `contexto`: `context` vacío.
+   - `objetivo` (solo si no es de cierre): menos de `MIN_OBJECTIVE` caracteres o menos de 2 pasos numerados
+     (líneas que, sin espacios iniciales, empiezan por cifras seguidas de `. `).
+   - `longitud`: objetivo + firmas + ejemplo + notas suman más de `MAX_TEXT`.
+   - `firmas`: alguna ruta de `touches` acaba en `.rs .ts .tsx .js .jsx .py .kt .sh .ps1`, `signatures` está
+     vacío y `no_signatures` es false.
+   - `tests`: por cada test que no empiece por `(`: se parte en el primer `:`; el nombre debe empezar por
+     letra o `_` y la descripción tener al menos `MIN_TEST_DESC` caracteres.
+   - `rutas`: por cada palabra del contexto (separa por espacios, paréntesis, comas y comillas invertidas;
+     quita `.,:;` finales) que contenga `/`, no contenga `*` ni `<`, y cuyo último tramo contenga `.` o que
+     acabe en `/`: si `exists(palabra)` es false → problema.
+2. `lint_all`: aplica `lint_task` a cada tarea cuyo id no esté en `done`. Para la regla `rutas`, una ruta
+   también «existe» si está en `touches` o `extra` de cualquier tarea de la lista.
+3. `lib.rs`: añade `pub mod lint;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/lint.rs
+use crate::brief::Brief;
+use crate::task::TaskDef;
+use std::collections::HashSet;
+
+pub const MAX_TOUCHES: usize = 4;
+pub const MIN_OBJECTIVE: usize = 300;
+pub const MAX_TEXT: usize = 7000;
+pub const MIN_TEST_DESC: usize = 12;
+
+/// Un problema de una tarea.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LintIssue {
+    #[serde(rename = "tarea")]
+    pub task: String,
+    #[serde(rename = "regla")]
+    pub rule: &'static str,
+    #[serde(rename = "mensaje")]
+    pub message: String,
+}
+
+/// Problemas de una tarea. `exists` dice si una ruta citada existe en el proyecto.
+pub fn lint_task(t: &TaskDef, b: &Brief, exists: &dyn Fn(&str) -> bool) -> Vec<LintIssue>;
+
+/// Problemas de todas las tareas abiertas (las de `done` se saltan).
+pub fn lint_all(tasks: &[TaskDef], done: &HashSet<String>, exists: &dyn Fn(&str) -> bool) -> Vec<LintIssue>;
+'''
+ejemplo = '''
+Tarea válida para los tests (constrúyela con format! en un auxiliar `valida(id)`):
+  <!-- acepta: test -f a.rs -->
+  # {id} — Crear a
+  **Fase** F1 · **Ejecutor** haiku · **Talla** S · **Depende de** —
+  ## Toca
+  - `a.rs`
+  ## Contexto
+  - nada que leer antes
+  ## Objetivo
+  1. Crea a.rs con una función. {"Detalle del paso. ".repeat(20)}
+  2. Comprueba que compila.
+  ## Firmas
+  (bloque de código con) pub fn a();
+  ## Tests
+  - `crea_a`: tras la tarea existe a.rs con la función
+lint_task(valida) → []
+Quitando la sección Firmas → [LintIssue { rule: "firmas", .. }]
+'''
+tests = [
+  "tarea_valida_sin_problemas: la tarea del ejemplo da una lista vacía",
+  "acepta_que_siempre_pasa: `acepta` igual a `cargo test || true` da la regla acepta",
+  "objetivo_corto_o_sin_pasos: un objetivo de una frase da la regla objetivo",
+  "codigo_sin_firmas: toca a.rs sin sección Firmas ni «Sin firmas:» da la regla firmas",
+  "toca_no_mencionado: una ruta de toca cuyo nombre no sale en el objetivo da la regla toca",
+  "mas_de_cuatro_archivos: cinco rutas en toca dan la regla toca",
+  "test_sin_descripcion: el test `x: corto` da la regla tests",
+  "coordinador_sin_motivo: ejecutor coordinador sin motivo da solo la regla coordinador",
+  "cierre_con_toca_vacio_vale: una tarea con sección Subtareas y sin toca no da la regla toca ni objetivo",
+  "ruta_de_contexto_que_no_existe: contexto `src/no.rs (función x)` con exists siempre false da la regla rutas",
+  "pendiente_sin_rellenar: un cuerpo con `PENDIENTE:` da la regla pendiente",
+  "lint_all_salta_las_hechas: una tarea con problemas cuyo id está en done no aparece",
+]
+no_hagas = ["No añadas dependencias (ni `regex`)", "No leas el disco en `lint.rs`: la existencia de rutas entra por `exists`"]
+
+[[tarea]]
+id = "F11.01c"
+nombre = "flow-comprobar-cli"
+titulo = "CLI: `pcode flow comprobar` con salida legible y `--formato json`"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.01b"]
+toca = ["crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-cli --test flow comprobar"
+contexto = [
+  "crates/pcode-cli/src/flow_cmd.rs (enum `FlowCmd` y el `match c` de `flow_cmd`: ahí va la orden nueva, junto a `Estado`)",
+  "crates/pcode-cli/tests/spec.rs (cómo se lanza `pcode` con `assert_cmd` en un directorio temporal)",
+  "crates/pcode-flow/src/lint.rs (`lint_all` y `LintIssue`)",
+]
+objetivo = '''
+1. En `flow_cmd.rs`, añade a `FlowCmd` la variante `Comprobar { tareas: PathBuf, format: String }` con
+   `#[arg(long, default_value = "tareas")]` y `#[arg(long = "formato", default_value = "texto")]`, y su
+   comentario `///` «Comprueba que las tareas son aptas para un modelo pequeño.».
+2. Añade la función `done_ids` (firma abajo): ids de `tasks` para los que existe `informes/<id>.md` en `root`.
+3. En el `match c`, la rama `Comprobar`: `task::load_dir(&tareas)`, `done_ids` con el directorio actual,
+   `pcode_flow::lint::lint_all(&tasks, &done, &|p| root.join(p).exists())`.
+   - Texto: una línea por problema `✗ <tarea>: [<regla>] <mensaje>` y al final
+     `<N> tareas comprobadas, <M> con problemas` (N = tareas abiertas; M = tareas distintas con problemas).
+   - JSON: una sola línea `{"tareas": N, "problemas": [ {tarea, regla, mensaje}… ]}` con `serde_json`.
+   - Devuelve `Ok(0)` sin problemas y `Ok(2)` con alguno.
+4. Crea `tests/flow.rs` con los tests de la lista: cada uno crea un directorio temporal con `tareas/` dentro
+   y lanza `Command::cargo_bin("pcode")` con `current_dir` y los argumentos `flow comprobar`.
+'''
+firmas = '''
+// crates/pcode-cli/src/flow_cmd.rs
+/// Ids de las tareas que ya tienen informe en `root/informes/<id>.md`.
+pub fn done_ids(root: &Path, tasks: &[pcode_flow::TaskDef]) -> std::collections::HashSet<String>;
+'''
+ejemplo = '''
+tareas/mala.md = "<!-- acepta: true -->\n# mala\n**Fase** F1 · **Ejecutor** haiku · **Talla** S\n## Objetivo\nhaz algo\n"
+$ pcode flow comprobar            → sale con 2 y stdout contiene "✗ mala: [objetivo]" y "1 tareas comprobadas, 1 con problemas"
+$ pcode flow comprobar --formato json → stdout es JSON con "tareas": 1 y problemas[0].regla presente
+'''
+tests = [
+  "comprobar_tarea_mala_sale_con_2: la tarea del ejemplo da código 2 y la línea con ✗ y su regla",
+  "comprobar_json_lista_problemas: con --formato json la salida parsea y trae tareas=1 y algún problema",
+  "comprobar_salta_las_hechas: con informes/mala.md creado, sale con 0 y dice 0 tareas comprobadas",
+]
+no_hagas = ["No toques las ramas `Run` ni `Estado`", "No pongas la lógica del lint en la CLI: solo se llama a `lint_all`"]
+
+[[tarea]]
+id = "F11.02"
+nombre = "flow-siguiente-estado"
+titulo = "`pcode flow siguiente` y `pcode flow estado`: tablero de hechas, listas y bloqueadas con su motivo"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.01"]
+toca = []
+acepta = "cargo test -p pcode-flow board:: && cargo test -p pcode-cli --test flow tablero"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.02a y de F11.02b.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.02a"
+nombre = "tablero-nucleo"
+titulo = "Flujos: tablero del plan (`board`, `next`, `render_board`), lógica pura"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.01"]
+toca = ["crates/pcode-flow/src/board.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow board::"
+contexto = [
+  "crates/pcode-flow/src/events.rs (`FlowState`, `TaskState` y `FlowState::state`: estado de cada tarea en el flujo)",
+  "tools/tareas/generar.py (funciones `estados` y `siguientes`: el mismo cálculo en Python)",
+]
+objetivo = '''
+1. Crea `board.rs` con las firmas de abajo.
+2. `board`: una fila por tarea, en el orden de `tasks`. La celda se decide en este orden:
+   a) el id está en `done` o `state.state(id)` es `TaskState::Integrated` → `Done`;
+   b) `TaskState::Blocked(m)` → `Stuck(m)`;
+   c) `TaskState::Running(_)` o `Accepted` → `Running`;
+   d) alguna dependencia no está `Done` (según a) → `Waiting(esas dependencias, ordenadas)`;
+   e) `Mode::Coordinator` → `Coordinator`;
+   f) si no → `Ready`.
+   `attempts` sale de `state.attempts` (0 si no consta). `unblocks` = cuántas tareas no hechas dependen de
+   esta directa o indirectamente (recorrido con una pila; las dependencias que no existen se ignoran).
+3. `next`: las filas `Ready`, ordenadas por `unblocks` de mayor a menor y, a igualdad, por id; como mucho `n`.
+4. `render_board`: primera línea
+   `hechas A · en marcha B · listas C · esperando D · coordinador E · atascadas F`, una línea vacía y una
+   línea por fila que no esté hecha: `▶ id` (lista), `⏳ id (intento N)`, `… id — espera a x, y`,
+   `⚠ id — la hace el coordinador`, `✗ id — motivo`. Sin filas pendientes, tras el resumen: `Todo hecho.`.
+5. `lib.rs`: añade `pub mod board;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/board.rs
+use crate::events::FlowState;
+use crate::task::TaskDef;
+use std::collections::HashSet;
+
+/// Situación de una tarea en el tablero.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub enum Cell { Done, Running, Ready, Waiting(Vec<String>), Coordinator, Stuck(String) }
+
+/// Fila del tablero.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct BoardRow { pub id: String, pub cell: Cell, pub attempts: u32, pub unblocks: usize }
+
+/// Calcula el tablero.
+pub fn board(tasks: &[TaskDef], done: &HashSet<String>, state: &FlowState) -> Vec<BoardRow>;
+/// Las `n` tareas listas que más desbloquean.
+pub fn next(rows: &[BoardRow], n: usize) -> Vec<&BoardRow>;
+/// Tablero en texto.
+pub fn render_board(rows: &[BoardRow]) -> String;
+'''
+ejemplo = '''
+Tareas A, B (depende de A), C (depende de B), D (coordinador); done = {}; estado vacío:
+  board → A Ready (unblocks 2), B Waiting(["A"]) (unblocks 1), C Waiting(["B"]), D Coordinator
+  next(rows, 5) → [A]
+  render_board → "hechas 0 · en marcha 0 · listas 1 · esperando 2 · coordinador 1 · atascadas 0\n\n▶ A\n… B — espera a A\n… C — espera a B\n⚠ D — la hace el coordinador\n"
+Con done = {A}: B pasa a Ready.
+'''
+tests = [
+  "lista_y_esperando: las tareas del ejemplo dan A lista y B esperando a A",
+  "hecha_por_informe_o_integrada: un id en done y otro con evento Integrada salen como Done",
+  "bloqueada_lleva_el_motivo: un evento Bloqueada da Stuck con su motivo",
+  "desbloquea_cuenta_transitivas: en la cadena A, B, C la fila A tiene unblocks 2",
+  "siguiente_ordena_por_desbloqueo: entre dos listas sale primero la que más desbloquea y luego por id",
+  "coordinador_no_es_lista: la tarea de coordinador no aparece en next",
+  "render_resume_y_explica: el texto del ejemplo coincide carácter a carácter",
+]
+no_hagas = ["No leas el disco ni la base de datos aquí: `done` y `state` llegan calculados", "No toques `scheduler.rs`"]
+
+[[tarea]]
+id = "F11.02b"
+nombre = "flow-siguiente-cli"
+titulo = "CLI: `pcode flow siguiente` y `pcode flow estado` con el tablero"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.02a"]
+toca = ["crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-cli --test flow tablero"
+contexto = [
+  "crates/pcode-cli/src/flow_cmd.rs (funciones `session` y `runner`, rama `FlowCmd::Estado` y función `done_ids`)",
+  "crates/pcode-flow/src/board.rs (`board`, `next`, `render_board`)",
+  "crates/pcode-flow/src/events.rs (funciones `load` y `FlowState::replay`)",
+]
+objetivo = '''
+1. En `flow_cmd.rs`, añade `load_flow` (firma abajo): carga las tareas con `task::load_dir` y los eventos del
+   flujo SIN crear nada: si `.pcode/flow.db` no existe en el directorio actual, eventos vacíos; si existe,
+   `Store::open`, busca la sesión cuyo `task == "flujo"` con `store.sessions(50)` (si no hay, eventos vacíos)
+   y lee con `pcode_flow::events::load(&store, id)`.
+2. Variante nueva `Siguiente { tareas, n, ids, format }`: `--tareas` (por defecto `tareas`), `-n` con
+   `#[arg(short, default_value_t = 5)]`, `--ids` (bool) y `--formato` (por defecto `texto`).
+   Calcula `board(&tasks, &done_ids(&root, &tasks), &FlowState::replay(&events))` y `next(&rows, n)`.
+   - Con `--ids`: un id por línea. Texto: `▶ <id>\tdesbloquea <k>`. JSON: array de las filas.
+   - Sin ninguna lista: imprime en stderr `no hay tareas listas` y devuelve `Ok(0)`.
+3. Cambia la rama `Estado`: añade `--formato` y sustituye lo que imprime por `render_board(&rows)` (texto) o
+   el JSON de todas las filas. Ya no construye un `Runner` (borra ese `RunnerCfg` de mentira). La rama `Run`
+   sigue escribiendo `.pcode/estado.md` como hasta ahora: no la toques.
+4. Añade a `tests/flow.rs` los tests de la lista (directorio temporal con `tareas/a.md` y `tareas/b.md`).
+'''
+firmas = '''
+// crates/pcode-cli/src/flow_cmd.rs
+/// Tareas del directorio y eventos guardados del flujo (vacíos si aún no hay `.pcode/flow.db`).
+pub fn load_flow(tareas: &Path) -> anyhow::Result<(Vec<pcode_flow::TaskDef>, Vec<pcode_flow::FlowEvent>)>;
+'''
+ejemplo = '''
+tareas/a.md = "<!-- acepta: true -->\n<!-- modo: aislado -->\n# a\n"
+tareas/b.md = "<!-- acepta: true -->\n<!-- modo: aislado -->\n<!-- depende: a -->\n# b\n"
+$ pcode flow siguiente --ids     → "a\n"
+$ pcode flow estado              → contiene "listas 1 · esperando 1" y "… b — espera a a"
+(con informes/a.md creado) $ pcode flow siguiente --ids → "b\n"
+'''
+tests = [
+  "tablero_siguiente_da_la_lista: con las tareas del ejemplo, `flow siguiente --ids` imprime solo a",
+  "tablero_estado_explica_el_bloqueo: `flow estado` contiene la línea de b esperando a a",
+  "tablero_informe_cierra_la_tarea: al crear informes/a.md, `flow siguiente --ids` imprime b",
+  "tablero_estado_json: `flow estado --formato json` parsea como array de 2 filas",
+]
+no_hagas = ["No crees `.pcode/flow.db` al consultar", "No cambies `Runner::status_md`"]
+
+[[tarea]]
+id = "F11.03"
+nombre = "flow-desglosar"
+titulo = "`pcode flow desglosar <tarea>`: partir en subtareas una tarea que no pasa el lint"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.02"]
+toca = []
+acepta = "cargo test -p pcode-flow split:: && cargo test -p pcode-cli --test flow desglosar"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.03a y de F11.03b.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.03a"
+nombre = "desglose-nucleo"
+titulo = "Flujos: prompt de desglose, lectura de bloques y validación de subtareas (lógica pura)"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.02"]
+toca = ["crates/pcode-flow/src/split.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow split::"
+contexto = [
+  "crates/pcode-flow/src/lint.rs (`lint_task` y `LintIssue`: las subtareas deben pasar este lint)",
+  "crates/pcode-flow/src/task.rs (`parse_task(id, text)`: convierte un Markdown en `TaskDef`)",
+  "docs/tareas-guia.md (secciones 2 y 3: qué debe pedir el prompt al modelo)",
+]
+objetivo = '''
+1. Crea `split.rs` con las firmas de abajo. Nada de red ni de disco.
+2. `split_prompt`: texto para el modelo fuerte con, en este orden: (a) la instrucción «Parte esta tarea en
+   subtareas que un modelo pequeño pueda hacer leyendo solo la subtarea»; (b) las reglas: máximo 4 archivos
+   en `## Toca`, objetivo con pasos numerados de al menos 300 caracteres, `## Firmas` si toca código,
+   `## Tests` como `nombre: qué entra y qué se espera`, `## Contexto` no vacío, primero la lógica pura y
+   después el cableado, ids `<id de la madre>` + letra de la `a` a la `h`; (c) el formato de cada archivo:
+   cabeceras `<!-- acepta: … -->`, `<!-- modo: aislado -->`, `<!-- depende: … -->`, título `# id — título`,
+   ficha `**Fase** … · **Ejecutor** haiku · **Talla** S` y las secciones; (d) el formato de respuesta: un
+   bloque por subtarea, `<<<ID.md` en una línea, el contenido y `>>>` en otra; (e) `# Problemas del lint` con
+   una línea `- [regla] mensaje` por problema; (f) `# Tarea` con `task.body`. Si `repair` es
+   `Some((anterior, problemas))`, añade al final `# Tu respuesta anterior`, el texto y `# Corrige` con los
+   problemas, uno por línea.
+3. `parse_blocks`: devuelve `(nombre sin .md, contenido)` por cada bloque `<<<NOMBRE.md` … `>>>` (las dos
+   marcas solas en su línea). Lo que quede fuera de los bloques se ignora. Un bloque sin cerrar se descarta.
+4. `check_split`: valida los bloques y devuelve las tareas parseadas y la lista de problemas (vacía = vale):
+   menos de 2 subtareas; id que no sea `<parent.id>` + una letra `a`–`h`; id repetido o que ya exista en
+   `existing`; `parse_task` falla; dependencia que no es ni una tarea de `existing` ni una hermana anterior;
+   y cada problema de `lint_task` como `<id>: [regla] mensaje`.
+5. `lib.rs`: añade `pub mod split;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/split.rs
+use crate::lint::LintIssue;
+use crate::task::TaskDef;
+
+/// Prompt para que un modelo fuerte parta `task` en subtareas.
+pub fn split_prompt(task: &TaskDef, issues: &[LintIssue], repair: Option<(&str, &[String])>) -> String;
+/// Bloques `<<<NOMBRE.md … >>>` de una respuesta: (nombre sin extensión, contenido).
+pub fn parse_blocks(text: &str) -> Vec<(String, String)>;
+/// Valida las subtareas propuestas. Devuelve las que parsean y los problemas (vacío = aceptadas).
+pub fn check_split(
+    parent: &TaskDef,
+    blocks: &[(String, String)],
+    existing: &[TaskDef],
+    exists: &dyn Fn(&str) -> bool,
+) -> (Vec<TaskDef>, Vec<String>);
+'''
+ejemplo = '''
+parse_blocks("hola\n<<<T1a.md\n<!-- acepta: true -->\n# T1a\n>>>\n<<<T1b.md\nx\n>>>\n")
+  → [("T1a", "<!-- acepta: true -->\n# T1a"), ("T1b", "x")]
+check_split(madre T1, [("T1a", válida), ("T1b", válida que depende de T1a)], …) → (2 tareas, [])
+check_split(madre T1, [("T1a", válida)], …) → (1 tarea, ["hacen falta al menos 2 subtareas"])
+check_split(madre T1, [("X9", válida), ("T1b", válida)], …) → problemas contiene "X9: el id debe ser T1 seguido de una letra de la a a la h"
+'''
+tests = [
+  "prompt_lleva_tarea_problemas_y_formato: el prompt contiene el cuerpo, `[objetivo]` y la marca `<<<`",
+  "prompt_de_reparacion_incluye_la_respuesta_anterior: con repair aparecen `# Corrige` y el problema",
+  "lee_dos_bloques: la entrada del ejemplo da dos pares con su contenido sin las marcas",
+  "bloque_sin_cerrar_se_descarta: un `<<<T1a.md` sin `>>>` da lista vacía",
+  "dos_subtareas_validas_pasan: dos tareas que pasan el lint dan cero problemas",
+  "una_sola_subtarea_no_vale: un solo bloque da el problema de «al menos 2 subtareas»",
+  "id_que_no_es_de_la_madre: el id X9 da el problema del ejemplo",
+  "subtarea_que_no_pasa_el_lint: una subtarea sin objetivo da un problema que empieza por su id y lleva `[objetivo]`",
+]
+no_hagas = ["No llames a ningún modelo aquí", "No escribas archivos: eso es de la CLI", "No añadas dependencias"]
+notas = '''
+Para las tareas válidas de los tests copia el auxiliar `valida(id)` de los tests de `lint.rs` (misma forma:
+cabecera `acepta`, ficha con Talla S, Toca, Contexto, Objetivo de 2 pasos y más de 300 caracteres, Firmas, Tests).
+'''
+
+[[tarea]]
+id = "F11.03b"
+nombre = "flow-desglosar-cli"
+titulo = "CLI: `pcode flow desglosar <tarea>` escribe las subtareas como borrador"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.03a"]
+toca = ["crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-cli --test flow desglosar"
+contexto = [
+  "crates/pcode-cli/src/ask.rs (función `ask`: cómo se construye el proveedor y se hace UNA petición sin tools)",
+  "crates/pcode-cli/tests/spec.rs (auxiliares `resp` y `pcode`: guion del modelo simulado con `PCODE_MOCK_SCRIPT`)",
+  "crates/pcode-flow/src/split.rs (`split_prompt`, `parse_blocks`, `check_split`)",
+]
+objetivo = '''
+1. En `flow_cmd.rs`, variante `Desglosar { tarea: String, tareas: PathBuf, overwrite: bool, model, provider,
+   config }` con `--tareas` (por defecto `tareas`), `--sobrescribir`, `--modelo`, `--proveedor` y `--config`
+   (por defecto `pcode.toml`), como en `AskArgs`.
+2. Rama `Desglosar`: carga `task::load_dir(&tareas)`; si `tarea` no existe → `anyhow::bail!("no existe la
+   tarea <id>")`. Calcula `lint_task` (con `parse_brief(&t.body)` y `|p| root.join(p).exists()`); sin
+   problemas imprime `la tarea <id> ya es apta: no hace falta partirla` y devuelve 0.
+3. Pide el desglose: `Config::load_layered(&config)`, `build_provider`, `pick_model` y
+   `sel.provider.chat(&ChatRequest { model, messages: vec![Message::user(prompt)], tools: vec![],
+   max_tokens: Some(8000), ..Default::default() })`. Hasta 3 rondas (bucle `for` con cota): `parse_blocks`
+   sobre `r.message.content` y `check_split`; si hay problemas, la ronda siguiente usa
+   `split_prompt(.., Some((&respuesta, &problemas)))`.
+4. Si tras 3 rondas quedan problemas: imprímelos en stderr y devuelve 2 SIN escribir nada.
+5. Si vale: los archivos van a `<tareas>/borradores/<id>.md`. Si alguno existe y no hay `--sobrescribir`,
+   no escribas ninguno: stderr `ya existe <ruta> (usa --sobrescribir)` y devuelve 2. Si no, crea la carpeta,
+   escribe todos e imprime una línea `borrador: <ruta>` por archivo y, al final,
+   `Revísalas y muévelas a <tareas>/ cuando estén bien.`
+6. Añade a `tests/flow.rs` los tests de la lista, con el guion del modelo simulado (`PCODE_MOCK_SCRIPT`).
+'''
+sin_firmas = "solo añade una variante de `FlowCmd` y su rama; la API está en `pcode_flow::split`"
+ejemplo = '''
+tareas/T1.md: una tarea que no pasa el lint (objetivo de una frase).
+Guion del modelo: una respuesta cuyo content es "<<<T1a.md\n{valida T1a}\n>>>\n<<<T1b.md\n{valida T1b}\n>>>\n"
+$ pcode flow desglosar T1     → código 0, existen tareas/borradores/T1a.md y T1b.md, stdout contiene "borrador: tareas/borradores/T1a.md"
+$ pcode flow desglosar T1     (otra vez, mismo guion) → código 2, stderr contiene "ya existe"
+'''
+tests = [
+  "desglosar_escribe_borradores: con el guion del ejemplo se crean los dos archivos en tareas/borradores",
+  "desglosar_no_pisa_sin_permiso: la segunda ejecución sale con 2 y no cambia el contenido del borrador",
+  "desglosar_respuesta_mala_no_escribe: tres respuestas sin bloques dan código 2 y no existe tareas/borradores",
+  "desglosar_tarea_apta_no_llama_al_modelo: una tarea válida y un guion vacío dan código 0 y el mensaje «ya es apta»",
+]
+no_hagas = ["No escribas nunca en `<tareas>/` directamente: solo en `borradores/`", "No uses tools ni el bucle del agente: es una sola petición de chat por ronda", "No pongas un bucle sin cota"]
+notas = '''
+En los tests, las subtareas válidas se construyen con un auxiliar `valida(id, depende)` (misma forma que en
+los tests de `lint.rs`: cabeceras `acepta`/`modo`/`depende`, ficha con Talla S, Toca con un archivo que el
+objetivo nombra, Contexto, Objetivo con 2 pasos y más de 300 caracteres, Firmas y Tests).
+'''
+
+[[tarea]]
+id = "F11.04"
+nombre = "flow-hacer-cumplir-toca"
+titulo = "Flujos: rechazar el resultado de una tarea si toca archivos fuera de su lista"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.03"]
+toca = []
+acepta = "cargo test -p pcode-flow scope && cargo test -p pcode-flow fuera_de_toca"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.04a y de F11.04b.
+3. Escribe el informe con la salida (si los tests con sandbox se saltaron por falta de namespaces, dilo).
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.04a"
+nombre = "toca-alcance"
+titulo = "Flujos: rutas permitidas de una tarea y cambios fuera de alcance (lógica pura)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.03"]
+toca = ["crates/pcode-flow/src/scope.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow scope::"
+contexto = [
+  "crates/pcode-flow/src/brief.rs (`parse_brief`: `touches` y `extra` salen de la sección `## Toca`)",
+  "crates/pcode-flow/src/task.rs (`TaskDef::touches`: solo se rellena si la tarea trae frontmatter `toca:`)",
+  "tools/bench/reglas.py (función `fuera_de_toca`: la misma regla en Python)",
+]
+objetivo = '''
+1. Crea `scope.rs` con las tres funciones de abajo.
+2. `allowed_paths`: si `task.touches` no está vacío, devuelve eso; si no, `parse_brief(&task.body)` y devuelve
+   `touches` seguido de `extra`. Una tarea sin lista devuelve vacío.
+3. `outside_scope`: devuelve, ordenadas y sin repetir, las rutas de `changed` que no están permitidas. Una
+   ruta está permitida si: es igual a una entrada de `allowed`; o una entrada acaba en `/` y la ruta empieza
+   por ella; o es `Cargo.lock`; o empieza por `informes/<task_id>` y acaba en `.md`. Si `allowed` está vacío
+   no hay restricción: devuelve vacío.
+4. `overlap`: true si alguna ruta de `a` choca con alguna de `b`: son iguales, o una acaba en `/` y la otra
+   empieza por ella. Con cualquiera de las dos listas vacía, false.
+5. `lib.rs`: añade `pub mod scope;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/scope.rs
+use crate::task::TaskDef;
+
+/// Rutas que la tarea puede crear o modificar (vacío = sin lista: no se restringe).
+pub fn allowed_paths(task: &TaskDef) -> Vec<String>;
+/// Rutas cambiadas que quedan fuera de `allowed`.
+pub fn outside_scope(changed: &[String], allowed: &[String], task_id: &str) -> Vec<String>;
+/// ¿Comparten algún archivo dos listas de rutas?
+pub fn overlap(a: &[String], b: &[String]) -> bool;
+'''
+ejemplo = '''
+outside_scope(["src/a.rs", "src/b.rs", "informes/T1.md", "Cargo.lock"], ["src/a.rs"], "T1") → ["src/b.rs"]
+outside_scope(["web/x.js"], ["web/"], "T1") → []
+outside_scope(["cualquiera"], [], "T1") → []
+overlap(["src/a.rs"], ["src/"]) → true      overlap(["a.rs"], ["b.rs"]) → false
+'''
+tests = [
+  "fuera_de_la_lista: la primera línea del ejemplo devuelve solo src/b.rs",
+  "carpeta_cubre_su_contenido: una entrada que acaba en / permite lo que cuelga de ella",
+  "sin_lista_no_se_restringe: allowed vacío devuelve vacío aunque haya cambios",
+  "informe_de_otra_tarea_no_vale: informes/T2.md queda fuera para la tarea T1",
+  "permitidas_del_frontmatter: una tarea con touches no vacío devuelve eso sin leer el cuerpo",
+  "permitidas_de_la_seccion_toca: una tarea sin frontmatter devuelve las rutas de `## Toca` más las de configuración",
+  "solape_por_carpeta_y_por_igualdad: los dos casos del ejemplo",
+]
+no_hagas = ["No leas el disco", "No añadas dependencias"]
+
+[[tarea]]
+id = "F11.04b"
+nombre = "toca-en-el-runner"
+titulo = "Flujos: el `Runner` rechaza un intento que cambia archivos fuera de `toca`"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.04a"]
+toca = ["crates/pcode-flow/src/runner.rs", "crates/pcode-cli/src/flow_cmd.rs"]
+acepta = "cargo test -p pcode-flow fuera_de_toca"
+contexto = [
+  "crates/pcode-flow/src/runner.rs (`Runner::execute`: tras `run_capture` de la aceptación se calcula `ok`, `key` y el relevo; tests `setup` y `estado_md_tiene_secciones`)",
+  "crates/pcode-flow/src/scope.rs (`allowed_paths` y `outside_scope`)",
+  "crates/pcode-cli/src/flow_cmd.rs (rama `FlowCmd::Run`: dónde se construye `RunnerCfg`)",
+]
+objetivo = '''
+1. `runner.rs`: añade a `RunnerCfg` el campo `pub enforce_scope: bool` con su comentario `///` («Rechazar los
+   intentos que cambian archivos fuera de `toca`.»).
+2. `runner.rs`: añade la función pública `scope_failure` (firma abajo). Si `enforce` es false devuelve None.
+   Si no, calcula `outside_scope(rutas de changes, &allowed_paths(task), &task.id)`; vacío → None; si no →
+   `Some("fuera de toca: a, b")` (rutas separadas por `, `).
+3. En `Runner::execute`, después de `let key = …` y antes de `let ok = …`: llama a
+   `sandbox.changes()` (propaga el error con `map_err(|e| e.to_string())?`) y a `scope_failure(t, &changes,
+   self.cfg.enforce_scope)`. Si la aceptación pasó (`st.code == 0`) pero hay fallo de alcance: `ok = false` y
+   `key = vec![mensaje]`, de modo que el relevo (`build_handoff`) y `summary` lleven ese mensaje y el intento
+   se trate como una aceptación fallida (la sandbox se descarta en `tick`, como ya ocurre).
+4. Actualiza TODAS las construcciones `RunnerCfg { … }` (búscalas con `grep -rn "RunnerCfg {" crates/`): en
+   los tests de `runner.rs`, `enforce_scope: true`; en `flow_cmd.rs`, rama `Run`: `enforce_scope: !sin_toca`,
+   con el flag nuevo `--sin-toca` (bool, «No rechazar los cambios fuera de la lista `toca` de cada tarea.»).
+5. Tests en el módulo `tests` de `runner.rs`.
+'''
+firmas = '''
+// crates/pcode-flow/src/runner.rs
+/// Mensaje de rechazo si `changes` toca rutas fuera de la lista de la tarea (None = todo en regla).
+pub fn scope_failure(task: &TaskDef, changes: &[pcode_sandbox::Change], enforce: bool) -> Option<String>;
+'''
+ejemplo = '''
+Tarea con frontmatter `toca: [permitido.txt]`; cambios: permitido.txt (Added) y otro.txt (Added):
+  scope_failure(&t, &changes, true)  → Some("fuera de toca: otro.txt")
+  scope_failure(&t, &changes, false) → None
+En el runner (test con MockBackend que escribe otro.txt y `acepta` = `true`): el intento acaba en
+`failed`, nada se integra y `otro.txt` no aparece en el repo.
+'''
+tests = [
+  "fuera_de_toca_da_mensaje: la tarea del ejemplo devuelve el mensaje con otro.txt",
+  "fuera_de_toca_desactivado: con enforce a false devuelve None",
+  "fuera_de_toca_sin_lista_no_restringe: una tarea sin toca devuelve None aunque haya cambios",
+  "runner_fuera_de_toca_no_integra: con MockBackend que escribe otro.txt, la tarea falla y el repo no cambia (se salta sin namespaces de usuario, como los demás tests del runner)",
+]
+no_hagas = [
+  "No cambies `integrate.rs`",
+  "No conviertas el rechazo en un error del `tick`: es un intento fallido más, con relevo",
+  "No toques los tests existentes salvo para añadir el campo nuevo a `RunnerCfg`",
+]
+notas = '''
+En los tests, `Change` se construye con `pcode_sandbox::Change { path: "otro.txt".into(), kind:
+pcode_sandbox::ChangeKind::Added }`. El auxiliar `t(...)` de los tests deja `touches` vacío: para estos
+tests crea la tarea con `touches: vec!["permitido.txt".into()]`.
+'''
+
+[[tarea]]
+id = "F11.05"
+nombre = "flow-reanudar"
+titulo = "Flujos: reanudar un flujo interrumpido y `pcode flow parar`"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.04"]
+toca = []
+acepta = "cargo test -p pcode-flow reanud && cargo test -p pcode-cli reanud"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.05a y de F11.05b.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.05a"
+nombre = "reanudar-eventos"
+titulo = "Flujos: eventos `Interrumpida` y `Reanudada` y `Runner::recover`"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.04"]
+toca = ["crates/pcode-flow/src/events.rs", "crates/pcode-flow/src/runner.rs"]
+acepta = "cargo test -p pcode-flow reanud"
+contexto = [
+  "crates/pcode-flow/src/events.rs (`FlowEvent`, `FlowState::replay`: el estado se reconstruye de los eventos)",
+  "crates/pcode-flow/src/scheduler.rs (función `plan`: una tarea `Running` o `Accepted` cuenta como en marcha y no se relanza)",
+  "crates/pcode-flow/src/runner.rs (`Runner::state`, `Runner::emit` y el test `estado_md_tiene_secciones`: runner sin sandbox)",
+]
+objetivo = '''
+El problema: si el proceso muere con una tarea en marcha, al reconstruir el estado esa tarea queda `Running`
+para siempre (nadie la relanza) y, si se pidió parar, `stop` queda a true para siempre.
+1. `events.rs`: añade a `FlowEvent` las variantes `Interrumpida { tarea: String, intento: u32 }` («El proceso
+   se cortó con la tarea en marcha.») y `Reanudada` («El flujo se retoma tras una parada.»).
+2. En `FlowState::replay`: `Interrumpida` deja la tarea en `TaskState::Pending` y pone
+   `attempts[tarea] = intento.saturating_sub(1)` (el intento cortado no cuenta). `Reanudada` pone
+   `stop = false`.
+3. Añade `FlowState::orphans` (firma abajo): las tareas en `Running(n)` → `(id, n)` y las `Accepted` →
+   `(id, intentos que constan)`, en orden de id.
+4. `runner.rs`: añade `Runner::recover` (firma abajo): lee el estado; emite `Interrumpida` por cada huérfana;
+   si `state.stop` es true emite `Reanudada`; devuelve los ids de las huérfanas.
+5. Tests: los de eventos en el módulo `tests` de `events.rs` y el del runner en el de `runner.rs`
+   (con `Store::open_in_memory()`, `persist` de un `Lanzada` y un `Runner` sin backends).
+'''
+firmas = '''
+// crates/pcode-flow/src/events.rs
+impl FlowState {
+    /// Tareas que quedaron a medias (en marcha o aceptadas sin integrar) con su intento.
+    pub fn orphans(&self) -> Vec<(String, u32)>;
+}
+
+// crates/pcode-flow/src/runner.rs
+impl Runner {
+    /// Devuelve a pendientes las tareas que un proceso anterior dejó a medias y levanta la parada.
+    pub fn recover(&mut self) -> Result<Vec<String>, String>;
+}
+'''
+ejemplo = '''
+eventos: [Lanzada{A,1,"m"}, Lanzada{B,2,"m"}, Parada]
+  replay → A Running(1), B Running(2), stop = true; orphans() → [("A",1), ("B",2)]
+recover() → ["A","B"] y añade Interrumpida{A,1}, Interrumpida{B,2}, Reanudada
+  replay → A Pending (attempts 0), B Pending (attempts 1), stop = false
+'''
+tests = [
+  "reanudar_interrumpida_no_gasta_intento: tras Lanzada intento 2 e Interrumpida, la tarea está Pending con attempts 1",
+  "reanudar_levanta_la_parada: Parada seguida de Reanudada deja stop a false",
+  "reanudar_huerfanas_en_orden: los eventos del ejemplo dan A y B con sus intentos",
+  "reanudar_recover_emite_eventos: con un Lanzada guardado, recover devuelve la tarea y el estado queda Pending",
+  "reanudar_sin_huerfanas_no_emite: con solo un Integrada guardado, recover devuelve vacío y no añade eventos",
+]
+no_hagas = ["No cambies el nombre ni los campos de los eventos existentes (hay bases de datos guardadas)", "No toques `scheduler.rs`"]
+
+[[tarea]]
+id = "F11.05b"
+nombre = "reanudar-cli"
+titulo = "CLI: `pcode flow run` retoma lo interrumpido, `--nuevo` y `pcode flow parar`"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.05a"]
+toca = ["crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-cli reanud"
+contexto = [
+  "crates/pcode-cli/src/flow_cmd.rs (funciones `session` y `runner`, y rama `FlowCmd::Run`)",
+  "crates/pcode-flow/src/runner.rs (`Runner::recover` y `Runner::tick`: el archivo `.pcode/STOP` impide lanzar)",
+]
+objetivo = '''
+1. En `flow_cmd.rs`, cambia `session` a la firma de abajo: con `fresh == false` hace lo de ahora (reutiliza la
+   sesión cuyo `task == "flujo"` o la crea); con `fresh == true` crea siempre una nueva con
+   `store.create_session("flujo", "flujo")`. Como `store.sessions(50)` devuelve primero las más recientes, la
+   nueva pasa a ser la que se reutiliza después. Pasa `fresh` a través de `runner(...)` (parámetro nuevo).
+2. Rama `Run`: flag `--nuevo` (bool, «Empieza un flujo nuevo en lugar de retomar el anterior.»). Antes de
+   `run_until_idle`: borra `.pcode/STOP` si existe (`let _ = std::fs::remove_file(..)`), llama a
+   `r.recover()` y, si devuelve algo, imprime en stderr `retomo <N> tareas interrumpidas: a, b`.
+3. Variante nueva `Parar` («Pide parar el flujo: no se lanzan más tareas.»): crea `.pcode/` si falta, escribe
+   el archivo vacío `.pcode/STOP`, imprime `parada pedida: las tareas en marcha terminan y no se lanzan más`
+   y devuelve 0.
+4. Tests: el de `session` en un módulo `#[cfg(test)] mod tests` al final de `flow_cmd.rs`; el de `parar` en
+   `tests/flow.rs`.
+'''
+firmas = '''
+// crates/pcode-cli/src/flow_cmd.rs
+fn session(store: &Store, fresh: bool) -> anyhow::Result<i64>;
+'''
+ejemplo = '''
+let store = Store::open_in_memory()?;
+let a = session(&store, false)?;   // crea
+let b = session(&store, false)?;   // reutiliza → a == b
+let c = session(&store, true)?;    // nueva → c != a
+let d = session(&store, false)?;   // reutiliza la más reciente → d == c
+$ pcode flow parar   → código 0 y existe .pcode/STOP
+'''
+tests = [
+  "reanudar_sesion_existente_o_nueva: la secuencia del ejemplo cumple a == b, c != a y d == c",
+  "reanudar_parar_crea_stop: `pcode flow parar` en un directorio vacío crea .pcode/STOP y sale con 0",
+]
+no_hagas = ["No borres `.pcode/flow.db` nunca", "No cambies las demás ramas de `FlowCmd`"]
+
+[[tarea]]
+id = "F11.06"
+nombre = "flow-presupuesto"
+titulo = "Flujos: presupuesto por flujo (tokens, euros y tiempo) con parada limpia"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.05"]
+toca = []
+acepta = "cargo test -p pcode-flow budget:: && cargo test -p pcode-flow presupuesto"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.06a, F11.06b y F11.06c.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.06a"
+nombre = "presupuesto-nucleo"
+titulo = "Flujos: `FlowBudget` y `Spent` (lógica pura)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.05"]
+toca = ["crates/pcode-flow/src/budget.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow budget::"
+contexto = ["crates/pcode-flow/src/scheduler.rs (struct `Limits`: estilo de los tipos de configuración del flujo)"]
+objetivo = '''
+1. Crea `budget.rs` con los tipos y métodos de abajo.
+2. `Spent::add`: suma campo a campo.
+3. `FlowBudget::cost_eur`: `tokens_in / 1_000_000 * eur_per_mtok_in + tokens_out / 1_000_000 *
+   eur_per_mtok_out` (en `f64`).
+4. `FlowBudget::exceeded`: devuelve el primer límite alcanzado (gastado >= límite), en este orden y con estos
+   textos exactos:
+   - tokens (entrada + salida): `presupuesto de tokens agotado: <gastado> de <límite>`
+   - euros: `presupuesto de coste agotado: <gastado con 2 decimales> € de <límite con 2 decimales> €`
+   - minutos (`seconds / 60`, división entera): `presupuesto de tiempo agotado: <min> min de <límite> min`
+   Un límite a `None` no se comprueba. Con todo a `None` devuelve siempre `None`.
+5. `lib.rs`: añade `pub mod budget;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/budget.rs
+/// Límites de un flujo entero (None = sin límite) y precios para estimar el coste.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct FlowBudget {
+    pub max_tokens: Option<u64>,
+    pub max_eur: Option<f64>,
+    pub max_minutes: Option<u64>,
+    /// Euros por millón de tokens de entrada.
+    pub eur_per_mtok_in: f64,
+    /// Euros por millón de tokens de salida.
+    pub eur_per_mtok_out: f64,
+}
+
+/// Lo gastado hasta ahora.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Spent { pub tokens_in: u64, pub tokens_out: u64, pub seconds: u64 }
+
+impl Spent {
+    /// Suma otro gasto.
+    pub fn add(&mut self, other: &Spent);
+}
+
+impl FlowBudget {
+    /// Coste estimado en euros.
+    pub fn cost_eur(&self, s: &Spent) -> f64;
+    /// Motivo de parada si se alcanzó algún límite.
+    pub fn exceeded(&self, s: &Spent) -> Option<String>;
+}
+'''
+ejemplo = '''
+b = FlowBudget { max_tokens: Some(1000), ..Default::default() }
+b.exceeded(&Spent { tokens_in: 900, tokens_out: 300, seconds: 0 }) → Some("presupuesto de tokens agotado: 1200 de 1000")
+b.exceeded(&Spent { tokens_in: 500, tokens_out: 100, seconds: 0 }) → None
+FlowBudget { max_eur: Some(1.0), eur_per_mtok_in: 2.0, eur_per_mtok_out: 10.0, ..Default::default() }
+  .exceeded(&Spent { tokens_in: 250_000, tokens_out: 100_000, seconds: 0 }) → Some("presupuesto de coste agotado: 1.50 € de 1.00 €")
+'''
+tests = [
+  "tokens_agotados: el primer caso del ejemplo devuelve el texto exacto",
+  "dentro_del_presupuesto: el segundo caso devuelve None",
+  "coste_en_euros: el tercer caso devuelve el texto con dos decimales",
+  "tiempo_agotado: max_minutes 60 y 3660 segundos da `presupuesto de tiempo agotado: 61 min de 60 min`",
+  "sin_limites_nunca_para: FlowBudget::default() devuelve None con cualquier gasto",
+  "suma_de_gasto: add suma los tres campos",
+]
+no_hagas = ["No leas el reloj aquí: los segundos llegan ya medidos", "No añadas dependencias"]
+
+[[tarea]]
+id = "F11.06b"
+nombre = "presupuesto-eventos"
+titulo = "Flujos: eventos `Consumo` y `PresupuestoAgotado` y gasto acumulado en `FlowState`"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.06a"]
+toca = ["crates/pcode-flow/src/events.rs"]
+acepta = "cargo test -p pcode-flow presupuesto_evento"
+contexto = [
+  "crates/pcode-flow/src/events.rs (`FlowEvent`, `FlowState` y `FlowState::replay`, con las variantes `Interrumpida` y `Reanudada`)",
+  "crates/pcode-flow/src/budget.rs (`Spent` y `Spent::add`)",
+]
+objetivo = '''
+1. En `events.rs`, añade a `FlowEvent`:
+   - `Consumo { tarea: String, intento: u32, entrada: u64, salida: u64, segundos: u64 }` («Tokens y tiempo
+     gastados por un intento.»);
+   - `PresupuestoAgotado { motivo: String }` («El flujo se paró por presupuesto.»).
+2. Añade a `FlowState` los campos `pub spent: crate::budget::Spent` («Gasto acumulado.»),
+   `pub spent_by_task: BTreeMap<String, crate::budget::Spent>` («Gasto por tarea.») y
+   `pub budget_stop: Option<String>` («Motivo si se paró por presupuesto.»). `FlowState` ya deriva `Default`.
+3. En `FlowState::replay`: `Consumo` suma `Spent { tokens_in: entrada, tokens_out: salida, seconds:
+   segundos }` a `spent` y a `spent_by_task[tarea]`. `PresupuestoAgotado` pone `stop = true` y
+   `budget_stop = Some(motivo)`. En la rama de `Reanudada`, además de `stop = false`, pon
+   `budget_stop = None` (el gasto acumulado NO se borra).
+4. Tests en el módulo `tests` de `events.rs`, con nombres que empiezan por `presupuesto_evento_`.
+'''
+sin_firmas = "solo añade variantes a `FlowEvent` y campos a `FlowState`; están descritos en el objetivo"
+ejemplo = '''
+replay([Consumo{A,1,100,20,30}, Consumo{A,2,50,10,5}, Consumo{B,1,1,1,1}])
+  → spent = Spent{151, 31, 36}; spent_by_task["A"] = Spent{150, 30, 35}
+replay([PresupuestoAgotado{"x"}]) → stop true, budget_stop Some("x")
+replay([PresupuestoAgotado{"x"}, Reanudada]) → stop false, budget_stop None
+'''
+tests = [
+  "presupuesto_evento_acumula_consumo: los tres Consumo del ejemplo dan los totales y el gasto de A",
+  "presupuesto_evento_para_el_flujo: PresupuestoAgotado pone stop y guarda el motivo",
+  "presupuesto_evento_reanudar_limpia_el_motivo: tras Reanudada no hay parada ni motivo y el gasto sigue",
+  "presupuesto_evento_json_ida_y_vuelta: un Consumo serializado con serde_json se lee igual",
+]
+no_hagas = ["No cambies los eventos existentes", "No toques `runner.rs` en esta tarea"]
+
+[[tarea]]
+id = "F11.06c"
+nombre = "presupuesto-runner-cli"
+titulo = "Flujos: el `Runner` registra el consumo y para al agotar el presupuesto; flags de `pcode flow run`"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.06b"]
+toca = ["crates/pcode-flow/src/runner.rs", "crates/pcode-cli/src/flow_cmd.rs"]
+acepta = "cargo test -p pcode-flow presupuesto_runner"
+contexto = [
+  "crates/pcode-flow/src/runner.rs (`Runner::execute`, struct `Done`, `Runner::tick` y `RunnerCfg`)",
+  "crates/pcode-flow/src/budget.rs (`FlowBudget::exceeded`) y crates/pcode-flow/src/events.rs (`Consumo`, `PresupuestoAgotado`, `FlowState::spent`)",
+  "crates/pcode-backends/src/types.rs (`BackendResult::usage`: `Option<pcode_models::Usage>` con `input_tokens` y `output_tokens`)",
+]
+objetivo = '''
+1. `runner.rs`: añade a `RunnerCfg` el campo `pub budget: crate::budget::FlowBudget` («Presupuesto del flujo
+   entero.») y a `TickSummary` el campo `pub budget_stop: Option<String>` («Motivo si el flujo se paró por
+   presupuesto.»).
+2. En `Runner::execute`: mide el tiempo con `std::time::Instant::now()` desde antes de `backend.run` hasta
+   después de la aceptación. Añade a `Done` los campos `tokens_in`, `tokens_out` (de `res.usage`, 0 si es
+   None) y `seconds`.
+3. En `Runner::tick`, al recorrer `results`, lo primero para cada `Ok(d)` es emitir
+   `FlowEvent::Consumo { tarea, intento, entrada, salida, segundos }`.
+4. Al principio de `tick`, tras leer `state`: si `!state.stop` y `self.cfg.budget.exceeded(&state.spent)`
+   devuelve `Some(m)`: emite `FlowEvent::PresupuestoAgotado { motivo: m.clone() }` y devuelve
+   `TickSummary { budget_stop: Some(m), ..Default::default() }` sin lanzar nada. En `run_until_idle`, copia
+   `budget_stop` al total si viene (el bucle ya termina porque no se lanza nada).
+5. Actualiza todas las construcciones `RunnerCfg { … }` (`grep -rn "RunnerCfg {" crates/`): en los tests,
+   `budget: Default::default()`.
+6. `flow_cmd.rs`, rama `Run`: flags `--max-tokens` (`Option<u64>`), `--max-euros` (`Option<f64>`),
+   `--max-minutos` (`Option<u64>`), `--precio-entrada` y `--precio-salida` (`f64`, por defecto 0.0, euros por
+   millón de tokens); con ellos se construye `FlowBudget`. Si el resumen trae `budget_stop`, imprime en stderr
+   `parado: <motivo>` y devuelve 3 (el código de «presupuesto»).
+'''
+sin_firmas = "añade campos a `RunnerCfg`, `TickSummary` y `Done` y flags a `Run`; no hay funciones públicas nuevas"
+ejemplo = '''
+Runner con budget.max_tokens = Some(10) y un evento guardado Consumo{A,1,8,5,1} (13 tokens):
+  tick() → TickSummary { budget_stop: Some("presupuesto de tokens agotado: 13 de 10"), launched: [], .. }
+  state() → stop true, budget_stop Some(..)
+  un segundo tick() → no vuelve a emitir PresupuestoAgotado (state.stop ya es true) y no lanza nada
+'''
+tests = [
+  "presupuesto_runner_agotado_no_lanza: el caso del ejemplo devuelve budget_stop y launched vacío (runner sin sandbox, con Store en memoria)",
+  "presupuesto_runner_no_repite_el_evento: tras dos tick solo hay un PresupuestoAgotado guardado",
+  "presupuesto_runner_sin_limites_sigue: con FlowBudget::default() y el mismo Consumo, budget_stop es None",
+]
+no_hagas = ["No mates las tareas en marcha: la parada es limpia (solo se deja de lanzar)", "No cambies `scheduler.rs`", "No toques los tests existentes salvo para añadir los campos nuevos"]
+notas = '''
+Los tests no necesitan sandbox: construye el `Runner` como en el test `estado_md_tiene_secciones` (Store en
+memoria, sin backends), guarda el evento con `crate::events::persist(&store, sid, &evento)` ANTES de mover
+el store al `Runner`, y usa una tarea `Mode::Isolated` con `acepta = "true"`.
+'''
+
+[[tarea]]
+id = "F11.07"
+nombre = "flow-informe-final"
+titulo = "Flujos: informe final del flujo en Markdown (aceptadas, intentos, coste y bloqueos)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.06"]
+toca = []
+acepta = "cargo test -p pcode-flow report:: && cargo test -p pcode-cli --test flow informe"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.07a y de F11.07b.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.07a"
+nombre = "informe-flujo-nucleo"
+titulo = "Flujos: `flow_report` (Markdown a partir de las tareas y los eventos)"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.06"]
+toca = ["crates/pcode-flow/src/report.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow report::"
+contexto = [
+  "crates/pcode-flow/src/events.rs (`FlowEvent` con todas sus variantes y `FlowState::replay`, `spent`, `spent_by_task`, `budget_stop`)",
+  "crates/pcode-flow/src/budget.rs (`FlowBudget::cost_eur`)",
+  "crates/pcode-flow/src/runner.rs (`Runner::status_md`: estilo de la tabla y nombres de los estados en español)",
+]
+objetivo = '''
+1. Crea `report.rs` con `flow_report` (firma abajo). Es una función pura: no lee disco ni reloj.
+2. El texto tiene estas secciones, en este orden:
+   - `# Informe del flujo`
+   - `## Resumen` con viñetas: `- Integradas: <n> de <total>`; `- Intentos: <suma de attempts>`;
+     `- Tokens: <entrada> de entrada, <salida> de salida`; `- Tiempo: <segundos / 60> min`;
+     `- Coste estimado: <cost_eur con 2 decimales> €` (solo si algún precio del presupuesto es > 0);
+     `- Parada: <motivo>` si `budget_stop` es Some, o `- Parada: pedida` si `stop` es true sin motivo.
+   - `## Tareas`: tabla `| Tarea | Estado | Intentos | Backend | Commit | Tokens |`, una fila por tarea en
+     el orden de `tasks`. Estado: `pendiente`, `en marcha`, `aceptada`, `integrada` o `bloqueada`. Backend: el
+     del último `Lanzada` de esa tarea (`—` si no hubo). Commit: el de su `Integrada` (`—` si no hay o está
+     vacío). Tokens: entrada + salida de `spent_by_task` (0 si no consta).
+   - `## Bloqueos`: una viñeta por tarea bloqueada: `- <id>: <motivo> — último fallo: <primera línea del
+     resumen del último AceptacionFallo o del motivo del último IntegracionFallo>` (sin la parte del guion
+     largo si no hubo fallos). Si no hay bloqueos: `nada`.
+   - `## Requiere coordinador`: ids de las tareas `Mode::Coordinator` no integradas, separados por `, `, o
+     `nada`.
+3. `lib.rs`: añade `pub mod report;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/report.rs
+use crate::budget::FlowBudget;
+use crate::events::FlowEvent;
+use crate::task::TaskDef;
+
+/// Informe final del flujo en Markdown.
+pub fn flow_report(tasks: &[TaskDef], events: &[FlowEvent], budget: &FlowBudget) -> String;
+'''
+ejemplo = '''
+tareas A y B; eventos: Lanzada{A,1,"glm"}, Consumo{A,1,100,20,60}, AceptacionOk{A,1}, Integrada{A,"abc123"},
+Lanzada{B,1,"glm"}, AceptacionFallo{B,1,"error: falta x\nmás"}, Bloqueada{B,"3 intentos sin aceptación"}
+→ contiene:
+- Integradas: 1 de 2
+- Tokens: 100 de entrada, 20 de salida
+| A | integrada | 1 | glm | abc123 | 120 |
+| B | bloqueada | 1 | glm | — | 0 |
+- B: 3 intentos sin aceptación — último fallo: error: falta x
+'''
+tests = [
+  "resumen_cuenta_integradas_y_tokens: los eventos del ejemplo dan las dos viñetas del resumen",
+  "tabla_con_backend_y_commit: la fila de A lleva glm, abc123 y 120 tokens",
+  "bloqueos_con_ultimo_fallo: la viñeta de B lleva el motivo y la primera línea del resumen",
+  "sin_bloqueos_dice_nada: sin eventos, la sección Bloqueos contiene `nada`",
+  "coste_solo_con_precios: sin precios no aparece `Coste estimado`; con eur_per_mtok_in = 1.0 sí aparece",
+  "parada_por_presupuesto: un PresupuestoAgotado añade `- Parada:` con su motivo",
+  "coordinador_pendiente: una tarea Mode::Coordinator sin integrar sale en la última sección",
+]
+no_hagas = ["No dupliques el cálculo de estado: usa `FlowState::replay(events)`", "No añadas dependencias"]
+
+[[tarea]]
+id = "F11.07b"
+nombre = "informe-flujo-cli"
+titulo = "CLI: `pcode flow informe` y `.pcode/informe-flujo.md` al terminar `flow run`"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.07a"]
+toca = ["crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-cli --test flow informe"
+contexto = [
+  "crates/pcode-cli/src/flow_cmd.rs (función `load_flow` y rama `FlowCmd::Run`: dónde se escribe `.pcode/estado.md`)",
+  "crates/pcode-flow/src/report.rs (`flow_report`)",
+]
+objetivo = '''
+1. En `flow_cmd.rs`, variante nueva `Informe { tareas: PathBuf, salida: Option<PathBuf> }` («Informe final del
+   flujo: qué se integró, intentos, coste y bloqueos.») con `--tareas` (por defecto `tareas`) y `--salida`.
+2. Rama `Informe`: `let (tasks, events) = load_flow(&tareas)?;` y
+   `pcode_flow::report::flow_report(&tasks, &events, &FlowBudget::default())`. Con `--salida` lo escribe en
+   ese archivo (creando la carpeta) e imprime `informe: <ruta>`; sin él lo imprime en stdout. Devuelve 0.
+3. Rama `Run`: después de escribir `.pcode/estado.md`, escribe también `.pcode/informe-flujo.md` con
+   `flow_report` usando el `FlowBudget` de la ejecución (para que salga el coste) y los eventos de
+   `load_flow(&tareas)`; imprime en stderr `informe: .pcode/informe-flujo.md`.
+4. Añade a `tests/flow.rs` los tests de la lista.
+'''
+sin_firmas = "solo añade una variante de `FlowCmd` y su rama; la API está en `pcode_flow::report`"
+ejemplo = '''
+tareas/a.md = "<!-- acepta: true -->\n<!-- modo: aislado -->\n# a\n"   (sin .pcode/flow.db)
+$ pcode flow informe                 → stdout contiene "# Informe del flujo", "- Integradas: 0 de 1" y "| a | pendiente | 0 | — | — | 0 |"
+$ pcode flow informe --salida out/i.md → crea out/i.md y stdout es "informe: out/i.md"
+'''
+tests = [
+  "informe_sin_flujo_lista_pendientes: la primera orden del ejemplo imprime el título, el resumen y la fila de a",
+  "informe_a_un_archivo: con --salida se crea el archivo con el mismo contenido",
+]
+no_hagas = ["No crees `.pcode/flow.db` al consultar", "No quites la escritura de `.pcode/estado.md`"]
+
+[[tarea]]
+id = "F11.08"
+nombre = "flow-paralelismo-recursos"
+titulo = "Flujos: paralelismo limitado por el perfil de recursos (`[recursos] flujo_paralelo`)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.07"]
+toca = ["crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/flow_cmd.rs"]
+acepta = "cargo test -p pcode-config flujo_paralelo && cargo test -p pcode-cli paralelo_efectivo"
+contexto = [
+  "crates/pcode-config/src/lib.rs (`ResourcesCfg`, `ResourcesCfg::resolve`, `SystemInfo::detect` y el test que resuelve perfiles)",
+  "crates/pcode-cli/src/flow_cmd.rs (rama `FlowCmd::Run`: flag `--paralelo` y `Limits { max_parallel, .. }`)",
+]
+objetivo = '''
+Hoy `pcode flow run` lanza 4 tareas a la vez en cualquier equipo. En un equipo modesto (perfil ligero) deben ir
+de una en una, salvo que la persona suba el límite en la configuración.
+1. `crates/pcode-config/src/lib.rs`: añade a `ResourcesCfg` el campo
+   `#[serde(rename = "flujo_paralelo")] pub flow_parallel: Option<usize>` («Tareas de un flujo en paralelo
+   como máximo.») y el método `ResourcesCfg::flow_parallel_limit` (firma abajo):
+   `self.flow_parallel.unwrap_or(si self.resolve(sys).light → 1, si no → 4).max(1)`. No cambies el struct
+   `Resources` (lo construyen otros crates).
+2. `flow_cmd.rs`: el flag `--paralelo` pasa a ser `Option<usize>` (sin valor por defecto; comentario
+   «Tareas en paralelo como máximo (por defecto, el límite del perfil de recursos).»). Añade la función
+   `effective_parallel` (firma abajo): `flag.unwrap_or(limit).min(limit).max(1)`.
+3. Rama `Run`: `let limit = conf.resources.flow_parallel_limit(pcode_config::SystemInfo::detect());` y
+   `max_parallel: effective_parallel(paralelo, limit)`. Si el flag pedía más que el límite, imprime en stderr
+   `paralelo limitado a <limit> por el perfil de recursos (súbelo con [recursos] flujo_paralelo)`.
+4. Tests: `flujo_paralelo_*` en el módulo `tests` de `crates/pcode-config/src/lib.rs`; `paralelo_efectivo_*`
+   en el módulo `tests` de `flow_cmd.rs`.
+'''
+firmas = '''
+// crates/pcode-config/src/lib.rs
+impl ResourcesCfg {
+    /// Tareas de un flujo en paralelo como máximo: lo configurado o, si no, 1 en perfil ligero y 4 en normal.
+    pub fn flow_parallel_limit(&self, sys: SystemInfo) -> usize;
+}
+
+// crates/pcode-cli/src/flow_cmd.rs
+/// Paralelismo real: lo pedido con `--paralelo`, sin pasar del límite del perfil.
+pub fn effective_parallel(flag: Option<usize>, limit: usize) -> usize;
+'''
+ejemplo = '''
+modesto = SystemInfo { mem_total_mb: Some(3735), cpus: 2 }; grande = SystemInfo { mem_total_mb: Some(32768), cpus: 16 }
+ResourcesCfg::default().flow_parallel_limit(modesto) → 1
+ResourcesCfg::default().flow_parallel_limit(grande)  → 4
+Config::from_str("[recursos]\nflujo_paralelo = 8\n")?.resources.flow_parallel_limit(modesto) → 8
+effective_parallel(None, 4) → 4    effective_parallel(Some(2), 4) → 2    effective_parallel(Some(9), 4) → 4    effective_parallel(Some(0), 4) → 1
+'''
+tests = [
+  "flujo_paralelo_por_perfil: sin configurar da 1 en el equipo modesto y 4 en el grande",
+  "flujo_paralelo_configurado_manda: `flujo_paralelo = 8` da 8 aunque el perfil sea ligero, y 0 se queda en 1",
+  "paralelo_efectivo_respeta_el_limite: los cuatro casos de effective_parallel del ejemplo",
+]
+no_hagas = ["No añadas campos al struct `Resources`", "No cambies `Limits` ni `scheduler.rs`"]
+
+[[tarea]]
+id = "F11.09"
+nombre = "flow-escalado-configurable"
+titulo = "Flujos: escalado de backend y de modelo en el intento N configurable"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.08"]
+toca = ["crates/pcode-flow/src/retry.rs", "crates/pcode-flow/src/runner.rs", "crates/pcode-cli/src/flow_cmd.rs"]
+acepta = "cargo test -p pcode-flow escala"
+contexto = [
+  "crates/pcode-flow/src/retry.rs (`RetryPolicy` y `next_backend`: hoy el escalado está fijo en el intento 3; tests `escala_en_el_tercero` y `bloquea_tras_maximo`)",
+  "crates/pcode-flow/src/runner.rs (`Runner::execute`: dónde se crea el `Job`; `Runner::tick`: dónde se llama a `next_backend`)",
+  "crates/pcode-backends/src/types.rs (`Job::model: Option<String>`: modelo que usará el backend)",
+]
+objetivo = '''
+1. `retry.rs`: añade a `RetryPolicy` los campos `pub escalate_at: u32` («Intento a partir del cual se escala
+   (1 = desde el primero).») y `pub escalate_model: Option<String>` («Modelo fuerte al que cambiar desde ese
+   intento, sin cambiar de backend.»).
+2. `next_backend`: sustituye la condición fija `attempt >= 3` por `attempt >= policy.escalate_at.max(1)`.
+3. Añade `next_model` (firma abajo): `Some(modelo)` si `attempt >= policy.escalate_at.max(1)` y hay
+   `escalate_model`; si no, `None`.
+4. `runner.rs`: `Runner::execute` recibe el modelo: tras `let mut job = Job::new(&id, &t.body);` pon
+   `job.model = crate::retry::next_model(attempt, &self.cfg.retry);`.
+5. Actualiza todas las construcciones `RetryPolicy { … }` (`grep -rn "RetryPolicy {" crates/`): en los tests
+   existentes, `escalate_at: 3, escalate_model: None`.
+6. `flow_cmd.rs`, rama `Run`: flags `--escalar-en` (`u32`, por defecto 3, «Intento a partir del cual se usa
+   el backend o el modelo de escalado.») y `--escalar-modelo` (`Option<String>`, «Modelo fuerte para los
+   intentos escalados.»). Cambia el comentario de `--escalar` a «Backend al que escalar.».
+7. Tests en el módulo `tests` de `retry.rs`.
+'''
+firmas = '''
+// crates/pcode-flow/src/retry.rs
+/// Modelo del intento `attempt` (None = el del backend).
+pub fn next_model(attempt: u32, policy: &RetryPolicy) -> Option<String>;
+'''
+ejemplo = '''
+p = RetryPolicy { max_attempts: 4, escalate_to: Some("claude".into()), escalate_at: 2, escalate_model: Some("opus".into()) }
+next_backend("glm", 1, &p) → Some("glm")     next_backend("glm", 2, &p) → Some("claude")     next_backend("glm", 5, &p) → None
+next_model(1, &p) → None                     next_model(2, &p) → Some("opus")
+'''
+tests = [
+  "escala_en_el_intento_configurado: con escalate_at 2 el segundo intento usa el backend de escalado",
+  "escala_modelo_desde_el_intento: next_model devuelve None en el 1 y el modelo fuerte en el 2",
+  "escala_sin_modelo_configurado: con escalate_model None, next_model devuelve siempre None",
+  "escala_cero_cuenta_como_uno: escalate_at 0 escala desde el primer intento",
+]
+no_hagas = ["No cambies la firma de `next_backend`", "No borres los tests `escala_en_el_tercero` y `bloquea_tras_maximo`: solo añádeles los campos nuevos"]
+
+[[tarea]]
+id = "F11.10"
+nombre = "accion-github"
+titulo = "Acción de GitHub (`action.yml`) para ejecutar `pcode run` o `pcode flow` en CI"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.09"]
+toca = ["action.yml", "docs/accion-github.md"]
+acepta = "grep -q 'using: composite' action.yml && grep -q 'install.sh' action.yml && grep -q 'inputs.orden' action.yml && grep -q 'flow comprobar' docs/accion-github.md"
+contexto = [
+  "install.sh (cabecera: variables `PCODE_VERSION` y `PCODE_DIR`; instala el binario `pcode` de una release)",
+  ".github/workflows/ci.yml (estilo de los workflows del repo)",
+]
+objetivo = '''
+1. Crea `action.yml` en la raíz del repo: una acción **compuesta** (`runs.using: composite`) con el esqueleto
+   de abajo. Entradas: `orden` (argumentos de `pcode`, por defecto `flow comprobar`), `version` (etiqueta de
+   release, por defecto vacía = la última), `directorio` (por defecto `.`). Salida: `codigo` (código de salida
+   de `pcode`).
+2. Pasos, todos con `shell: bash`: (a) «Instalar pcode»: ejecuta `"${{ github.action_path }}/install.sh"` con
+   `PCODE_VERSION: ${{ inputs.version }}` y `PCODE_DIR: ${{ runner.temp }}/pcode-bin`, y añade esa carpeta a
+   `$GITHUB_PATH`; (b) «Ejecutar pcode» con `id: pcode` y `working-directory: ${{ inputs.directorio }}`:
+   `set +e; pcode ${{ inputs.orden }} --formato json > "$RUNNER_TEMP/pcode-salida.json"; codigo=$?`, escribe
+   `codigo=$codigo` en `$GITHUB_OUTPUT`, vuelca el archivo en `$GITHUB_STEP_SUMMARY` dentro de un bloque de
+   código y termina con `exit $codigo`.
+3. Las claves de modelo NO son entradas de la acción: llegan como variables de entorno del job
+   (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) desde `secrets`. No escribas ningún secreto.
+4. Crea `docs/accion-github.md` (en español, con tablas): qué hace, tabla de entradas y salida, tabla de
+   códigos de salida (0 hecho, 2 fallo, 3 presupuesto, 4 atasco) y dos ejemplos de workflow completos: uno
+   que solo valida el plan (`orden: flow comprobar`, sin claves) y otro que ejecuta
+   `orden: flow run --backend modelo --max-euros 2` con `env: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}`.
+'''
+lenguaje = "yaml"
+firmas = '''
+# action.yml
+name: PublicCode
+description: Ejecuta pcode (run, flow comprobar, flow run…) en un workflow y publica el resultado
+inputs:
+  orden:
+    description: Argumentos de pcode
+    required: false
+    default: flow comprobar
+  version:
+    description: Etiqueta de la release de pcode (vacío = la última)
+    required: false
+    default: ""
+  directorio:
+    description: Carpeta del proyecto
+    required: false
+    default: "."
+outputs:
+  codigo:
+    description: Código de salida de pcode
+    value: ${{ steps.pcode.outputs.codigo }}
+runs:
+  using: composite
+  steps: []   # los dos pasos del objetivo
+'''
+tests = ["(sin tests): la aceptación comprueba con grep que la acción es compuesta, instala con install.sh y usa la entrada orden"]
+no_hagas = [
+  "No uses acciones de terceros (`uses:`) dentro de la acción",
+  "No añadas entradas para claves ni tokens",
+  "No toques `.github/workflows/`",
+]
+
+[[tarea]]
+id = "F11.11"
+nombre = "flow-nueva"
+titulo = "`pcode flow nueva <id>`: plantilla de una tarea con todas sus secciones"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.10"]
+toca = []
+acepta = "cargo test -p pcode-flow template:: && cargo test -p pcode-cli --test flow nueva"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.11a y de F11.11b.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.11a"
+nombre = "plantilla-tarea"
+titulo = "Flujos: `task_template`, el esqueleto de una tarea (lógica pura)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.10"]
+toca = ["crates/pcode-flow/src/template.rs", "crates/pcode-flow/src/lib.rs"]
+acepta = "cargo test -p pcode-flow template::"
+contexto = [
+  "crates/pcode-flow/src/task.rs (`parse_task`: cabeceras `<!-- acepta: … -->`, `<!-- modo: … -->`, `<!-- depende: … -->`)",
+  "crates/pcode-flow/src/brief.rs (`parse_brief`: ficha y secciones que debe tener la plantilla)",
+  "crates/pcode-flow/src/lint.rs (regla `pendiente`: el lint avisa mientras quede `PENDIENTE:` en el texto)",
+]
+objetivo = '''
+1. Crea `template.rs` con `task_template` (firma abajo). Devuelve exactamente el texto del ejemplo, cambiando
+   id, título, `acepta` y la lista de archivos.
+2. La sección `## Toca` lleva una línea `- `ruta`` por cada elemento de `touches`; si `touches` está vacío,
+   una sola línea `- PENDIENTE: `ruta/del/archivo``.
+3. Todo lo que la persona debe rellenar va marcado con `PENDIENTE:` para que `pcode flow comprobar` lo
+   señale hasta que se complete.
+4. `lib.rs`: añade `pub mod template;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/template.rs
+/// Esqueleto de una tarea nueva en el formato que leen `parse_task` y `parse_brief`.
+pub fn task_template(id: &str, title: &str, accept: &str, touches: &[String]) -> String;
+'''
+ejemplo = '''
+task_template("T7", "Exportar a CSV", "cargo test csv::", &["src/csv.rs".into()]) devuelve:
+
+<!-- acepta: cargo test csv:: -->
+<!-- modo: aislado -->
+<!-- depende:  -->
+# T7 — Exportar a CSV
+
+**Fase** — · **Ejecutor** haiku · **Talla** S · **Depende de** —
+
+## Toca (los únicos archivos que se pueden crear o modificar)
+
+- `src/csv.rs`
+
+## Contexto (lee esto y nada más)
+
+- PENDIENTE: ruta (función o sección concreta: para qué mirarla)
+
+## Objetivo
+
+1. PENDIENTE: primer paso; di en qué archivo y en qué función.
+2. PENDIENTE: segundo paso.
+
+## Firmas (cópialas tal cual)
+
+```rust
+// PENDIENTE: firmas exactas (o borra esta sección y escribe una línea «Sin firmas: motivo»)
+```
+
+## Tests (con estos nombres)
+
+- `PENDIENTE_nombre_del_test`: qué entra y qué se espera
+
+## No hagas
+
+- PENDIENTE: fallos previsibles
+'''
+tests = [
+  "plantilla_parsea_como_tarea: parse_task sobre la plantilla da el acepta dado, modo Isolated y sin dependencias",
+  "plantilla_tiene_las_secciones: parse_brief da executor haiku, talla S y touches con src/csv.rs",
+  "plantilla_sin_archivos_marca_pendiente: con touches vacío, la sección Toca contiene `PENDIENTE:`",
+  "plantilla_no_pasa_el_lint_hasta_rellenarla: lint_task sobre la plantilla incluye la regla pendiente",
+  "plantilla_texto_exacto: la llamada del ejemplo devuelve el texto del ejemplo carácter a carácter",
+]
+no_hagas = ["No escribas archivos aquí", "No añadas dependencias"]
+
+[[tarea]]
+id = "F11.11b"
+nombre = "flow-nueva-cli"
+titulo = "CLI: `pcode flow nueva <id>` crea el archivo de la tarea sin pisar nada"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.11a"]
+toca = ["crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-cli --test flow nueva"
+contexto = [
+  "crates/pcode-cli/src/flow_cmd.rs (enum `FlowCmd` y el `match c` de `flow_cmd`)",
+  "crates/pcode-flow/src/template.rs (`task_template(id, title, accept, touches)`)",
+]
+objetivo = '''
+1. En `flow_cmd.rs`, variante nueva `Nueva { id: String, title: Option<String>, accept: String, touches:
+   Vec<String>, tareas: PathBuf }` («Crea el esqueleto de una tarea.»): `id` posicional; `--titulo`;
+   `--acepta` (obligatorio: `#[arg(long = "acepta")]` sin valor por defecto); `--toca` repetible
+   (`#[arg(long = "toca")]` sobre `Vec<String>`); `--tareas` (por defecto `tareas`).
+2. Rama `Nueva`:
+   - el id solo admite letras, cifras, `.`, `-` y `_` y no puede estar vacío; si no, stderr
+     `id no válido: <id> (letras, cifras, punto, guion y guion bajo)` y devuelve 2;
+   - ruta = `<tareas>/<id>.md`; si ya existe: stderr `ya existe <ruta>: no se toca` y devuelve 2;
+   - crea la carpeta si falta, escribe `task_template(&id, título o el propio id, &accept, &touches)` e
+     imprime `creada: <ruta>` y, en otra línea,
+     `Rellena lo marcado con PENDIENTE y comprueba con: pcode flow comprobar`. Devuelve 0.
+3. Añade a `tests/flow.rs` los tests de la lista.
+'''
+sin_firmas = "solo añade una variante de `FlowCmd` y su rama; la plantilla está en `pcode_flow::template`"
+ejemplo = '''
+$ pcode flow nueva T7 --titulo "Exportar a CSV" --acepta "cargo test csv::" --toca src/csv.rs
+creada: tareas/T7.md
+Rellena lo marcado con PENDIENTE y comprueba con: pcode flow comprobar
+$ pcode flow nueva T7 --acepta true      → código 2, stderr "ya existe tareas/T7.md: no se toca"
+$ pcode flow nueva "a b" --acepta true   → código 2, stderr empieza por "id no válido"
+'''
+tests = [
+  "nueva_crea_el_archivo: la primera orden del ejemplo crea tareas/T7.md con la cabecera acepta y la ruta en Toca",
+  "nueva_no_pisa: repetir la orden sale con 2 y el archivo conserva su contenido",
+  "nueva_id_no_valido: un id con espacio sale con 2 y no crea nada",
+  "nueva_y_comprobar_avisa_de_pendientes: tras crearla, `flow comprobar` sale con 2 y menciona `[pendiente]`",
+]
+no_hagas = ["No sobrescribas nunca un archivo existente (no hay flag para forzarlo)", "No cambies las demás ramas"]
+
+[[tarea]]
+id = "F11.12"
+nombre = "flow-simular"
+titulo = "`pcode flow simular`: plan en seco por olas (qué se lanzaría y en qué orden)"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.11"]
+toca = ["crates/pcode-flow/src/waves.rs", "crates/pcode-flow/src/lib.rs", "crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-flow waves:: && cargo test -p pcode-cli --test flow simular"
+contexto = [
+  "crates/pcode-flow/src/scheduler.rs (función `plan`: reglas reales de lanzamiento: paralelismo, una sola tarea `Mode::Kernel` a la vez, las de coordinador no se lanzan)",
+  "crates/pcode-cli/src/flow_cmd.rs (funciones `done_ids` y `load_flow`, y enum `FlowCmd`)",
+]
+objetivo = '''
+1. Crea `waves.rs` con `DryRun`, `dry_run` y `render_dry_run` (firmas abajo). Lógica pura.
+2. `dry_run`: parte de `completadas = done`. Repite como mucho `tasks.len() + 1` veces: candidatas = tareas
+   (por orden de id) que no están completadas, no son `Mode::Coordinator` y tienen todas sus dependencias
+   completadas; de ellas elige hasta `max_parallel.max(1)`, con una sola `Mode::Kernel` por ola; si no elige
+   ninguna, termina; si no, añade la ola y marca las elegidas como completadas (la simulación supone que
+   todas se aceptan). Al final: `coordinator` = tareas `Mode::Coordinator` que no están en `done`;
+   `waiting` = las demás que no llegaron a completarse (dependen de una de coordinador).
+3. `render_dry_run`: una línea `Ola <n>: a, b` por ola; después `Coordinador: x, y` y
+   `Esperan al coordinador: z` (cada una solo si no está vacía); si no hay ninguna ola ni nada pendiente:
+   `Nada que hacer.`.
+4. `lib.rs`: añade `pub mod waves;`.
+5. `flow_cmd.rs`: variante `Simular { tareas: PathBuf, paralelo: usize, format: String }` («Muestra qué se
+   lanzaría y en qué orden, sin ejecutar nada.») con `--tareas` (por defecto `tareas`), `--paralelo` (por
+   defecto 4) y `--formato` (por defecto `texto`). Rama: `load_flow`, `done_ids` (añade a `done` los ids
+   integrados: `FlowState::replay(&events).done()`), `dry_run` y `render_dry_run` (texto) o el JSON de
+   `DryRun`. Devuelve 0.
+6. `tests/flow.rs`: los tests `simular_*`.
+'''
+firmas = '''
+// crates/pcode-flow/src/waves.rs
+use crate::task::TaskDef;
+use std::collections::HashSet;
+
+/// Resultado de simular el flujo.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct DryRun {
+    #[serde(rename = "olas")]
+    pub waves: Vec<Vec<String>>,
+    #[serde(rename = "coordinador")]
+    pub coordinator: Vec<String>,
+    #[serde(rename = "esperan")]
+    pub waiting: Vec<String>,
+}
+
+/// Simula el flujo suponiendo que cada tarea se acepta a la primera.
+pub fn dry_run(tasks: &[TaskDef], done: &HashSet<String>, max_parallel: usize) -> DryRun;
+/// Texto de la simulación.
+pub fn render_dry_run(d: &DryRun) -> String;
+'''
+ejemplo = '''
+Tareas (todas Mode::Isolated salvo d): a; b (depende de a); c; d (coordinador); e (depende de d)
+dry_run(tareas, {}, 2) → waves [["a","c"],["b"]], coordinator ["d"], waiting ["e"]
+render → "Ola 1: a, c\nOla 2: b\nCoordinador: d\nEsperan al coordinador: e\n"
+dry_run(tareas, {}, 1) → waves [["a"],["b"],["c"]]
+Dos tareas Mode::Kernel sin dependencias y max_parallel 4 → waves [["k1"],["k2"]]
+'''
+tests = [
+  "olas_respetan_dependencias_y_paralelismo: el primer caso del ejemplo",
+  "de_una_en_una: con max_parallel 1 salen tres olas de una tarea",
+  "un_kernel_por_ola: dos tareas Kernel van en olas distintas",
+  "las_hechas_no_se_simulan: con a en done, la primera ola es b y c",
+  "render_texto_exacto: el texto del ejemplo coincide carácter a carácter",
+  "simular_cli_imprime_olas: con tareas/a.md y tareas/b.md (b depende de a), `flow simular` imprime `Ola 1: a` y `Ola 2: b`",
+]
+no_hagas = ["No ejecutes backends ni sandboxes: es solo una simulación", "No cambies `scheduler.rs`", "No pongas un bucle sin cota"]
+
+[[tarea]]
+id = "F11.13"
+nombre = "flow-solapes-toca"
+titulo = "Flujos: no lanzar a la vez dos tareas que tocan el mismo archivo"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.12"]
+toca = ["crates/pcode-flow/src/scheduler.rs"]
+acepta = "cargo test -p pcode-flow solape"
+contexto = [
+  "crates/pcode-flow/src/scheduler.rs (función `plan`: bucle `for t in ready` y los tests con los auxiliares `t`, `lim`, `fl`, `run`)",
+  "crates/pcode-flow/src/scope.rs (`allowed_paths(task)` y `overlap(a, b)`)",
+]
+objetivo = '''
+Dos tareas en paralelo que cambian el mismo archivo acaban en un conflicto al integrar: la segunda pisa a la
+primera. El planificador debe dejar la segunda para el ciclo siguiente.
+1. En `scheduler.rs`, función `plan`: antes del bucle `for t in ready`, crea
+   `let mut busy: Vec<Vec<String>> = …` con `crate::scope::allowed_paths(tarea)` de cada tarea de `running`
+   que exista en el DAG (`dag.get(id)`).
+2. Dentro del bucle, justo después de la comprobación
+   `if flags.stop || flags.provider_down || n_running >= limits.max_parallel { continue; }` y ANTES del bloque
+   `if t.mode == Mode::Kernel`: calcula `let paths = crate::scope::allowed_paths(t);` y, si
+   `busy.iter().any(|b| crate::scope::overlap(b, &paths))`, haz `continue` (la tarea queda lista y se lanzará
+   en otro ciclo, cuando la otra termine).
+3. Cuando la tarea se lanza (donde está `p.launch.push(...)`), añade `paths` a `busy`.
+4. Una tarea sin lista de archivos (`allowed_paths` vacío) no solapa con nada: `overlap` ya devuelve false.
+5. Añade los tests al módulo `tests` de `scheduler.rs`. El auxiliar `t(id, mode)` deja `touches` vacío: crea
+   las tareas de estos tests con `TaskDef { touches: vec!["src/a.rs".into()], ..t("A", Mode::Isolated) }`.
+'''
+sin_firmas = "cambia el cuerpo de `plan` sin tocar su firma ni añadir funciones públicas"
+ejemplo = '''
+A y B tocan src/a.rs; C toca src/c.rs; las tres listas, max_parallel 4, nada en marcha:
+  plan(...).launch → ["A", "C"]        (B espera a que A termine)
+Con A en marcha (evento Lanzada) y B lista: plan(...).launch → []  si solo queda B
+A toca la carpeta `web/` y B toca `web/x.js` → B tampoco se lanza con A
+'''
+tests = [
+  "solape_no_lanza_dos_con_el_mismo_archivo: el primer caso del ejemplo lanza A y C pero no B",
+  "solape_con_una_en_marcha: con A en marcha, B (mismo archivo) no se lanza",
+  "solape_por_carpeta: una tarea que toca `web/` bloquea a otra que toca `web/x.js`",
+  "solape_sin_lista_no_bloquea: dos tareas sin lista de archivos se lanzan a la vez",
+]
+no_hagas = ["No cambies la firma de `plan` ni los structs `Limits`, `Flags` y `Plan`", "No marques la tarea como bloqueada: solo se aplaza", "No toques los tests existentes"]
+
+[[tarea]]
+id = "F11.14"
+nombre = "spec-exportar-tareas"
+titulo = "`pcode spec exportar`: pasar las tareas de una especificación al formato del flujo (borradores)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.13"]
+toca = []
+acepta = "cargo test -p pcode-spec export:: && cargo test -p pcode-cli --test spec exportar"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F11.14a y de F11.14b.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F11.14a"
+nombre = "spec-exportar-nucleo"
+titulo = "Especificaciones: convertir `SpecTask` en archivos de tarea del flujo (lógica pura)"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.13"]
+toca = ["crates/pcode-spec/src/export.rs", "crates/pcode-spec/src/lib.rs"]
+acepta = "cargo test -p pcode-spec export::"
+contexto = [
+  "crates/pcode-spec/src/tasks.rs (structs `SpecTask` y `TaskList` y función `parse_tasks`)",
+  "crates/pcode-flow/src/template.rs (`task_template`: el formato de archivo de tarea que hay que producir; no lo importes, `pcode-spec` no depende de `pcode-flow`)",
+]
+objetivo = '''
+El planificador de especificaciones escribe `specs/<nombre>/tareas.md` (una lista), pero `pcode flow` ejecuta
+un archivo Markdown por tarea. Esta función hace el puente.
+1. Crea `export.rs` con `export_tasks` (firma abajo). Devuelve `(archivos, omitidas)`:
+   - `archivos`: por cada tarea NO hecha (`done == false`) y con `accept`, el par
+     `("<spec>-<id>", contenido)`, en el orden de la lista;
+   - `omitidas`: `"<id>: ya está hecha"` o `"<id>: no tiene acepta"` para las demás.
+2. Contenido de cada archivo (mira el ejemplo): cabeceras `acepta`, `modo: aislado` y `depende` (ids de las
+   dependencias con el prefijo `<spec>-`, separadas por `, `; se omiten las dependencias a tareas hechas);
+   título `# <spec>-<id> — <title>`; ficha `**Fase** <spec> · **Ejecutor** haiku · **Talla** M · **Depende
+   de** <las mismas o —>`; `## Toca` con una línea por archivo de `touches` (o `- PENDIENTE: `ruta``);
+   `## Contexto` con `- specs/<spec>/spec.md (requisitos <R1, R2>: qué debe cumplir esta tarea)`;
+   `## Objetivo` con `detail` (o `PENDIENTE: pasos numerados` si está vacío); `## Tests` con
+   `- PENDIENTE: `nombre`: qué entra y qué se espera`.
+3. `lib.rs`: añade `pub mod export;` y `pub use export::export_tasks;`.
+'''
+firmas = '''
+// crates/pcode-spec/src/export.rs
+use crate::tasks::TaskList;
+
+/// Convierte las tareas pendientes de una especificación en archivos de tarea del flujo:
+/// (nombre de archivo sin `.md`, contenido). El segundo valor explica las que no se exportan.
+pub fn export_tasks(spec_name: &str, list: &TaskList) -> (Vec<(String, String)>, Vec<String>);
+'''
+ejemplo = '''
+spec "saludo"; T1 hecha; T2 { title: "Escribir la despedida", requirements: ["R2"], touches: ["adios.txt"],
+depends: ["T1"], accept: Some("test -f adios.txt"), detail: "Crea adios.txt." }; T3 sin accept
+→ archivos = [("saludo-T2", texto)], omitidas = ["T1: ya está hecha", "T3: no tiene acepta"], y texto es:
+
+<!-- acepta: test -f adios.txt -->
+<!-- modo: aislado -->
+<!-- depende:  -->
+# saludo-T2 — Escribir la despedida
+
+**Fase** saludo · **Ejecutor** haiku · **Talla** M · **Depende de** —
+
+## Toca
+
+- `adios.txt`
+
+## Contexto
+
+- specs/saludo/spec.md (requisitos R2: qué debe cumplir esta tarea)
+
+## Objetivo
+
+Crea adios.txt.
+
+## Tests
+
+- PENDIENTE: `nombre`: qué entra y qué se espera
+'''
+tests = [
+  "exporta_la_pendiente_con_acepta: el caso del ejemplo da un archivo saludo-T2 con el texto exacto",
+  "omite_hechas_y_sin_acepta: las omitidas del ejemplo, en ese orden",
+  "dependencias_con_prefijo: una tarea que depende de otra pendiente lleva `<!-- depende: saludo-T1 -->`",
+  "sin_archivos_marca_pendiente: touches vacío da la línea con PENDIENTE en Toca",
+  "lista_vacia: una TaskList sin tareas da dos vectores vacíos",
+]
+no_hagas = ["No añadas `pcode-flow` como dependencia de `pcode-spec`", "No escribas archivos aquí"]
+
+[[tarea]]
+id = "F11.14b"
+nombre = "spec-exportar-cli"
+titulo = "CLI: `pcode spec exportar <nombre>` escribe los borradores de tarea"
+fase = "F11"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F11.14a"]
+toca = ["crates/pcode-cli/src/spec_cmd.rs", "crates/pcode-cli/tests/spec.rs"]
+acepta = "cargo test -p pcode-cli --test spec exportar"
+contexto = [
+  "crates/pcode-cli/src/spec_cmd.rs (enum `SpecCmd` y el `match` de `spec_cmd`; función `estado`: cómo se carga una especificación con `pcode_spec::load(root, name)`)",
+  "crates/pcode-cli/tests/spec.rs (constantes `SPEC`, `T1`, `T2` y auxiliar `pcode`: cómo se prepara una especificación en un directorio temporal)",
+  "crates/pcode-spec/src/export.rs (`export_tasks(spec_name, &TaskList)`)",
+]
+objetivo = '''
+1. En `spec_cmd.rs`, añade a `SpecCmd` la variante `Exportar { nombre: String, a: PathBuf, overwrite: bool }`
+   («Pasa las tareas pendientes al formato de `pcode flow` como borradores.») con `--a` (por defecto
+   `tareas/borradores`) y `--sobrescribir`.
+2. Añade la función `exportar` (firma abajo) y su rama en el `match` de `spec_cmd`:
+   - `pcode_spec::load(root, name)`; si falla, stderr con el error y devuelve 2;
+   - `pcode_spec::export_tasks(name, &loaded.tasks)`;
+   - si no hay archivos: imprime `no hay tareas pendientes con acepta que exportar` y devuelve 0;
+   - si algún `<a>/<archivo>.md` existe y no hay `--sobrescribir`: stderr `ya existe <ruta> (usa
+     --sobrescribir)` y devuelve 2 sin escribir ninguno;
+   - crea la carpeta, escribe cada archivo e imprime `borrador: <ruta>`; por cada omitida imprime
+     `omitida: <texto>`; al final `Complétalas y compruébalas con: pcode flow comprobar --tareas <a>`.
+     Devuelve 0.
+3. Añade a `tests/spec.rs` los tests de la lista: escribe a mano `specs/saludo/spec.md` (constante `SPEC`) y
+   `specs/saludo/tareas.md` (constantes `T1` y `T2` unidas con una línea vacía) y lanza `pcode spec exportar
+   saludo` con un guion vacío (`json!([])`).
+'''
+firmas = '''
+// crates/pcode-cli/src/spec_cmd.rs
+fn exportar(root: &Path, name: &str, dest: &Path, overwrite: bool) -> anyhow::Result<i32>;
+'''
+ejemplo = '''
+$ pcode spec exportar saludo
+borrador: tareas/borradores/saludo-T1.md
+borrador: tareas/borradores/saludo-T2.md
+Complétalas y compruébalas con: pcode flow comprobar --tareas tareas/borradores
+$ pcode spec exportar saludo     → código 2, stderr contiene "ya existe"
+'''
+tests = [
+  "exportar_escribe_borradores: tras la orden existen los dos archivos y saludo-T2.md contiene `<!-- depende: saludo-T1 -->`",
+  "exportar_no_pisa: la segunda ejecución sale con 2",
+  "exportar_spec_inexistente: `pcode spec exportar nada` sale con 2",
+]
+no_hagas = ["No toques las demás órdenes de `spec`", "No llames a ningún modelo"]
+
+[[tarea]]
+id = "F11.15"
+nombre = "flow-adoptar"
+titulo = "`pcode flow adoptar`: pasar los borradores a `tareas/` solo si todos pasan el lint"
+fase = "F11"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F11.14"]
+toca = ["crates/pcode-flow/src/drafts.rs", "crates/pcode-flow/src/lib.rs", "crates/pcode-cli/src/flow_cmd.rs", "crates/pcode-cli/tests/flow.rs"]
+acepta = "cargo test -p pcode-flow drafts:: && cargo test -p pcode-cli --test flow adoptar"
+contexto = [
+  "crates/pcode-flow/src/lint.rs (`lint_all`) y crates/pcode-flow/src/task.rs (`load_dir`: no entra en subcarpetas e ignora los `.md` sin `acepta`)",
+  "crates/pcode-cli/src/flow_cmd.rs (ramas `Desglosar` y `Comprobar`: los borradores se escriben en `<tareas>/borradores/`)",
+]
+objetivo = '''
+`pcode flow desglosar` y `pcode spec exportar` dejan borradores en `<tareas>/borradores/`. Esta orden los
+adopta: los mueve a `<tareas>/` solo si TODOS son válidos; nunca pisa una tarea existente.
+1. Crea `drafts.rs` con `check_drafts` (firma abajo), pura. Problemas que devuelve (vacío = se pueden adoptar):
+   - `<id>: ya existe una tarea con ese id` si el id está en `existing`;
+   - `<id>: depende de <d>, que no existe` si la dependencia no está ni en `existing` ni en `drafts`;
+   - cada problema de `lint_all(drafts, &HashSet::new(), exists)` como `<id>: [regla] mensaje`.
+2. `lib.rs`: añade `pub mod drafts;`.
+3. `flow_cmd.rs`: variante `Adoptar { tareas: PathBuf }` («Mueve los borradores válidos a la carpeta de
+   tareas.») con `--tareas` (por defecto `tareas`). Rama:
+   - si `<tareas>/borradores` no existe o no tiene `.md`: imprime `no hay borradores` y devuelve 0;
+   - carga `existing = load_dir(&tareas)` y `drafts = load_dir(&borradores)`; si hay menos `drafts` que
+     archivos `.md`, añade el problema `hay borradores sin cabecera acepta`;
+   - `check_drafts(&drafts, &existing, &|p| root.join(p).exists())`; con problemas: uno por línea en stderr
+     con `✗ ` delante y devuelve 2 sin mover nada;
+   - sin problemas: `std::fs::rename` de cada `<borradores>/<id>.md` a `<tareas>/<id>.md`, imprime
+     `adoptada: <ruta>` por cada una y devuelve 0.
+4. `tests/flow.rs`: los tests `adoptar_*`.
+'''
+firmas = '''
+// crates/pcode-flow/src/drafts.rs
+use crate::task::TaskDef;
+
+/// Problemas que impiden adoptar los borradores (vacío = adelante).
+pub fn check_drafts(drafts: &[TaskDef], existing: &[TaskDef], exists: &dyn Fn(&str) -> bool) -> Vec<String>;
+'''
+ejemplo = '''
+existing = [T1]; drafts = [T1a válida, T1b válida que depende de T1a] → []
+drafts = [T1 válida]                         → ["T1: ya existe una tarea con ese id"]
+drafts = [T2a válida que depende de X]       → ["T2a: depende de X, que no existe"]
+$ pcode flow adoptar   (con dos borradores válidos) → código 0, "adoptada: tareas/T1a.md", y tareas/borradores queda sin .md
+$ pcode flow adoptar   (con un borrador de objetivo vacío) → código 2, stderr contiene "✗ " y "[objetivo]", nada se mueve
+'''
+tests = [
+  "borradores_validos_pasan: el primer caso del ejemplo devuelve vacío",
+  "id_que_ya_existe: el segundo caso devuelve el problema del id",
+  "dependencia_inexistente: el tercer caso devuelve el problema de la dependencia",
+  "borrador_que_no_pasa_el_lint: un borrador sin objetivo devuelve un problema con `[objetivo]`",
+  "adoptar_mueve_los_validos: con dos borradores válidos, la orden sale con 0 y los archivos están en tareas/",
+  "adoptar_todo_o_nada: con un borrador válido y otro malo, sale con 2 y los dos siguen en borradores/",
+  "adoptar_sin_borradores: sin la carpeta, imprime `no hay borradores` y sale con 0",
+]
+no_hagas = ["No añadas un flag para forzar ni para sobrescribir", "No borres los borradores inválidos", "No adoptes una parte: o todos o ninguno"]
+notas = '''
+Para las tareas válidas de los tests usa un auxiliar `valida(id, depende)` con la misma forma que en los tests
+de `lint.rs` (cabeceras, ficha con Talla S, Toca con un archivo nombrado en el objetivo, Contexto, Objetivo de
+2 pasos y más de 300 caracteres, Firmas y Tests).
+'''

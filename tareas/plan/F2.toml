@@ -716,21 +716,66 @@ id = "F2.11"
 nombre = "backend-copilot-github"
 titulo = "Backend Copilot coding agent: issue → PR → verificación local"
 fase = "F2"
-ejecutor = "haiku"
+hito = "1.8"
+talla = "M"
+ejecutor = "coordinador"
+motivo_coordinador = "Hay que probarlo contra un repositorio real de GitHub con Copilot coding agent activado y un token con permisos: confirmar el asignatario, cómo aparece el PR enlazado en la cronología del issue y los límites de la API. Las subtareas dejan todo hecho y probado con un servidor falso."
 depende = ["F2.06", "F0.03"]
-toca = ["crates/pcode-backends/src/lib.rs", "crates/pcode-backends/src/copilot_github.rs", "crates/pcode-backends/tests/copilot_github.rs"]
-acepta = "cargo test -p pcode-backends copilot_github"
-contexto = ["docs/backends-verificado.md (sección copilot: coding agent)", "docs/backends.md (Copilot coding agent)"]
+toca = ["docs/backends.md", "docs/backends-verificado.md"]
+acepta = "cargo test -p pcode-backends github && grep -q 'Copilot coding agent' docs/backends-verificado.md"
+contexto = [
+  "crates/pcode-backends/src/github_http.rs (`GitHubHttp`: peticiones reales; constante `COPILOT_ASSIGNEE`)",
+  "crates/pcode-backends/src/copilot_github.rs (`CopilotGitHub`: sondeo y aplicación del diff)",
+  "docs/backends.md (sección «GitHub Copilot», tabla «Copilot coding agent»)",
+]
 objetivo = '''
-1. `trait GitHubApi` (create_issue, assign_to_copilot, find_linked_pr, pr_diff, comment) con una
-   implementación real (`reqwest`, token desde la variable `GITHUB_TOKEN`) y otra falsa para tests.
-2. Máquina de estados: `Creado → Asignado → PrAbierto → DiffAplicado → Verificado | Fallido`, con
-   sondeo (intervalo y tiempo máximo configurables; los tests usan 0 y una API falsa).
-3. Al llegar el PR: baja el diff, lo aplica en la sandbox con `git apply` y deja que el flujo ejecute
-   `acepta` localmente. Nunca se fusiona el PR desde aquí.
-4. El texto del issue incluye la tarea, el relevo y el criterio `acepta`.
+1. En un repositorio de pruebas con Copilot coding agent activado, exporta `GITHUB_TOKEN` y lanza una tarea
+   pequeña con el backend (`CopilotGitHub` sobre `GitHubHttp::from_env`): debe crear el issue, asignarlo,
+   esperar al PR, bajar el diff a la sandbox y pasar `acepta` en local. Nunca se fusiona el PR desde pcode.
+2. Corrige lo que difiera de la API real (nombre del asignatario en `COPILOT_ASSIGNEE`, forma del evento de la
+   cronología que enlaza el PR, cabeceras) y ajusta los tests del servidor falso a lo observado.
+3. Añade a `docs/backends-verificado.md` la sección `## Copilot coding agent` con la fecha, los permisos
+   mínimos del token, los tiempos observados y los límites; actualiza la tabla de `docs/backends.md`.
+'''
+tests = ["(manual): una tarea real de principio a fin en un repositorio de pruebas, con el enlace al issue y al PR en el informe"]
+
+[[tarea]]
+id = "F2.11a"
+nombre = "github-api-trait"
+titulo = "GitHub: trait `GitHubApi`, implementación falsa y texto del issue"
+fase = "F2"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.06"]
+toca = ["crates/pcode-backends/src/github_api.rs", "crates/pcode-backends/src/lib.rs"]
+acepta = "cargo test -p pcode-backends github_api::"
+contexto = [
+  "crates/pcode-backends/src/types.rs (`Job`, `Job::prompt`, `Handoff::render_for_agent` y `BackendError`)",
+  "crates/pcode-backends/src/mock.rs (`MockBackend`: estilo de una implementación falsa pública, usable desde los tests de otros crates)",
+]
+objetivo = '''
+1. Crea `github_api.rs` con el trait `GitHubApi`, `FakeGitHub`, `issue_body` y `parse_remote` (firmas abajo).
+2. `FakeGitHub` guarda todo en memoria tras un `std::sync::Mutex` y es pública (NO va tras `#[cfg(test)]`: la
+   usan los tests de otros crates):
+   - `create_issue` guarda `(título, cuerpo)` y devuelve 1, 2, 3… por orden;
+   - `assign_to_copilot` apunta el número en `assigned`;
+   - `find_linked_pr` cuenta las consultas; devuelve `None` hasta que el número de consultas llega a
+     `pr_after_polls`; desde entonces `Some(100 + issue)`. Con `pr_after_polls == 0` nunca hay PR;
+   - `pr_diff` devuelve `diff`; `comment` guarda `(número, cuerpo)`.
+   Con `fail: Some(texto)`, todas las llamadas devuelven `Err(BackendError::Other(texto))`.
+3. `issue_body(job)`: `job.task`, después (si hay relevo) `\n\n## Relevo del intento anterior\n` +
+   `handoff.render_for_agent()`, y (si hay `accept`) `\n\n## Criterio de aceptación\nEsta orden debe terminar
+   con código 0:\n\n` + la orden en un bloque de código.
+4. `parse_remote(url)`: `(dueño, repo)` de una URL de GitHub: `https://github.com/o/r.git`,
+   `https://github.com/o/r`, `git@github.com:o/r.git` y `ssh://git@github.com/o/r`. Cualquier otra → `None`.
+5. `lib.rs`: añade `pub mod github_api;` y `pub use github_api::{FakeGitHub, GitHubApi, issue_body, parse_remote};`.
 '''
 firmas = '''
+// crates/pcode-backends/src/github_api.rs
+use crate::types::{BackendError, Job};
+
+/// Lo que PublicCode necesita de GitHub. No hay ninguna operación de fusionar: es deliberado.
 #[async_trait::async_trait]
 pub trait GitHubApi: Send + Sync {
     async fn create_issue(&self, title: &str, body: &str) -> Result<u64, BackendError>;
@@ -739,10 +784,213 @@ pub trait GitHubApi: Send + Sync {
     async fn pr_diff(&self, pr: u64) -> Result<String, BackendError>;
     async fn comment(&self, number: u64, body: &str) -> Result<(), BackendError>;
 }
-#[derive(Debug, Clone, PartialEq, Eq)] pub enum CopilotState { Created(u64), Assigned(u64), PrOpen(u64, u64), DiffApplied(u64), Verified, Failed(String) }
-pub struct CopilotGitHub<A: GitHubApi> { pub api: A, pub poll: std::time::Duration, pub max_wait: std::time::Duration }
+
+/// Estado observable de la API falsa.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct FakeState {
+    pub issues: Vec<(String, String)>,
+    pub assigned: Vec<u64>,
+    pub polls: u32,
+    pub comments: Vec<(u64, String)>,
+}
+
+/// API falsa en memoria para tests.
+#[derive(Default)]
+pub struct FakeGitHub {
+    pub pr_after_polls: u32,
+    pub diff: String,
+    pub fail: Option<String>,
+    pub state: std::sync::Mutex<FakeState>,
+}
+
+pub fn issue_body(job: &Job) -> String;
+pub fn parse_remote(url: &str) -> Option<(String, String)>;
 '''
-tests = ["copilot_gh_flujo_feliz (API falsa)", "copilot_gh_sin_pr_agota_tiempo", "copilot_gh_cuerpo_issue_lleva_acepta"]
+ejemplo = '''
+let gh = FakeGitHub { pr_after_polls: 2, diff: "d".into(), ..Default::default() };
+gh.create_issue("T1", "cuerpo").await → Ok(1)
+gh.find_linked_pr(1).await → Ok(None)      (consulta 1)
+gh.find_linked_pr(1).await → Ok(Some(101)) (consulta 2)
+parse_remote("git@github.com:acme/app.git") → Some(("acme", "app"))      parse_remote("https://gitlab.com/a/b") → None
+issue_body(job con accept "cargo test") contiene "## Criterio de aceptación" y "cargo test"
+'''
+tests = [
+  "falsa_numera_los_issues: dos create_issue devuelven 1 y 2 y quedan guardados con su título",
+  "falsa_abre_el_pr_tras_n_consultas: el caso del ejemplo devuelve None y luego Some(101)",
+  "falsa_sin_pr_nunca: con pr_after_polls 0, diez consultas devuelven None",
+  "falsa_fallo_configurado: con fail, create_issue devuelve el error con ese texto",
+  "cuerpo_issue_lleva_acepta: el cuerpo contiene la tarea, la sección de aceptación y la orden",
+  "cuerpo_issue_lleva_relevo: con handoff aparece `## Relevo del intento anterior`",
+  "remoto_https_y_ssh: las cuatro formas de URL dan (acme, app) y una de otro servidor None",
+]
+no_hagas = ["No hagas peticiones de red en esta tarea", "No añadas al trait ninguna operación de fusionar o cerrar", "No añadas dependencias"]
+
+[[tarea]]
+id = "F2.11b"
+nombre = "copilot-github-backend"
+titulo = "Backend `CopilotGitHub`: crear el issue, esperar al PR y aplicar su diff en la sandbox"
+fase = "F2"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.11a"]
+toca = ["crates/pcode-backends/src/copilot_github.rs", "crates/pcode-backends/src/lib.rs"]
+acepta = "cargo test -p pcode-backends copilot_github::"
+contexto = [
+  "crates/pcode-backends/src/github_api.rs (`GitHubApi`, `FakeGitHub`, `issue_body`)",
+  "crates/pcode-backends/src/mock.rs (`MockBackend::run`: cómo se escribe un archivo dentro de la sandbox con `sandbox.run(&argv, &[])` y cómo se salta el test sin namespaces)",
+  "crates/pcode-backends/src/types.rs (trait `Backend`, `BackendResult`, `BackendCaps`, `BackendError`)",
+]
+objetivo = '''
+1. Crea `copilot_github.rs` con `CopilotState`, `CopilotGitHub` y sus métodos (firmas abajo).
+2. `open_pr(job)`: `create_issue(&job.id, &issue_body(job))` → `assign_to_copilot(issue)` → hasta
+   `self.max_polls` consultas a `find_linked_pr(issue)` (bucle `for`), durmiendo `self.poll` entre consultas
+   con `tokio::time::sleep` (no duermas antes de la primera). Devuelve `(issue, pr)`. Si se agotan las
+   consultas: `Err(BackendError::Other(format!("Copilot no abrió un PR para el issue #{issue} tras
+   {max_polls} consultas")))`.
+3. `states(job)`: igual que `open_pr` pero devuelve la lista de estados por los que pasa, para el informe y los
+   tests: `Created(issue)`, `Assigned(issue)`, `PrOpen(issue, pr)`; si no llega el PR, el último es
+   `Failed(mensaje)`.
+4. `impl Backend`: `id()` = `"copilot-github"`; `caps()` con `needs_network: vec!["api.github.com".into()]` y
+   `reads_agents_md: true`. `run(job, sandbox)`: `open_pr`; `pr_diff(pr)`; escribe el diff en la sandbox y lo
+   aplica con un solo `sandbox.run_capture` de
+   `sh -c 'printf "%s" "$1" > .pcode-pr.diff && git apply .pcode-pr.diff; r=$?; rm -f .pcode-pr.diff; exit $r'`
+   pasando el diff como `$1` (mismo truco que `MockBackend`). Devuelve `BackendResult { exit: código,
+   final_message: "PR #<pr> del issue #<issue> aplicado" (o "…: el diff no se aplicó" si el código no es 0),
+   transcript: vec![], usage: None }`. La aceptación la ejecuta después el flujo; aquí NO se fusiona ni se
+   cierra nada.
+5. `lib.rs`: añade `pub mod copilot_github;`.
+'''
+firmas = '''
+// crates/pcode-backends/src/copilot_github.rs
+use crate::github_api::GitHubApi;
+use crate::types::*;
+
+/// Pasos del trabajo con Copilot coding agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CopilotState { Created(u64), Assigned(u64), PrOpen(u64, u64), Failed(String) }
+
+/// Backend asíncrono: issue → PR de Copilot → diff aplicado en la sandbox.
+pub struct CopilotGitHub<A: GitHubApi> {
+    pub api: A,
+    /// Espera entre consultas.
+    pub poll: std::time::Duration,
+    /// Consultas como máximo.
+    pub max_polls: u32,
+}
+
+impl<A: GitHubApi> CopilotGitHub<A> {
+    /// Crea el issue, lo asigna y espera al PR: (issue, pr).
+    pub async fn open_pr(&self, job: &Job) -> Result<(u64, u64), BackendError>;
+    /// Estados recorridos (para informes y tests).
+    pub async fn states(&self, job: &Job) -> Vec<CopilotState>;
+}
+
+#[async_trait::async_trait]
+impl<A: GitHubApi> Backend for CopilotGitHub<A> { /* id, caps, run */ }
+'''
+ejemplo = '''
+api = FakeGitHub { pr_after_polls: 2, ..Default::default() }; poll = Duration::ZERO; max_polls = 5
+open_pr(&Job::new("T1", "haz X")) → Ok((1, 101)); el issue guardado tiene título "T1" y está en `assigned`
+states(..) → [Created(1), Assigned(1), PrOpen(1, 101)]
+con pr_after_polls 0 y max_polls 3 → open_pr da Err("Copilot no abrió un PR para el issue #1 tras 3 consultas") y polls == 3
+'''
+tests = [
+  "copilot_gh_flujo_feliz: el primer caso del ejemplo devuelve (1, 101) y deja el issue asignado",
+  "copilot_gh_estados: states devuelve los tres estados del ejemplo",
+  "copilot_gh_sin_pr_agota_consultas: sin PR devuelve el error del ejemplo tras exactamente 3 consultas",
+  "copilot_gh_cuerpo_issue_lleva_acepta: el cuerpo del issue creado contiene la orden de aceptación del Job",
+  "copilot_gh_error_de_la_api_se_propaga: con fail en la API falsa, open_pr devuelve ese error",
+  "copilot_gh_aplica_el_diff_en_la_sandbox: con un diff que crea hola.txt, run deja el archivo en los cambios de la sandbox (se salta sin namespaces de usuario)",
+]
+no_hagas = ["No fusiones ni cierres el PR ni el issue", "No pongas un sondeo sin máximo", "No leas `GITHUB_TOKEN` aquí: el token es cosa de la implementación HTTP"]
+
+[[tarea]]
+id = "F2.11c"
+nombre = "github-http"
+titulo = "GitHub: implementación HTTP de `GitHubApi` (`GitHubHttp`) probada con un servidor falso"
+fase = "F2"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.11b"]
+toca = ["crates/pcode-backends/src/github_http.rs", "crates/pcode-backends/src/lib.rs"]
+toca_extra = ["crates/pcode-backends/Cargo.toml"]
+acepta = "cargo test -p pcode-backends github_http::"
+contexto = [
+  "crates/pcode-models/src/openai_http.rs (módulo `tests`, función `fake`: servidor HTTP falso con `tokio::net::TcpListener` en 127.0.0.1 que devuelve la petición recibida; cópialo y amplíalo)",
+  "crates/pcode-backends/src/github_api.rs (trait `GitHubApi`)",
+]
+objetivo = '''
+1. `Cargo.toml` de `pcode-backends`: añade `reqwest.workspace = true` (ya está en el workspace con `rustls-tls`
+   y `json`).
+2. Crea `github_http.rs` con `GitHubHttp` (firmas abajo). `lib.rs`: `pub mod github_http;` y
+   `pub use github_http::GitHubHttp;`.
+3. `from_env`: token de la variable `GITHUB_TOKEN` (si falta o está vacía:
+   `Err(BackendError::Other("falta la variable GITHUB_TOKEN".into()))`); base de `PCODE_GITHUB_API` o, si no
+   está, `https://api.github.com`.
+4. Todas las peticiones llevan `Authorization: Bearer <token>`, `User-Agent: pcode`,
+   `X-GitHub-Api-Version: 2022-11-28` y `Accept: application/vnd.github+json` (salvo `pr_diff`). Una respuesta
+   que no sea 2xx → `Err(BackendError::Other(format!("GitHub {status}: {primeros 200 caracteres del cuerpo}")))`.
+   El token no aparece nunca en errores ni en logs.
+5. Peticiones (rutas relativas a `<base>/repos/<owner>/<repo>`):
+   - `create_issue`: `POST /issues` con `{"title", "body"}` → campo `number` de la respuesta;
+   - `assign_to_copilot`: `POST /issues/<n>/assignees` con `{"assignees": [COPILOT_ASSIGNEE]}`;
+   - `find_linked_pr`: `GET /issues/<n>/timeline` → primer elemento del array con
+     `event == "cross-referenced"` cuyo `source.issue.pull_request` no sea nulo → `source.issue.number`;
+   - `pr_diff`: `GET /pulls/<n>` con `Accept: application/vnd.github.diff` → el cuerpo como texto;
+   - `comment`: `POST /issues/<n>/comments` con `{"body"}`.
+6. Tests con un servidor falso en `127.0.0.1` (puerto 0) que atiende UNA conexión, devuelve una respuesta fija
+   y entrega la petición recibida (línea de petición, cabeceras y cuerpo) para comprobarla.
+'''
+firmas = '''
+// crates/pcode-backends/src/github_http.rs
+use crate::github_api::GitHubApi;
+use crate::types::BackendError;
+
+/// Usuario al que se asigna el issue para que lo tome Copilot coding agent (lo confirma la tarea F2.11).
+pub const COPILOT_ASSIGNEE: &str = "copilot-swe-agent[bot]";
+
+/// Cliente de la API REST de GitHub para un repositorio.
+pub struct GitHubHttp { /* base, owner, repo, token, client: reqwest::Client */ }
+
+impl GitHubHttp {
+    /// Cliente con todo explícito (los tests pasan la URL del servidor falso como `base`).
+    pub fn new(base: &str, owner: &str, repo: &str, token: &str) -> Self;
+    /// Cliente con el token de `GITHUB_TOKEN` y la base de `PCODE_GITHUB_API` (o la de GitHub).
+    pub fn from_env(owner: &str, repo: &str) -> Result<Self, BackendError>;
+}
+
+#[async_trait::async_trait]
+impl GitHubApi for GitHubHttp { /* las cinco operaciones */ }
+'''
+ejemplo = '''
+servidor falso responde `201` con {"number": 7}:
+  GitHubHttp::new(url, "acme", "app", "t0k").create_issue("T1", "cuerpo") → Ok(7)
+  la petición recibida empieza por "POST /repos/acme/app/issues " y contiene "authorization: Bearer t0k" (sin distinguir mayúsculas) y "\"title\":\"T1\""
+servidor falso responde `200` con [{"event":"labeled"},{"event":"cross-referenced","source":{"issue":{"number":12,"pull_request":{"url":"x"}}}}]:
+  find_linked_pr(7) → Ok(Some(12))
+servidor falso responde `404` con {"message":"Not Found"}: comment(7, "hola") → Err cuyo texto empieza por "GitHub 404" y no contiene "t0k"
+'''
+tests = [
+  "crea_issue_y_lee_el_numero: el primer caso del ejemplo, con la ruta, el token y el título en la petición",
+  "asigna_a_copilot: la petición va a /issues/7/assignees y su cuerpo contiene COPILOT_ASSIGNEE",
+  "encuentra_el_pr_enlazado: la cronología del ejemplo devuelve Some(12)",
+  "sin_pr_enlazado: una cronología sin referencias cruzadas a un PR devuelve None",
+  "diff_del_pr_como_texto: pr_diff pide con Accept application/vnd.github.diff y devuelve el cuerpo tal cual",
+  "error_http_sin_token: una respuesta 404 da un error que empieza por `GitHub 404` y no contiene el token",
+  "from_env_sin_token: sin GITHUB_TOKEN (pásalo por una función interna que reciba los valores, sin tocar el entorno del proceso) devuelve el error de la variable",
+]
+no_hagas = [
+  "No hagas peticiones a github.com en los tests: solo a 127.0.0.1",
+  "No escribas ningún token real en tests ni fixtures",
+  "No añadas más dependencias que `reqwest`",
+  "No pongas reintentos ni esperas sin tiempo máximo (usa un timeout de 30 s en el cliente)",
+]
+notas = '''
+Para probar `from_env` sin modificar variables de entorno (los tests corren en paralelo), separa la lógica en
+una función privada `from_values(owner, repo, token: Option<String>, base: Option<String>)` y prueba esa.
+'''
 
 [[tarea]]
 id = "F2.12"

@@ -132,13 +132,202 @@ id = "F5.04"
 nombre = "api-flujo"
 titulo = "Métodos y eventos de flujos en el demonio"
 fase = "F5"
+hito = "1.4"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F5.02", "F3.10"]
+toca = []
+acepta = "cargo test -p pcode-protocol flow && cargo test -p pcode-server flow"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F5.04a, F5.04b y F5.04c.
+3. Escribe el informe con la salida.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.04a"
+nombre = "api-flujo-protocolo"
+titulo = "Protocolo: métodos `flow.run` y `flow.stop` y tipo `FlowStatusResult`"
+fase = "F5"
+hito = "1.4"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.02"]
+toca = ["crates/pcode-protocol/src/lib.rs", "apps/ui/src/protocol/FlowStatusResult.ts"]
+acepta = "cargo test -p pcode-protocol flow && test -f apps/ui/src/protocol/FlowStatusResult.ts"
+contexto = [
+  "crates/pcode-protocol/src/lib.rs (struct `TaskDto` con sus atributos `serde` y `ts`; módulo `methods`, constante `FLOW_STATUS`; módulo `tests`)",
+  "apps/ui/src/protocol/TaskDto.ts (así queda un tipo generado por `ts-rs`; no se edita a mano)",
+]
+objetivo = '''
+1. En `lib.rs`, justo después de `TaskDto`, añade el struct `FlowStatusResult` (firma abajo) con los mismos
+   atributos que `TaskDto`: `#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]`,
+   `#[serde(rename_all = "camelCase")]` y `#[ts(export)]`, y un comentario `///` por campo.
+2. Documenta en el comentario del campo `state` de `TaskDto` los valores posibles: `pending`, `running`,
+   `accepted`, `integrated`, `blocked` y `done` (hecha fuera del flujo: tiene informe). No cambies el tipo.
+3. En `pub mod methods`, junto a `FLOW_STATUS`, añade `FLOW_RUN = "flow.run"` («Lanza el flujo de tareas.») y
+   `FLOW_STOP = "flow.stop"` («Pide parar el flujo.»).
+4. Ejecuta `cargo test -p pcode-protocol`: `ts-rs` genera `FlowStatusResult.ts` en `apps/ui/src/protocol/`
+   (la carpeta la fija `.cargo/config.toml`). Ese archivo va en el commit tal como sale: no lo edites.
+5. Añade al módulo `tests` de `lib.rs` los tests de la lista.
+'''
+firmas = '''
+// crates/pcode-protocol/src/lib.rs
+/// Respuesta de `flow.status`.
+pub struct FlowStatusResult {
+    /// Tareas del flujo con su estado.
+    pub tasks: Vec<TaskDto>,
+    /// Ids de las tareas que esperan al coordinador.
+    pub needs_coordinator: Vec<String>,
+    /// Si hay un flujo en marcha lanzado desde el demonio.
+    pub running: bool,
+}
+'''
+ejemplo = '''
+serde_json::to_value(FlowStatusResult { tasks: vec![TaskDto { id: "a".into(), state: "pending".into(), attempts: 0 }],
+                                        needs_coordinator: vec!["b".into()], running: false })
+  → {"tasks":[{"id":"a","state":"pending","attempts":0}],"needsCoordinator":["b"],"running":false}
+'''
+tests = [
+  "flow_status_result_en_camel_case: el valor del ejemplo se serializa con la clave `needsCoordinator` y vuelve igual al deserializar",
+  "flow_metodos_tienen_nombre: FLOW_RUN es `flow.run` y FLOW_STOP es `flow.stop`",
+]
+no_hagas = ["No edites a mano nada de `apps/ui/src/protocol/`", "No cambies `PROTOCOL_VERSION` (solo se añaden métodos y un tipo: es compatible)", "No toques `Event::TaskUpdated`"]
+
+[[tarea]]
+id = "F5.04b"
+nombre = "api-flujo-estado"
+titulo = "Demonio: leer el estado del flujo del proyecto (`flow_api.rs`, lógica)"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.04a", "F3.10"]
 toca = ["crates/pcode-server/src/flow_api.rs", "crates/pcode-server/src/lib.rs"]
-acepta = "cargo test -p pcode-server flow_api"
-contexto = ["crates/pcode-flow/src/runner.rs", "crates/pcode-protocol/src/lib.rs"]
-objetivo = "`flow.status` (lista de `TaskDto` + necesita coordinador), `flow.stop`; el `Runner` corre dentro del demonio y cada cambio de estado de tarea emite `TaskUpdated`."
-tests = ["flow_status_lista_tareas", "flow_stop_para_runner", "task_updated_se_emite"]
+toca_extra = ["crates/pcode-server/Cargo.toml"]
+acepta = "cargo test -p pcode-server flow_api::"
+contexto = [
+  "crates/pcode-flow/src/events.rs (`load(&store, session)`, `FlowState::replay`, `FlowState::state`, `TaskState`)",
+  "crates/pcode-cli/src/flow_cmd.rs (funciones `session` y `runner`: el flujo guarda sus eventos en `.pcode/flow.db`, sesión cuyo `task` es `flujo`; las tareas están en `tareas/`)",
+  "crates/pcode-protocol/src/lib.rs (`TaskDto` y `FlowStatusResult`)",
+]
+objetivo = '''
+1. `Cargo.toml` de `pcode-server`: añade las dependencias `pcode-flow = { path = "../pcode-flow" }` y
+   `pcode-store = { path = "../pcode-store" }`.
+2. Crea `flow_api.rs` con las cuatro funciones de abajo. `lib.rs`: añade `pub mod flow_api;`.
+3. `task_dtos`: un `TaskDto` por tarea, en el orden de `tasks`. `state`: `done` si el id está en `done`; si no,
+   según `state.state(id)`: `Pending` → `pending`, `Running(_)` → `running`, `Accepted` → `accepted`,
+   `Integrated` → `integrated`, `Blocked(_)` → `blocked`. `attempts` de `state.attempts` (0 si no consta).
+4. `flow_status(repo, running)`: tareas = `pcode_flow::task::load_dir(&repo.join("tareas"))` (si la carpeta no
+   existe, lista vacía, sin error); eventos = vacíos si no existe `repo/.pcode/flow.db`; si existe,
+   `pcode_store::Store::open`, la sesión cuyo `task == "flujo"` (de `store.sessions(50)`) y
+   `pcode_flow::events::load`; `done` = ids con `repo/informes/<id>.md`. `needs_coordinator` = ids de las tareas
+   `Mode::Coordinator` cuyo estado no es `done` ni `integrated`. Los errores se devuelven como texto.
+5. `changed(prev, now)`: los `TaskDto` de `now` que no están iguales en `prev` (por id; los nuevos también).
+6. `request_stop(repo)`: crea `repo/.pcode/` si falta y escribe el archivo vacío `repo/.pcode/STOP`.
+'''
+firmas = '''
+// crates/pcode-server/src/flow_api.rs
+use pcode_flow::{FlowState, TaskDef};
+use pcode_protocol::{FlowStatusResult, TaskDto};
+use std::collections::HashSet;
+use std::path::Path;
+
+/// Tareas con su estado, listas para la API.
+pub fn task_dtos(tasks: &[TaskDef], state: &FlowState, done: &HashSet<String>) -> Vec<TaskDto>;
+/// Estado del flujo del proyecto `repo` (lee `tareas/`, `informes/` y `.pcode/flow.db`).
+pub fn flow_status(repo: &Path, running: bool) -> Result<FlowStatusResult, String>;
+/// Tareas cuyo estado o intentos cambiaron entre dos lecturas.
+pub fn changed(prev: &[TaskDto], now: &[TaskDto]) -> Vec<TaskDto>;
+/// Pide parar el flujo (archivo `.pcode/STOP`).
+pub fn request_stop(repo: &Path) -> Result<(), String>;
+'''
+ejemplo = '''
+repo temporal con tareas/a.md ("<!-- acepta: true -->\n# a\n"), tareas/b.md (igual, con "<!-- modo: coordinador -->")
+e informes/a.md:
+  flow_status(repo, false) → tasks [a: done, b: pending], needs_coordinator ["b"], running false
+changed([a: pending 0], [a: running 1, b: pending 0]) → [a: running 1, b: pending 0]
+changed(x, x) → []
+request_stop(repo) → existe repo/.pcode/STOP
+'''
+tests = [
+  "estado_sin_base_de_datos: el repo del ejemplo da a hecha, b pendiente y b en needs_coordinator",
+  "estado_sin_carpeta_de_tareas: un repo vacío da tasks vacío sin error",
+  "estado_lee_los_eventos: tras guardar un Lanzada de a en .pcode/flow.db (Store::open, create_session(\"flujo\", \"flujo\"), pcode_flow::events::persist), a sale running con 1 intento",
+  "dto_por_estado: task_dtos traduce Integrated a `integrated` y Blocked a `blocked`",
+  "cambios_entre_lecturas: los dos casos de changed del ejemplo",
+  "parar_crea_el_archivo: request_stop crea .pcode/STOP",
+]
+no_hagas = ["No toques `server.rs` en esta tarea", "No ejecutes el flujo dentro del demonio: aquí solo se lee su estado", "No crees `.pcode/flow.db` si no existe"]
+
+[[tarea]]
+id = "F5.04c"
+nombre = "api-flujo-servidor"
+titulo = "Demonio: métodos `flow.status`, `flow.run` y `flow.stop` y evento `TaskUpdated`"
+fase = "F5"
+hito = "1.4"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.04b"]
+toca = ["crates/pcode-server/src/server.rs"]
+acepta = "cargo test -p pcode-server flujo_rpc"
+contexto = [
+  "crates/pcode-server/src/server.rs (función `rpc`: el `match req.method.as_str()`; rama `methods::SPEC_RUN`: cómo se lanza `pcode` con `create_command_session`; rama `methods::WORKSPACE_TASKS`: uso de `blocking` y `ws_reply`; `AppState::state_of` y `AppState::emit`)",
+  "crates/pcode-server/src/flow_api.rs (`flow_status`, `changed`, `request_stop`)",
+  "crates/pcode-server/src/server.rs (módulo `tests`: auxiliar `call` y el test `sesion_con_proceso_emite_eventos_y_termina`, que usa otro binario en lugar de `pcode`)",
+]
+objetivo = '''
+El flujo no corre dentro del demonio: el demonio lanza `pcode flow run` como una sesión más (igual que
+`spec.run`) y vigila `.pcode/flow.db` para emitir `Event::TaskUpdated`.
+1. En `server.rs`, añade a `AppState` el método `flow_running` (firma abajo): true si alguna sesión de
+   `self.sessions` tiene `backend == "flow"` y `state == SessionState::Running`.
+2. Añade `AppState::watch_flow` (firma abajo): `tokio::spawn` de un bucle con
+   `tokio::time::interval(Duration::from_secs(1))` y como mucho 86 400 vueltas. En cada vuelta: lee
+   `crate::flow_api::flow_status(&repo, true)` con `blocking`; por cada tarea de
+   `crate::flow_api::changed(&prev, &now.tasks)` emite `Event::TaskUpdated { task }`; guarda `now.tasks` como
+   `prev`; y, DESPUÉS de emitir, si `self.state_of(session) != Some(SessionState::Running)`, termina. `prev`
+   empieza vacío: la primera vuelta (inmediata) emite todas las tareas.
+3. En el `match` de `rpc`, junto a `methods::WORKSPACE_TASKS`:
+   - `methods::FLOW_STATUS`: `ws_reply(id, blocking(move || crate::flow_api::flow_status(&root, running)).await)`
+     con `running = st.flow_running()`.
+   - `methods::FLOW_RUN`: parámetros `{backend: string, paralelo?: number}`. Sin `backend` →
+     `rpc_err(id, -32602, "se esperaba {backend}")`. Si `st.flow_running()` → `rpc_err(id, -32000, "ya hay un
+     flujo en marcha")`. Si no: `create_command_session("Flujo de tareas".into(), "flow", args)` con
+     `args = ["flow", "run", "--backend", <backend>]` (más `"--paralelo", <n>` si viene), `st.watch_flow(info.id)`
+     y responde con el `SessionInfo`.
+   - `methods::FLOW_STOP`: `ws_reply(id, crate::flow_api::request_stop(&st.repo).map(|_| true))`.
+4. Añade al módulo `tests` los tests de la lista. Usa un `AppState::new(<tempdir>, <binario>, None)` propio (no
+   el auxiliar `app`, que usa el directorio temporal del sistema como proyecto).
+'''
+firmas = '''
+// crates/pcode-server/src/server.rs
+impl AppState {
+    /// ¿Hay un flujo lanzado desde el demonio que sigue en marcha?
+    fn flow_running(&self) -> bool;
+    /// Vigila el estado del flujo mientras dure la sesión `session` y emite `TaskUpdated` con cada cambio.
+    fn watch_flow(self: &Arc<Self>, session: i64);
+}
+'''
+ejemplo = '''
+proyecto temporal con tareas/a.md = "<!-- acepta: true -->\n# a\n"
+flow.status {}                    → result.tasks = [{"id":"a","state":"pending","attempts":0}], result.running = false
+flow.run {"backend":"modelo"}     (binario /bin/true) → result.backend = "flow"; llega un evento {"tipo":"taskUpdated","task":{"id":"a",…}}
+flow.run {}                       → error.code = -32602
+flow.stop {}                      → result = true y existe .pcode/STOP
+'''
+tests = [
+  "flujo_rpc_status_lista_tareas: flow.status sobre el proyecto del ejemplo devuelve la tarea a en pending",
+  "flujo_rpc_run_lanza_sesion_y_emite_task_updated: con /bin/true como binario, flow.run devuelve una sesión con backend flow y por `st.events.subscribe()` llega un TaskUpdated de a antes de 5 s (tokio::time::timeout)",
+  "flujo_rpc_run_sin_backend: flow.run sin parámetros da el error -32602",
+  "flujo_rpc_stop_crea_el_archivo: flow.stop devuelve true y crea .pcode/STOP",
+]
+no_hagas = [
+  "No añadas `pcode-flow` al bucle del demonio ni construyas un `Runner` aquí",
+  "No pongas un bucle sin cota ni una espera sin tiempo máximo",
+  "No cambies la firma de `create_command_session` ni el resto de métodos",
+]
 
 [[tarea]]
 id = "F5.05"
@@ -701,13 +890,199 @@ id = "F5.26"
 nombre = "github"
 titulo = "GitHub: PR del trabajo integrado, comentarios con resultados y checks"
 fase = "F5"
+hito = "1.8"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F3.10", "F2.11"]
+depende = ["F3.10", "F2.11c"]
+toca = []
+acepta = "cargo test -p pcode-backends github && cargo test -p pcode-flow github:: && cargo test -p pcode-flow rama_de_tarea"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F5.26a, F5.26b y F5.26c.
+3. Escribe el informe con la salida. Anota en *Pendiente* que el modo «PR por tarea» dentro de
+   `pcode flow run` no está cableado: falta decidir qué hacen las tareas dependientes mientras el PR está abierto.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.26a"
+nombre = "github-pr-y-checks-api"
+titulo = "GitHub: `create_pr` y `create_check_run` en `GitHubApi` (falsa y HTTP)"
+fase = "F5"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.11c"]
+toca = ["crates/pcode-backends/src/github_api.rs", "crates/pcode-backends/src/github_http.rs"]
+acepta = "cargo test -p pcode-backends github"
+contexto = [
+  "crates/pcode-backends/src/github_api.rs (trait `GitHubApi`, `FakeGitHub` y `FakeState`)",
+  "crates/pcode-backends/src/github_http.rs (`GitHubHttp`: cómo se hace una petición `POST` con JSON y se tratan los errores; servidor falso de sus tests)",
+]
+objetivo = '''
+1. `github_api.rs`: añade al trait `GitHubApi` los dos métodos de abajo. Sigue sin haber operación de fusionar.
+2. `FakeState`: campos nuevos `pub prs: Vec<(String, String, String, String)>` (head, base, título, cuerpo) y
+   `pub checks: Vec<(String, String, String, String)>` (nombre, sha, conclusión, resumen). `FakeGitHub`:
+   `create_pr` guarda y devuelve 201, 202… por orden; `create_check_run` guarda. Con `fail`, error como el resto.
+3. `github_http.rs` (rutas relativas a `<base>/repos/<owner>/<repo>`):
+   - `create_pr`: `POST /pulls` con `{"title", "head", "base", "body"}` → campo `number`;
+   - `create_check_run`: `POST /check-runs` con `{"name", "head_sha", "status": "completed", "conclusion",
+     "output": {"title": <name>, "summary": <summary>}}`. `conclusion` solo admite `success`, `failure` o
+     `neutral`; otro valor → `Err(BackendError::Other("conclusión no válida: <valor>"))` sin hacer la petición.
+4. Tests: los de la falsa en `github_api.rs` y los HTTP en `github_http.rs` (con su servidor falso).
+'''
+firmas = '''
+// crates/pcode-backends/src/github_api.rs  (dentro de `pub trait GitHubApi`)
+    /// Abre un PR de la rama `head` contra `base`. Devuelve su número.
+    async fn create_pr(&self, head: &str, base: &str, title: &str, body: &str) -> Result<u64, BackendError>;
+    /// Publica un check terminado sobre el commit `head_sha` (`conclusion`: success, failure o neutral).
+    async fn create_check_run(&self, name: &str, head_sha: &str, conclusion: &str, summary: &str) -> Result<(), BackendError>;
+'''
+ejemplo = '''
+FakeGitHub::default().create_pr("pcode/T1", "main", "T1: título", "cuerpo") → Ok(201); state.prs tiene esa tupla
+servidor falso responde `201` con {"number": 9}:
+  GitHubHttp::new(url, "acme", "app", "t0k").create_pr("pcode/T1", "main", "t", "c") → Ok(9)
+  la petición empieza por "POST /repos/acme/app/pulls " y contiene "\"head\":\"pcode/T1\"" y "\"base\":\"main\""
+create_check_run("pcode acepta", "abc123", "raro", "x") → Err("conclusión no válida: raro")
+'''
+tests = [
+  "falsa_guarda_el_pr: create_pr devuelve 201 y deja la tupla en state.prs",
+  "falsa_guarda_el_check: create_check_run deja nombre, sha, conclusión y resumen en state.checks",
+  "http_crea_pr: el caso del ejemplo devuelve 9 y la petición lleva head y base",
+  "http_check_run_terminado: la petición va a /check-runs y contiene `\"status\":\"completed\"` y la conclusión",
+  "http_conclusion_no_valida: `raro` devuelve el error sin llegar a pedir nada",
+]
+no_hagas = ["No añadas `merge` ni `close` al trait", "No hagas peticiones fuera de 127.0.0.1 en los tests", "No toques `copilot_github.rs`"]
+
+[[tarea]]
+id = "F5.26b"
+nombre = "github-pr-de-tarea"
+titulo = "Flujos: PR de una tarea con informe, salida de `acepta`, check y comentario de revisión"
+fase = "F5"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.26a", "F4.07"]
 toca = ["crates/pcode-flow/src/github.rs", "crates/pcode-flow/src/lib.rs"]
-acepta = "cargo test -p pcode-flow github"
-contexto = ["crates/pcode-backends/src/copilot_github.rs (trait GitHubApi)"]
-objetivo = "Modo «PR por tarea» opcional: en lugar de avanzar main, abrir un PR con el diff, el informe y la salida de `acepta`; comentar la revisión cruzada; check run con el resultado. Reutiliza `GitHubApi` y la amplía (create_pr, create_check_run). Tests con la API falsa. Nunca fusiona sin aprobación humana."
-tests = ["pr_lleva_informe_y_acepta", "check_run_refleja_resultado", "no_fusiona"]
+acepta = "cargo test -p pcode-flow github::"
+contexto = [
+  "crates/pcode-backends/src/github_api.rs (trait `GitHubApi` con `create_pr`, `create_check_run` y `comment`; `FakeGitHub` y `FakeState` para los tests)",
+  "crates/pcode-flow/src/ci.rs (módulo vecino sobre GitHub: estilo y tests)",
+]
+objetivo = '''
+1. Crea `github.rs` con `PrRequest`, `pr_body`, `check_conclusion` y `publish_task_pr` (firmas abajo).
+2. `pr_body(req)`: Markdown con, en este orden: `## Tarea` y el título; `## Informe` y `req.report` (o
+   `_sin informe_` si está vacío); `## Aceptación` con la orden en una línea entre comillas invertidas, el
+   resultado (`✓ pasa` / `✗ falla`) y las últimas 30 líneas de `req.accept_output` en un bloque de código; y la
+   línea final `_PR abierto por PublicCode. No se fusiona automáticamente: revísalo y fusiónalo tú._`.
+3. `check_conclusion(ok)`: `"success"` o `"failure"`.
+4. `publish_task_pr(api, req)`: `api.create_pr(&req.head, &req.base, &format!("{}: {}", req.task_id,
+   req.title), &pr_body(req))`; después `api.create_check_run("pcode acepta", &req.head_sha,
+   check_conclusion(req.accept_ok), <primera línea no vacía de accept_output, o «sin salida»>)`; y, si
+   `req.review` es `Some(texto)`, `api.comment(pr, &format!("## Revisión cruzada\n\n{texto}"))`. Devuelve el
+   número del PR. Los errores de la API se devuelven como texto (`e.to_string()`). Nunca fusiona.
+5. `lib.rs`: añade `pub mod github;`.
+'''
+firmas = '''
+// crates/pcode-flow/src/github.rs
+use pcode_backends::GitHubApi;
+
+/// Datos del PR de una tarea.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PrRequest {
+    pub task_id: String,
+    pub title: String,
+    /// Rama con el trabajo (`pcode/<id>`).
+    pub head: String,
+    /// Rama de destino.
+    pub base: String,
+    /// Commit de la rama.
+    pub head_sha: String,
+    /// Informe de la tarea (Markdown).
+    pub report: String,
+    pub accept_cmd: String,
+    pub accept_ok: bool,
+    pub accept_output: String,
+    /// Texto de la revisión cruzada, si la hubo.
+    pub review: Option<String>,
+}
+
+pub fn pr_body(req: &PrRequest) -> String;
+pub fn check_conclusion(ok: bool) -> &'static str;
+/// Abre el PR, publica el check y comenta la revisión. Devuelve el número del PR.
+pub async fn publish_task_pr(api: &dyn GitHubApi, req: &PrRequest) -> Result<u64, String>;
+'''
+ejemplo = '''
+req = PrRequest { task_id: "T1", title: "Saludo", head: "pcode/T1", base: "main", head_sha: "abc123",
+                  report: "# T1\n## Hecho\n- saluda", accept_cmd: "cargo test", accept_ok: true,
+                  accept_output: "test result: ok. 3 passed", review: Some("sin problemas") }
+publish_task_pr(&FakeGitHub::default(), &req) → Ok(201)
+  state.prs[0] = ("pcode/T1", "main", "T1: Saludo", cuerpo con "## Informe", "`cargo test`" y "✓ pasa")
+  state.checks[0] = ("pcode acepta", "abc123", "success", "test result: ok. 3 passed")
+  state.comments[0] = (201, "## Revisión cruzada\n\nsin problemas")
+'''
+tests = [
+  "pr_lleva_informe_y_acepta: el cuerpo contiene el informe, la orden y `✓ pasa`",
+  "pr_recorta_la_salida_larga: con 100 líneas de salida, el cuerpo contiene la última y no la primera",
+  "check_run_refleja_resultado: con accept_ok false el check guardado tiene conclusión failure",
+  "comenta_la_revision_si_la_hay: con review Some hay un comentario en el PR 201 y con None ninguno",
+  "error_de_la_api_se_devuelve: con fail en la API falsa, publish_task_pr devuelve Err con ese texto",
+  "no_fusiona: el cuerpo avisa de que no se fusiona automáticamente",
+]
+no_hagas = ["No lances `git` ni `gh` aquí", "No hagas peticiones de red: los tests usan `FakeGitHub`", "No añadas dependencias a `pcode-flow`"]
+
+[[tarea]]
+id = "F5.26c"
+nombre = "github-rama-de-tarea"
+titulo = "Flujos: integrar una tarea en su propia rama y subirla (sin forzar)"
+fase = "F5"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.26b"]
+toca = ["crates/pcode-flow/src/integrate.rs"]
+acepta = "cargo test -p pcode-flow rama_de_tarea"
+contexto = [
+  "crates/pcode-flow/src/integrate.rs (función privada `git`, función `integrate` y los auxiliares `repo_with` y `sb` de sus tests)",
+]
+objetivo = '''
+1. En `integrate.rs`, añade las tres funciones de abajo. Todas usan la función privada `git(repo, args)`.
+2. `task_branch(id)`: `pcode/<id>` cambiando por `-` cualquier carácter que no sea letra ASCII, cifra, `.`, `_`
+   o `-`.
+3. `integrate_on_branch(sb, repo, id, title)`: anota la rama actual (`git rev-parse --abbrev-ref HEAD`); crea
+   y cambia a la rama de la tarea (`git switch -c <rama>`; si ya existe, devuelve
+   `Err("la rama <rama> ya existe")` sin tocar nada); llama a `integrate(sb, repo, id, title)`; y vuelve
+   SIEMPRE a la rama original (`git switch <original>`), también si `integrate` falla. Devuelve
+   `(resultado de integrate, nombre de la rama)`.
+4. `push_branch(repo, remote, branch)`: `git push <remote> <branch>` (sin `--force`). Devuelve el sha de la
+   rama (`git rev-parse <branch>`). Si el push falla, `Err` con el mensaje de git.
+5. Tests en el módulo `tests` de `integrate.rs`, con nombres que empiezan por `rama_de_tarea_`.
+'''
+firmas = '''
+// crates/pcode-flow/src/integrate.rs
+/// Nombre de la rama de una tarea: `pcode/<id saneado>`.
+pub fn task_branch(id: &str) -> String;
+/// Como `integrate`, pero el commit queda en la rama de la tarea y el repo vuelve a la rama en que estaba.
+pub fn integrate_on_branch(sb: Sandbox, repo: &Path, id: &str, title: &str) -> Result<(Integrated, String), String>;
+/// Sube la rama al remoto (nunca forzado) y devuelve su commit.
+pub fn push_branch(repo: &Path, remote: &str, branch: &str) -> Result<String, String>;
+'''
+ejemplo = '''
+task_branch("F1.02-tipos") → "pcode/F1.02-tipos"      task_branch("a b/c") → "pcode/a-b-c"
+Repo temporal en `main` con un remoto `origin` que es otro directorio creado con `git init --bare`:
+  git branch pcode/T1 && push_branch(repo, "origin", "pcode/T1") → Ok(sha); `git -C <bare> rev-parse pcode/T1` da el mismo sha
+  push_branch(repo, "origin", "no-existe") → Err(..)
+integrate_on_branch (con sandbox que crea a.txt) → la rama `pcode/T1` tiene el commit `T1: título`, `main` no
+  tiene a.txt en su último commit y `git rev-parse --abbrev-ref HEAD` sigue siendo `main`
+'''
+tests = [
+  "rama_de_tarea_nombre_saneado: los dos casos de task_branch del ejemplo",
+  "rama_de_tarea_se_sube_al_remoto: con un remoto bare local, push_branch devuelve el sha y el remoto tiene la rama (no necesita sandbox)",
+  "rama_de_tarea_inexistente_falla: subir una rama que no existe devuelve Err",
+  "rama_de_tarea_integra_sin_mover_main: el último caso del ejemplo (se salta sin namespaces de usuario, como los demás tests de integrate)",
+]
+no_hagas = ["No uses `--force` ni `-f` en ningún `git push`", "No cambies la función `integrate` ni sus tests", "No borres ramas"]
 
 [[tarea]]
 id = "F5.27"
