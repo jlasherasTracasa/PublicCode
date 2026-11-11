@@ -1,12 +1,19 @@
 //! Formato de las tools de LSP: el modelo da una línea (desde 1) y el nombre del símbolo, y aquí se
 //! calcula la posición que pide el protocolo. También guarda los últimos diagnósticos publicados.
-use pcode_lsp::{Diagnostic, DiagnosticsSink, Location};
+use crate::registry::{Effect, Tool, ToolContext, ToolOutput, resolve_in_root};
+use pcode_lsp::{Diagnostic, DiagnosticsSink, Location, LspClient, LspManager, rel_path};
+use pcode_models::ToolSpec;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 /// Máximo de posiciones o diagnósticos que se muestran.
 const MAX_LISTA: usize = 50;
+/// Espera por defecto de `diagnosticos` y tope máximo, en milisegundos.
+const ESPERA_DEFECTO_MS: u64 = 5000;
+const ESPERA_MAXIMA_MS: u64 = 30_000;
 
 /// Posición LSP (línea desde 0, columna UTF-16) de `symbol` en la línea `line` (desde 1) de `text`.
 pub fn find_position(text: &str, line: u32, symbol: &str) -> Result<(u32, u32), String> {
@@ -123,6 +130,237 @@ impl DiagStore {
     pub fn clear(&self, path: &str) {
         self.guardado().remove(path);
     }
+}
+
+/// Argumento de texto obligatorio.
+fn arg_str<'a>(args: &'a Value, nombre: &str) -> Result<&'a str, ToolOutput> {
+    args.get(nombre)
+        .and_then(Value::as_str)
+        .ok_or_else(|| ToolOutput::error(format!("falta `{nombre}`")))
+}
+
+/// Argumento `line` obligatorio (entero desde 1).
+fn arg_linea(args: &Value) -> Result<u32, ToolOutput> {
+    args.get("line")
+        .and_then(Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| ToolOutput::error("falta `line` (un entero desde 1)"))
+}
+
+/// Ruta relativa al proyecto y texto del archivo.
+async fn leer(ctx: &ToolContext, path: &str) -> Result<(String, String), String> {
+    let full = resolve_in_root(&ctx.root, path)?;
+    let rel = rel_path(&ctx.root, &full);
+    let texto = tokio::fs::read_to_string(&full)
+        .await
+        .map_err(|e| format!("no se pudo leer {path}: {e}"))?;
+    Ok((rel, texto))
+}
+
+/// Cliente del servidor del lenguaje de `rel`, o el error para el modelo.
+async fn cliente(manager: &LspManager, rel: &str) -> Result<Arc<LspClient>, ToolOutput> {
+    manager
+        .client_for(rel)
+        .await
+        .map_err(|e| ToolOutput::error(format!("{e}; mientras tanto compila con `bash`")))
+}
+
+/// Tool `diagnosticos`.
+pub struct Diagnostics {
+    manager: Arc<LspManager>,
+    store: DiagStore,
+}
+
+#[async_trait::async_trait]
+impl Tool for Diagnostics {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "diagnosticos".into(),
+            description: "Errores y avisos del servidor de lenguaje para un archivo, sin compilar el proyecto."
+                .into(),
+            parameters: json!({"type":"object","properties":{"path":{"type":"string"},"espera_ms":{"type":"integer"}},"required":["path"]}),
+        }
+    }
+
+    fn effects(&self) -> &'static [Effect] {
+        &[Effect::Read]
+    }
+
+    async fn call(&self, args: Value, ctx: &ToolContext) -> ToolOutput {
+        let path = match arg_str(&args, "path") {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+        let (rel, texto) = match leer(ctx, path).await {
+            Ok(v) => v,
+            Err(e) => return ToolOutput::error(e),
+        };
+        let client = match cliente(&self.manager, &rel).await {
+            Ok(c) => c,
+            Err(e) => return e,
+        };
+        self.store.clear(&rel);
+        if let Err(e) = client.sync(&rel, &texto).await {
+            return ToolOutput::error(e);
+        }
+        if let Err(e) = client.saved(&rel).await {
+            return ToolOutput::error(e);
+        }
+        let espera = args
+            .get("espera_ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(ESPERA_DEFECTO_MS)
+            .min(ESPERA_MAXIMA_MS);
+        let limite = Instant::now() + Duration::from_millis(espera);
+        loop {
+            if let Some(d) = self.store.take(&rel) {
+                return ToolOutput::ok(render_diagnostics(&rel, &d));
+            }
+            if Instant::now() >= limite {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        ToolOutput::ok(format!(
+            "{rel}: el servidor aún no ha publicado diagnósticos; repite la llamada en unos segundos"
+        ))
+    }
+}
+
+/// Tool `definicion`.
+#[allow(dead_code)] // El almacén se guarda para que las tres tools tengan la misma forma; solo `diagnosticos` lo lee.
+pub struct Definition {
+    manager: Arc<LspManager>,
+    store: DiagStore,
+}
+
+#[async_trait::async_trait]
+impl Tool for Definition {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "definicion".into(),
+            description: "Dónde se define el símbolo `symbol` que aparece en la línea `line` de `path` (exacto, mejor que buscar texto)."
+                .into(),
+            parameters: json!({"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer"},"symbol":{"type":"string"}},"required":["path","line","symbol"]}),
+        }
+    }
+
+    fn effects(&self) -> &'static [Effect] {
+        &[Effect::Read]
+    }
+
+    async fn call(&self, args: Value, ctx: &ToolContext) -> ToolOutput {
+        let path = match arg_str(&args, "path") {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+        let symbol = match arg_str(&args, "symbol") {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        let linea = match arg_linea(&args) {
+            Ok(l) => l,
+            Err(e) => return e,
+        };
+        let (rel, texto) = match leer(ctx, path).await {
+            Ok(v) => v,
+            Err(e) => return ToolOutput::error(e),
+        };
+        let (l, c) = match find_position(&texto, linea, symbol) {
+            Ok(p) => p,
+            Err(e) => return ToolOutput::error(e),
+        };
+        let client = match cliente(&self.manager, &rel).await {
+            Ok(c) => c,
+            Err(e) => return e,
+        };
+        if let Err(e) = client.sync(&rel, &texto).await {
+            return ToolOutput::error(e);
+        }
+        match client.definition(&rel, l, c).await {
+            Ok(locs) => ToolOutput::ok(render_locations(&ctx.root, &locs)),
+            Err(e) => ToolOutput::error(e),
+        }
+    }
+}
+
+/// Tool `referencias`.
+#[allow(dead_code)] // El almacén se guarda para que las tres tools tengan la misma forma; solo `diagnosticos` lo lee.
+pub struct References {
+    manager: Arc<LspManager>,
+    store: DiagStore,
+}
+
+#[async_trait::async_trait]
+impl Tool for References {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "referencias".into(),
+            description:
+                "Todos los usos del símbolo `symbol` que aparece en la línea `line` de `path`."
+                    .into(),
+            parameters: json!({"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer"},"symbol":{"type":"string"}},"required":["path","line","symbol"]}),
+        }
+    }
+
+    fn effects(&self) -> &'static [Effect] {
+        &[Effect::Read]
+    }
+
+    async fn call(&self, args: Value, ctx: &ToolContext) -> ToolOutput {
+        let path = match arg_str(&args, "path") {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+        let symbol = match arg_str(&args, "symbol") {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        let linea = match arg_linea(&args) {
+            Ok(l) => l,
+            Err(e) => return e,
+        };
+        let (rel, texto) = match leer(ctx, path).await {
+            Ok(v) => v,
+            Err(e) => return ToolOutput::error(e),
+        };
+        let (l, c) = match find_position(&texto, linea, symbol) {
+            Ok(p) => p,
+            Err(e) => return ToolOutput::error(e),
+        };
+        let client = match cliente(&self.manager, &rel).await {
+            Ok(c) => c,
+            Err(e) => return e,
+        };
+        if let Err(e) = client.sync(&rel, &texto).await {
+            return ToolOutput::error(e);
+        }
+        match client.references(&rel, l, c).await {
+            Ok(locs) => ToolOutput::ok(render_locations(&ctx.root, &locs)),
+            Err(e) => ToolOutput::error(e),
+        }
+    }
+}
+
+/// Las tres tools sobre un gestor ya creado (su sumidero debe ser `store.sink()`).
+pub fn lsp_tools(manager: Arc<LspManager>, store: DiagStore) -> Vec<Arc<dyn Tool>> {
+    let diag: Arc<dyn Tool> = Arc::new(Diagnostics {
+        manager: manager.clone(),
+        store: store.clone(),
+    });
+    let def: Arc<dyn Tool> = Arc::new(Definition {
+        manager: manager.clone(),
+        store: store.clone(),
+    });
+    let refs: Arc<dyn Tool> = Arc::new(References { manager, store });
+    vec![diag, def, refs]
+}
+
+/// Las tres tools para un proyecto; `overrides` es la orden por grupo (`[lsp.<grupo>]` de la configuración).
+pub fn lsp_tools_for(root: &Path, overrides: HashMap<String, Vec<String>>) -> Vec<Arc<dyn Tool>> {
+    let store = DiagStore::new();
+    let m = LspManager::new(root, overrides, store.sink());
+    lsp_tools(Arc::new(m), store)
 }
 
 #[cfg(test)]
