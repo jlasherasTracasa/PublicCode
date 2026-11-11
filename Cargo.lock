@@ -2890,8 +2890,10 @@ name = "pcode-ide"
 version = "1.1.0"
 dependencies = [
  "eframe",
+ "pcode-config",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

@@ -36,3 +36,10 @@ predicates = "3"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Para compilar en equipos modestos (2 núcleos, 4 GB): sin LTO y en paralelo; binario algo mayor.
+[profile.ligero]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

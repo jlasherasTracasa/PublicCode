@@ -16,7 +16,10 @@ const PORT_TRIES: u32 = 3;
 #[derive(Debug, clap::Args)]
 pub struct RemoteArgs {
     /// Destino SSH: `usuario@servidor` o un `Host` de `~/.ssh/config`.
-    pub destino: String,
+    pub destino: Option<String>,
+    /// Lista los servidores de `~/.ssh/config` y sale.
+    #[arg(long = "listar")]
+    pub list: bool,
     /// Carpeta del proyecto en el servidor (relativa a la de inicio, absoluta o con `~/`).
     #[arg(long = "ruta", default_value = ".")]
     pub ruta: String,
@@ -148,6 +151,24 @@ pub fn tunnel_url(line: &str, local: u16) -> Option<String> {
     (token.len() >= 32).then(|| format!("http://127.0.0.1:{local}/?t={token}"))
 }
 
+/// Nombres de las líneas `Host` de un `~/.ssh/config` (sin comodines, sin repetir).
+pub fn ssh_hosts(config: &str) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for l in config.lines() {
+        let mut w = l.split_whitespace();
+        if !w.next().is_some_and(|k| k.eq_ignore_ascii_case("host")) {
+            continue;
+        }
+        for h in w {
+            if h.contains(['*', '?', '!']) || out.iter().any(|x| x == h) {
+                continue;
+            }
+            out.push(h.to_string());
+        }
+    }
+    out
+}
+
 /// Un destino de SSH razonable (que no se pueda confundir con una opción).
 pub fn valid_destination(d: &str) -> bool {
     !d.is_empty() && !d.starts_with('-') && !d.chars().any(|c| c.is_whitespace() || c.is_control())
@@ -202,14 +223,29 @@ async fn ssh_output(dest: &str, script: &str, stdin: Option<Vec<u8>>) -> anyhow:
 }
 
 /// `pcode remoto`.
-pub async fn remote(a: RemoteArgs) -> anyhow::Result<i32> {
-    if !valid_destination(&a.destino) {
-        eprintln!("destino SSH no válido: «{}»", a.destino);
+pub async fn remote(mut a: RemoteArgs) -> anyhow::Result<i32> {
+    if a.list {
+        let cfg = std::env::var_os("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(".ssh/config"))
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_default();
+        for h in ssh_hosts(&cfg) {
+            println!("{h}");
+        }
+        return Ok(0);
+    }
+    let Some(dest) = a.destino.take() else {
+        eprintln!("indica el servidor: pcode remoto usuario@servidor (o --listar)");
+        return Ok(2);
+    };
+    if !valid_destination(&dest) {
+        eprintln!("destino SSH no válido: «{dest}»");
         return Ok(2);
     }
+
     let local_version = format!("pcode {}", env!("CARGO_PKG_VERSION"));
-    eprintln!("Conectando con {}…", a.destino);
-    let probe = parse_probe(&ssh_output(&a.destino, PROBE_SCRIPT, None).await?);
+    eprintln!("Conectando con {}…", dest);
+    let probe = parse_probe(&ssh_output(&dest, PROBE_SCRIPT, None).await?);
     let outdated = probe.version.as_deref() != Some(local_version.as_str());
     let bin = match (&probe.bin, a.install) {
         (Some(b), false) => {
@@ -238,7 +274,7 @@ pub async fn remote(a: RemoteArgs) -> anyhow::Result<i32> {
             }
             eprintln!("Copiando {local_version} al servidor…");
             let me = tokio::fs::read(std::env::current_exe()?).await?;
-            let path = ssh_output(&a.destino, INSTALL_SCRIPT, Some(me)).await?;
+            let path = ssh_output(&dest, INSTALL_SCRIPT, Some(me)).await?;
             path.lines().last().unwrap_or_default().trim().to_string()
         }
         (None, false) => {
@@ -251,7 +287,7 @@ pub async fn remote(a: RemoteArgs) -> anyhow::Result<i32> {
     if a.tui {
         let cmd = format!("{}exec {}", cd_command(&a.ruta), shell_words::quote(&bin));
         let st = tokio::process::Command::new(ssh_bin())
-            .args(["-t", &a.destino, &cmd])
+            .args(["-t", &dest, &cmd])
             .status()
             .await?;
         return Ok(st.code().unwrap_or(2));
@@ -265,7 +301,7 @@ pub async fn remote(a: RemoteArgs) -> anyhow::Result<i32> {
         let rport = random_port();
         let cmd = remote_studio_command(&bin, &a.ruta, rport);
         let mut child = tokio::process::Command::new(ssh_bin())
-            .args(ssh_tunnel_args(&a.destino, local, rport, &a.forward, &cmd))
+            .args(ssh_tunnel_args(&dest, local, rport, &a.forward, &cmd))
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -301,13 +337,13 @@ pub async fn remote(a: RemoteArgs) -> anyhow::Result<i32> {
             for l in &seen {
                 eprintln!("{l}");
             }
-            eprintln!("No se pudo arrancar Studio en {}", a.destino);
+            eprintln!("No se pudo arrancar Studio en {}", dest);
             return Ok(2);
         };
         wait_port(local).await;
         eprintln!(
             "PublicCode Studio en {} (túnel SSH): {url}\n(Ctrl+C para cerrar)",
-            a.destino
+            dest
         );
         if !a.no_open {
             if a.ide {
@@ -351,6 +387,17 @@ async fn wait_port(port: u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hosts_de_ssh_config() {
+        let c = "Host 37.27.19.116\n  HostName 37.27.19.116\nhost web db\nHost web\n";
+        assert_eq!(ssh_hosts(c), ["37.27.19.116", "web", "db"]);
+    }
+
+    #[test]
+    fn hosts_de_ssh_config_sin_comodines() {
+        assert_eq!(ssh_hosts("Host *\nHost a* b !c\n"), ["b"]);
+    }
 
     #[test]
     fn sonda_del_servidor() {

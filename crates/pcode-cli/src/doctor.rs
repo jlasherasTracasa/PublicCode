@@ -61,21 +61,25 @@ pub fn doctor(project_cfg: &Path) -> i32 {
             line(false, "configuración", &e.to_string());
             code = 1;
         }
-        Ok((cfg, _)) => match build_provider(&cfg, None) {
-            Ok(sel) => line(
-                true,
-                "modelo",
-                &format!(
-                    "{} con {}",
-                    pick_model(None, &cfg, &sel),
-                    sel.provider.name()
+        Ok((cfg, _)) => {
+            let sys = pcode_config::SystemInfo::detect();
+            println!("{}", resources_report(&cfg.resources.resolve(sys), sys));
+            match build_provider(&cfg, None) {
+                Ok(sel) => line(
+                    true,
+                    "modelo",
+                    &format!(
+                        "{} con {}",
+                        pick_model(None, &cfg, &sel),
+                        sel.provider.name()
+                    ),
                 ),
-            ),
-            Err(e) => {
-                line(false, "modelo", &e.to_string());
-                code = 1;
+                Err(e) => {
+                    line(false, "modelo", &e.to_string());
+                    code = 1;
+                }
             }
-        },
+        }
     }
     line(
         which("git").is_some(),
@@ -558,9 +562,85 @@ pub async fn config_cmd(c: ConfigCmd) -> anyhow::Result<i32> {
     Ok(0)
 }
 
+/// Una línea con el perfil de recursos y sus límites.
+pub fn resources_report(r: &pcode_config::Resources, sys: pcode_config::SystemInfo) -> String {
+    let ram = match sys.mem_total_mb {
+        Some(mb) => format!(
+            "{} GB de RAM",
+            format!("{:.1}", mb as f64 / 1024.0).replace('.', ",")
+        ),
+        None => "RAM desconocida".to_string(),
+    };
+    let idle = if r.lsp_idle_min == 0 {
+        ", no se para por inactividad".to_string()
+    } else {
+        format!(", se para tras {} min sin uso", r.lsp_idle_min)
+    };
+    format!(
+        "✓ recursos: perfil {} · {ram} · {} núcleos · {} {} LSP a la vez{idle}",
+        if r.light { "ligero" } else { "normal" },
+        sys.cpus,
+        r.lsp_max,
+        if r.lsp_max == 1 {
+            "servidor"
+        } else {
+            "servidores"
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pcode_config::{Resources, SystemInfo};
+
+    #[test]
+    fn informe_de_recursos_ligero() {
+        let r = Resources {
+            light: true,
+            lsp_max: 1,
+            lsp_idle_min: 5,
+        };
+        let s = SystemInfo {
+            mem_total_mb: Some(3735),
+            cpus: 2,
+        };
+        assert_eq!(
+            resources_report(&r, s),
+            "✓ recursos: perfil ligero · 3,6 GB de RAM · 2 núcleos · 1 servidor LSP a la vez, se para tras 5 min sin uso"
+        );
+    }
+
+    #[test]
+    fn informe_de_recursos_normal_y_sin_parada() {
+        let r = Resources {
+            light: false,
+            lsp_max: 4,
+            lsp_idle_min: 0,
+        };
+        let s = SystemInfo {
+            mem_total_mb: Some(32_100),
+            cpus: 16,
+        };
+        assert_eq!(
+            resources_report(&r, s),
+            "✓ recursos: perfil normal · 31,3 GB de RAM · 16 núcleos · 4 servidores LSP a la vez, no se para por inactividad"
+        );
+    }
+
+    #[test]
+    fn informe_de_recursos_sin_ram() {
+        let r = Resources {
+            light: false,
+            lsp_max: 2,
+            lsp_idle_min: 30,
+        };
+        let s = SystemInfo {
+            mem_total_mb: None,
+            cpus: 8,
+        };
+        assert!(resources_report(&r, s).contains("RAM desconocida · 8 núcleos"));
+    }
 
     #[test]
     fn la_plantilla_es_toml_valido_y_carga_vacia() {

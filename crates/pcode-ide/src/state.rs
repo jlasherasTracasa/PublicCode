@@ -181,6 +181,28 @@ impl Tree {
     }
 }
 
+/// Números de línea (`1\n2\n…`) alineados a la derecha.
+pub fn gutter(text: &str) -> String {
+    let n = text.split('\n').count();
+    let w = n.to_string().len();
+    (1..=n)
+        .map(|i| format!("{i:>w$}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Byte donde empieza la línea `line` (1 = primera; 0 se trata como 1; pasado el final, `text.len()`).
+pub fn line_to_byte(text: &str, line: usize) -> usize {
+    let mut pos = 0;
+    for _ in 1..line.max(1) {
+        match text[pos..].find('\n') {
+            Some(i) => pos += i + 1,
+            None => return text.len(),
+        }
+    }
+    pos
+}
+
 /// Memoria residente de este proceso en MB (Linux; None en otros sistemas).
 pub fn own_rss_mb() -> Option<f32> {
     let s = std::fs::read_to_string("/proc/self/status").ok()?;
@@ -271,6 +293,28 @@ mod tests {
         t.set("src", vec![]);
         assert!(!t.toggle("src"), "ya se tenía");
         assert_eq!(t.invalidate(), vec!["".to_string(), "src".to_string()]);
+    }
+
+    #[test]
+    fn numeros_de_linea() {
+        assert_eq!(gutter("a\nb\nc"), "1\n2\n3");
+        assert_eq!(gutter(""), "1");
+        assert_eq!(gutter("a\n"), "1\n2");
+    }
+
+    #[test]
+    fn numeros_de_linea_alineados() {
+        let t = "x\n".repeat(9);
+        assert!(gutter(&t).starts_with(" 1\n 2"));
+    }
+
+    #[test]
+    fn ir_a_linea() {
+        let t = "ab\ncd\nef";
+        assert_eq!(line_to_byte(t, 1), 0);
+        assert_eq!(line_to_byte(t, 2), 3);
+        assert_eq!(line_to_byte(t, 0), 0);
+        assert_eq!(line_to_byte(t, 99), t.len());
     }
 
     #[test]
