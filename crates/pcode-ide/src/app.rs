@@ -342,6 +342,8 @@ pub struct Ide {
     cursor: (u32, u32),
     cursor_char: usize,
     hover: Option<String>,
+    /// Fragmentos que coinciden con la palabra antes del cursor y cuál está elegido (Ctrl+Espacio).
+    snippet_pick: Option<(Vec<crate::snippets::Snippet>, usize)>,
     toasts: Vec<Toast>,
     lsp: Vec<(String, String)>,
     connected: bool,
@@ -408,6 +410,7 @@ impl Ide {
             quit_armed: false,
             recent_files: vec![],
             ssh_hosts: None,
+            snippet_pick: None,
             last_sync: None,
         };
         ide.list_dir("");
@@ -450,6 +453,37 @@ impl Ide {
         std::thread::spawn(move || {
             let _ = tx.send(f(&c));
         });
+    }
+
+    /// Ctrl+Espacio: fragmentos de las extensiones cuyo prefijo empieza por la palabra del cursor.
+    fn open_snippets(&mut self) {
+        let Some(tab) = self.tabs.current() else {
+            return;
+        };
+        let all = crate::snippets::load(pcode_extensions::default_root().as_deref(), &tab.path);
+        let word = crate::snippets::word_before(&tab.text, self.cursor_char);
+        let found: Vec<_> = crate::snippets::matching(&all, word)
+            .into_iter()
+            .cloned()
+            .collect();
+        if found.is_empty() {
+            self.toast(self.t.no_snippets, false);
+        } else {
+            self.snippet_pick = Some((found, 0));
+        }
+    }
+
+    /// Inserta el fragmento elegido en la pestaña activa y deja el cursor en su primer hueco.
+    fn insert_snippet(&mut self) {
+        let Some((items, sel)) = self.snippet_pick.take() else {
+            return;
+        };
+        let cursor = self.cursor_char;
+        if let (Some(s), Some(tab)) = (items.get(sel), self.tabs.current_mut()) {
+            let (text, at) = crate::snippets::insert(&tab.text, cursor, s);
+            tab.text = text;
+            self.pending_cursor = Some(at);
+        }
     }
 
     fn toast(&mut self, text: impl Into<String>, error: bool) {
@@ -948,6 +982,23 @@ impl Ide {
         }
         if press(Modifiers::NONE, Key::F12) {
             cmds.push(Some(Command::GoToDefinition));
+        }
+        // Fragmentos: con la lista abierta, las flechas, Intro y Esc son suyos (se consumen aquí,
+        // antes de que los vea el editor).
+        if let Some((items, sel)) = self.snippet_pick.as_mut() {
+            if press(Modifiers::NONE, Key::ArrowDown) {
+                *sel = (*sel + 1) % items.len();
+            }
+            if press(Modifiers::NONE, Key::ArrowUp) {
+                *sel = (*sel + items.len() - 1) % items.len();
+            }
+            if press(Modifiers::NONE, Key::Escape) {
+                self.snippet_pick = None;
+            } else if press(Modifiers::NONE, Key::Enter) || press(Modifiers::NONE, Key::Tab) {
+                self.insert_snippet();
+            }
+        } else if press(Modifiers::COMMAND, Key::Space) {
+            self.open_snippets();
         }
         if press(Modifiers::COMMAND, Key::Tab) && !self.tabs.list.is_empty() {
             self.tabs.active = (self.tabs.active + 1) % self.tabs.list.len();
@@ -1716,6 +1767,27 @@ impl Ide {
                     });
                 }
             }
+        }
+        if let Some((items, sel)) = &self.snippet_pick {
+            egui::Window::new(t.snippets)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                .show(ui.ctx(), |ui| {
+                    for (i, s) in items.iter().enumerate() {
+                        let mark = if i == *sel { "▸" } else { " " };
+                        let color = if i == *sel { p.fg } else { p.fg_dim };
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!("{mark} {}", s.prefix))
+                                    .monospace()
+                                    .color(color),
+                            );
+                            ui.label(RichText::new(&s.description).small().color(p.fg_dim));
+                        });
+                    }
+                    ui.label(RichText::new(t.snippets_hint).small().color(p.fg_dim));
+                });
         }
         if let Some(h) = self.hover.clone() {
             let mut open = true;

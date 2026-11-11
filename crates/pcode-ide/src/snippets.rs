@@ -84,6 +84,72 @@ pub fn matching<'a>(snippets: &'a [Snippet], word: &str) -> Vec<&'a Snippet> {
         .collect()
 }
 
+/// Identificador de lenguaje de VS Code para un archivo (por su extensión); vacío si no se conoce.
+/// Es la clave con la que las extensiones declaran sus fragmentos.
+pub fn language_id(path: &str) -> &'static str {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "rs" => "rust",
+        "py" => "python",
+        "js" | "mjs" | "cjs" => "javascript",
+        "jsx" => "javascriptreact",
+        "ts" => "typescript",
+        "tsx" => "typescriptreact",
+        "go" => "go",
+        "java" => "java",
+        "kt" => "kotlin",
+        "c" | "h" => "c",
+        "cpp" | "cc" | "hpp" => "cpp",
+        "cs" => "csharp",
+        "rb" => "ruby",
+        "php" => "php",
+        "sh" | "bash" => "shellscript",
+        "html" | "htm" => "html",
+        "css" => "css",
+        "json" => "json",
+        "md" => "markdown",
+        "toml" => "toml",
+        "yml" | "yaml" => "yaml",
+        _ => "",
+    }
+}
+
+/// Fragmentos de las extensiones instaladas para el lenguaje de `path` (vacío si no hay).
+pub fn load(root: Option<&std::path::Path>, path: &str) -> Vec<Snippet> {
+    let (Some(root), lang) = (root, language_id(path)) else {
+        return vec![];
+    };
+    if lang.is_empty() {
+        return vec![];
+    }
+    pcode_extensions::snippets_for(root, lang)
+        .into_iter()
+        .map(|s| Snippet {
+            prefix: s.prefix,
+            body: s.body,
+            description: s.description,
+        })
+        .collect()
+}
+
+/// Inserta `snippet` en `text` sustituyendo la palabra que hay justo antes del cursor (índice de
+/// carácter). Devuelve el texto nuevo y dónde queda el cursor (también en caracteres).
+pub fn insert(text: &str, cursor: usize, snippet: &Snippet) -> (String, usize) {
+    let word = word_before(text, cursor);
+    let word_chars = word.chars().count();
+    let end = text
+        .char_indices()
+        .nth(cursor)
+        .map_or(text.len(), |(b, _)| b);
+    let start = end - word.len();
+    let (body, at) = expand(&snippet.body);
+    let mut out = String::with_capacity(text.len() + body.len());
+    out.push_str(&text[..start]);
+    out.push_str(&body);
+    out.push_str(&text[end..]);
+    (out, cursor.min(text.chars().count()) - word_chars + at)
+}
+
 /// La palabra justo antes del cursor (índice de carácter).
 pub fn word_before(text: &str, cursor: usize) -> &str {
     let byte = text
@@ -144,5 +210,36 @@ mod tests {
         assert!(matching(&s, "").is_empty());
         assert_eq!(word_before("x = pri", 7), "pri");
         assert_eq!(word_before("ñan", 3), "ñan");
+    }
+
+    #[test]
+    fn lenguaje_por_extension() {
+        assert_eq!(language_id("src/main.rs"), "rust");
+        assert_eq!(language_id("web/App.TSX"), "typescriptreact");
+        assert_eq!(language_id("Makefile"), "");
+    }
+
+    #[test]
+    fn inserta_sustituyendo_la_palabra() {
+        let s = Snippet {
+            prefix: "fn".into(),
+            body: "fn ${1:nombre}() {\n    $0\n}".into(),
+            description: String::new(),
+        };
+        // «ñ» ocupa dos bytes: los índices son de carácter, no de byte.
+        let (text, cur) = insert("// año\nfn\nfin", 9, &s);
+        assert_eq!(text, "// año\nfn nombre() {\n    \n}\nfin");
+        assert_eq!(cur, 7 + 3);
+        // Sin palabra antes del cursor, se inserta sin borrar nada.
+        let (text, _) = insert("a ", 2, &s);
+        assert!(text.starts_with("a fn nombre()"));
+    }
+
+    #[test]
+    fn sin_extensiones_no_hay_fragmentos() {
+        assert!(load(None, "a.rs").is_empty());
+        let vacio = std::env::temp_dir().join("pcode-ide-sin-extensiones");
+        assert!(load(Some(&vacio), "a.rs").is_empty());
+        assert!(load(Some(&vacio), "Makefile").is_empty());
     }
 }

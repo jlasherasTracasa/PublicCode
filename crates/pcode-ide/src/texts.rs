@@ -173,6 +173,12 @@ pub struct Texts {
     pub definition_none: &'static str,
     /// «Para abrir otra carpeta: pcode ide <ruta>».
     pub open_folder_hint: &'static str,
+    /// Título de la lista de fragmentos (Ctrl+Espacio).
+    pub snippets: &'static str,
+    /// Teclas de la lista de fragmentos.
+    pub snippets_hint: &'static str,
+    /// Aviso cuando ningún fragmento coincide.
+    pub no_snippets: &'static str,
     /// Menú para abrir el IDE contra otro equipo por SSH.
     pub connect: &'static str,
     /// Aviso cuando `~/.ssh/config` no tiene servidores.
@@ -272,6 +278,9 @@ pub const ES: Texts = Texts {
     hover_none: "Sin información en esta posición",
     definition_none: "No se encontró la definición",
     open_folder_hint: "Para abrir otra carpeta: pcode ide <ruta>",
+    snippets: "Fragmentos",
+    snippets_hint: "↑ ↓ elegir · Intro insertar · Esc cerrar",
+    no_snippets: "Ningún fragmento coincide (instala extensiones con: pcode extensiones)",
     connect: "Conectar a un servidor…",
     no_hosts: "No hay servidores en ~/.ssh/config",
     connect_failed: "No se pudo conectar",
@@ -366,6 +375,9 @@ pub const EN: Texts = Texts {
     hover_none: "No information here",
     definition_none: "No definition found",
     open_folder_hint: "To open another folder: pcode ide <path>",
+    snippets: "Snippets",
+    snippets_hint: "↑ ↓ choose · Enter insert · Esc close",
+    no_snippets: "No matching snippet (install extensions with: pcode extensiones)",
     connect: "Connect to a server…",
     no_hosts: "No servers in ~/.ssh/config",
     connect_failed: "Could not connect",

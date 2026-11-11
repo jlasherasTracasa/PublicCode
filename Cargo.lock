@@ -2819,6 +2819,7 @@ dependencies = [
  "glutin",
  "glutin-winit",
  "pcode-config",
+ "pcode-extensions",
  "serde",
  "serde_json",
  "toml",
