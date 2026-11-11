@@ -34,6 +34,11 @@ class Reglas(unittest.TestCase):
         log = "$ cargo test\n$ git stash\n$ git add -A && git commit -m x\n$ git add src/lib.rs\n"
         self.assertEqual(sorted(reglas.ordenes_prohibidas(log)), ["git add -A", "git stash"])
 
+    def test_push_normal_permitido_y_forzado_prohibido(self):
+        self.assertEqual(reglas.ordenes_prohibidas("$ git push origin HEAD\n"), [])
+        self.assertEqual(reglas.ordenes_prohibidas("$ git push -f origin HEAD\n"), ["git push --force"])
+        self.assertEqual(reglas.ordenes_prohibidas("$ git push --force-with-lease\n"), ["git push --force"])
+
     def test_toca_de_una_tarea_real(self):
         md = open(os.path.join(os.path.dirname(__file__), "..", "..", "tareas", "F0.01-workspace.md"), encoding="utf-8").read()
         toca = reglas.toca_de_tarea(md)

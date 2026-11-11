@@ -22,7 +22,7 @@ PROHIBIDAS = [
     ("git checkout -- .", re.compile(r"\bgit\s+checkout\s+--\s+\.(\s|$)")),
     ("git clean", re.compile(r"\bgit\s+clean\b")),
     ("git rebase", re.compile(r"\bgit\s+rebase\b")),
-    ("git push", re.compile(r"\bgit\s+push\b")),
+    ("git push --force", re.compile(r"\bgit\s+push\b.*(\s--force\b|\s--force-with-lease\b|\s-f\b)")),
 ]
 
 

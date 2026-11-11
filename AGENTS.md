@@ -14,9 +14,9 @@ la tarea, manda la regla y lo explicas en el informe.
 1. Tu trabajo es **una** tarea: `tareas/<id>.md`.
 2. Solo creas o modificas los archivos de su lista **Toca**, más tu informe `informes/<id>.md`.
 3. Has terminado cuando la orden **`acepta`** de la tarea devuelve 0. No antes.
-4. Commit solo de tus archivos: `git add <archivos> informes/<id>.md && git commit -m "<id>: …"`.
+4. Commit solo de tus archivos: `git add <archivos> informes/<id>.md && git commit -m "<id>: …"`, y después `git push origin HEAD` (nunca forzado; si falla, anótalo en *Pendiente*).
 5. **Nunca**: `git add -A`, `git add .`, `git stash`, `git reset --hard`, `git checkout -- .`,
-   `git clean`, `git rebase` ni `git push`; secretos en archivos; dependencias que no estén en la
+   `git clean`, `git rebase` ni `git push --force`/`-f`; secretos en archivos; dependencias que no estén en la
    sección 7; tocar archivos generados.
 
 ## 1. Qué es PublicCode

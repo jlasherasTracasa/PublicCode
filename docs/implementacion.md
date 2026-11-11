@@ -330,4 +330,31 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F8.47-coste-esquemas-mcp](../tareas/F8.47-coste-esquemas-mcp.md) | Coste de los esquemas de tools MCP en `pcode mcp` y en el arranque del chat (ProMCP) | coordinador | — | hecha |
 | [F8.48-agentes-con-tu-cuenta](../tareas/F8.48-agentes-con-tu-cuenta.md) | GitHub Copilot (y Claude Code, Gemini CLI, opencode) con la cuenta del usuario: Ajustes, conversación en Studio y `--aplicar` | coordinador | F8.15 | hecha |
 | [F8.49-desarrollo-con-especificaciones](../tareas/F8.49-desarrollo-con-especificaciones.md) | Desarrollo guiado por especificaciones, opcional: pcode spec, panel de Studio y ajuste desarrollo = "specs" | coordinador | F8.48 | hecha |
+
+### F9
+
+| Tarea | Qué | Ejecutor | Depende | Estado |
+|---|---|---|---|---|
+| [F9.01-push-por-tarea](../tareas/F9.01-push-por-tarea.md) | Entrega continua: push de la rama tras cada tarea aceptada (sin --force) y reglas.py al día | coordinador | — | pendiente |
+| [F9.02-recursos](../tareas/F9.02-recursos.md) | Sección [recursos] y perfil automático ligero/normal según la RAM y los núcleos | coordinador | F9.01 | pendiente |
+| [F9.03-lsp-ligero](../tareas/F9.03-lsp-ligero.md) | LSP ligero: alternativas que gastan menos, máximo de servidores vivos y parada por inactividad | coordinador | F9.02 | pendiente |
+| [F9.04-remoto-ssh](../tareas/F9.04-remoto-ssh.md) | `pcode remoto <servidor>`: Studio, TUI o IDE contra otro equipo por SSH, instalando pcode allí si falta | coordinador | F9.02 | pendiente |
+| [F9.05-ide-base](../tareas/F9.05-ide-base.md) | IDE nativo sin navegador (egui + OpenGL): explorador, pestañas, resaltado, Ctrl+P, buscar, git y agente | coordinador | F9.02 | pendiente |
+| [F9.06-doctor-recursos](../tareas/F9.06-doctor-recursos.md) | `pcode doctor` enseña el perfil de recursos: RAM, núcleos, perfil elegido y límites LSP | haiku | F9.02 | pendiente |
+| [F9.07-perfil-compilacion-ligero](../tareas/F9.07-perfil-compilacion-ligero.md) | Perfil de compilación `ligero` para equipos modestos (menos RAM y tiempo que release con LTO) | haiku | F9.01 | pendiente |
+| [F9.08-ide-numeros-de-linea](../tareas/F9.08-ide-numeros-de-linea.md) | IDE: números de línea en el margen y Ctrl+G para ir a una línea | haiku | F9.05 | pendiente |
+| [F9.09-ide-buscar-reemplazar](../tareas/F9.09-ide-buscar-reemplazar.md) | IDE: buscar y reemplazar en el archivo (Ctrl+F, Ctrl+H) con mayúsculas opcionales | haiku | F9.05 | pendiente |
+| [F9.10-ide-problemas](../tareas/F9.10-ide-problemas.md) | IDE: panel de Problemas con los diagnósticos del LSP (evento `diagnostics`) y saltar al error | haiku | F9.05 | pendiente |
+| [F9.11-ide-lsp](../tareas/F9.11-ide-lsp.md) | IDE: ir a la definición (F12) e información al pasar (Ctrl+K) con posiciones UTF-16 | haiku | F9.10 | pendiente |
+| [F9.12-ide-terminal](../tareas/F9.12-ide-terminal.md) | IDE: terminal integrada (terminal.run) con salida por eventos y memoria acotada | haiku | F9.05 | pendiente |
+| [F9.13-ide-git](../tareas/F9.13-ide-git.md) | IDE: git completo en el panel (preparar, quitar, diff coloreado y commit) | haiku | F9.05 | pendiente |
+| [F9.14-ide-turno-del-agente](../tareas/F9.14-ide-turno-del-agente.md) | IDE: tarjeta de cambios de cada turno del agente y deshacer/rehacer (checkpoint.undo/redo) | haiku | F9.05 | pendiente |
+| [F9.15-ide-ajustes](../tareas/F9.15-ide-ajustes.md) | IDE: ajustes persistentes (tema, tamaño de letra, paneles) en ~/.config/pcode/ide.toml | haiku | F9.05 | pendiente |
+| [F9.16-remoto-hosts](../tareas/F9.16-remoto-hosts.md) | `pcode remoto --listar` y conectar desde el IDE: servidores de ~/.ssh/config | haiku | F9.04, F9.05 | pendiente |
+| [F9.17-rendimiento-en-ci](../tareas/F9.17-rendimiento-en-ci.md) | Presupuesto de rendimiento en la CI: arranque, Studio listo y memoria en reposo del demonio y del IDE | haiku | F9.05 | pendiente |
+| [F9.18-empaquetar-ide](../tareas/F9.18-empaquetar-ide.md) | Release e instalador con pcode-ide al lado de pcode (Linux y Windows) | haiku | F9.05 | pendiente |
+| [F9.19-extensiones-vscode-declarativas](../tareas/F9.19-extensiones-vscode-declarativas.md) | Extensiones de VS Code (solo lo declarativo): temas, fragmentos y lenguajes desde .vsix u Open VSX | coordinador | F9.05 | pendiente |
+| [F9.20-ide-fragmentos-y-temas](../tareas/F9.20-ide-fragmentos-y-temas.md) | IDE: usar los fragmentos (snippets) y temas de las extensiones instaladas | haiku | F9.19, F9.15 | pendiente |
+| [F9.21-depurador-python](../tareas/F9.21-depurador-python.md) | Depurador en el IDE: DAP con debugpy (puntos de ruptura, pasos, variables) a través del demonio | coordinador | F9.05 | pendiente |
+| [F9.22-ide-wayland-y-accesibilidad](../tareas/F9.22-ide-wayland-y-accesibilidad.md) | IDE: Wayland nativo (carga dinámica) y lector de pantalla (AccessKit) como funciones opcionales | coordinador | F9.05 | pendiente |
 <!-- tabla:fin -->
