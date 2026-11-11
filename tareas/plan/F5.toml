@@ -365,20 +365,202 @@ id = "F5.06"
 nombre = "cli-maquinas"
 titulo = "CLI: `--formato json|stream-json`, autocompletado y `pcode` sin argumentos abre la TUI"
 fase = "F5"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F5.05"]
-toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/output.rs", "crates/pcode-cli/tests/formato.rs"]
-acepta = "cargo test -p pcode-cli"
-contexto = ["docs/interfaces.md (CLI)", "AGENTS.md (6.3 Terminal)"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-cli --test formato && cargo test -p pcode-cli --test completions"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. `pcode run --formato texto|json|stream-json`: `json` = un objeto final `{resultado, pasos, uso,
-   cambios, salida_acepta}`; `stream-json` = un `Event` del protocolo por línea mientras corre.
-2. `pcode completions <bash|zsh|fish|powershell>` con `clap_complete`.
-3. `pcode` sin subcomando: si stdin y stdout son TTY → `pcode tui` (si aún no existe, mensaje
-   claro); si no → ayuda.
-4. Sin TTY o con `NO_COLOR` → sin colores ni spinners.
+Tarea de cierre de F5.06a (formatos de salida, lógica pura), F5.06b (`pcode run --formato`) y F5.06c
+(`pcode completions`). Ya estaba hecho y no se toca: `pcode` sin argumentos abre la TUI en una terminal,
+sin TTY o con `NO_COLOR` no hay colores, `pcode chat --formato jsonl` y `pcode preguntar --formato json`.
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
 '''
-tests = ["formato_json_tiene_campos", "stream_json_una_linea_por_evento", "completions_bash_no_vacio", "sin_tty_sin_colores"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.06a"
+nombre = "cli-formato-salida"
+titulo = "CLI: formatos de salida de `pcode run` (`texto`, `json`, `stream-json`), lógica pura"
+fase = "F5"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = ["crates/pcode-cli/src/output.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli output::"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (funciones `agent_json` y `changes_json`: la forma JSON de los eventos y de los cambios, que aquí se repite igual)",
+  "crates/pcode-core/src/agent.rs (enum `AgentEvent` y struct `RunReport`)",
+  "crates/pcode-cli/src/main.rs (las líneas `mod …;` del principio)",
+]
+objetivo = '''
+1. Crea `output.rs` con `RunFormat`, `event_json` y `summary_json` (firmas abajo). Sin E/S: solo construyen
+   valores.
+2. `RunFormat::parse`: `"texto"` → `Text`, `"json"` → `Json`, `"stream-json"` → `StreamJson`; cualquier otra
+   cosa → `Err("formato desconocido «<s>»: usa texto, json o stream-json")`.
+3. `event_json(e)`: misma forma que `agent_json` de `chat.rs`:
+   `TextDelta` → `{"tipo":"delta","texto":…}`; `Text` → `{"tipo":"texto","texto":…}`; `Info` →
+   `{"tipo":"info","texto":…}`; `ToolCall` → `{"tipo":"tool","nombre":…,"argumentos":…}`; `ToolResult` →
+   `{"tipo":"resultado","nombre":…,"error":bool,"contenido":…}` con el contenido recortado a 8000 caracteres.
+4. `summary_json(label, code, text, report, changes)` devuelve el objeto del ejemplo: `uso` con `entrada`,
+   `salida` y `cache` (de `report.usage`), `pasos` = `report.steps`, `salida_acepta` =
+   `report.acceptance_output` (o `null`) y `cambios` = una entrada por `FileChange` con las claves `ruta`,
+   `mas`, `menos`, `creado`, `borrado`.
+5. `main.rs`: añade `mod output;` junto a los demás `mod`.
+'''
+firmas = '''
+// crates/pcode-cli/src/output.rs
+use pcode_core::{AgentEvent, FileChange, RunReport};
+
+/// Formato de salida de `pcode run`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunFormat { Text, Json, StreamJson }
+
+impl RunFormat {
+    /// `texto`, `json` o `stream-json`.
+    pub fn parse(s: &str) -> Result<RunFormat, String>;
+}
+
+/// Un evento del agente como objeto JSON (una línea de `stream-json`).
+pub fn event_json(e: &AgentEvent) -> serde_json::Value;
+
+/// Objeto final de `pcode run --formato json` (y última línea de `stream-json`).
+pub fn summary_json(label: &str, code: i32, text: &str, report: &RunReport, changes: &[FileChange]) -> serde_json::Value;
+'''
+ejemplo = '''
+summary_json("hecho", 0, "listo", &report, &[]) ==
+  {"tipo":"fin","resultado":"hecho","codigo":0,"texto":"listo","pasos":2,
+   "uso":{"entrada":3,"salida":2,"cache":0},"cambios":[],"salida_acepta":null}
+event_json(&AgentEvent::ToolCall{name:"bash".into(), arguments: json!({"command":"ls"})}) ==
+  {"tipo":"tool","nombre":"bash","argumentos":{"command":"ls"}}
+'''
+tests = [
+  "parse_acepta_los_tres_formatos: `texto`, `json` y `stream-json` dan su variante y `xml` da un Err que contiene `formato desconocido`",
+  "evento_tool_y_resultado_recortado: el `ToolCall` del ejemplo y un `ToolResult` de 9000 caracteres cuyo `contenido` mide 8000",
+  "resumen_tiene_todos_los_campos: el objeto del ejemplo, con un `RunReport` construido a mano (pasos 2, uso 3/2/0)",
+  "resumen_incluye_cambios_y_salida_de_acepta: con un `FileChange` y `acceptance_output = Some(\"ok\")` salen `cambios[0].ruta` y `salida_acepta == \"ok\"`",
+]
+no_hagas = [
+  "No toques `run.rs` todavía: el cableado es F5.06b",
+  "No cambies `agent_json` de `chat.rs` ni lo hagas público",
+  "No imprimas nada en `output.rs`",
+]
+notas = '''
+Hasta F5.06b el módulo no se usa desde el binario: pon `#![allow(dead_code)] // se usa en F5.06b` al
+principio de `output.rs` para que clippy no falle.
+'''
+
+[[tarea]]
+id = "F5.06b"
+nombre = "cli-run-formato"
+titulo = "CLI: `pcode run --formato texto|json|stream-json`"
+fase = "F5"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.06a"]
+toca = ["crates/pcode-cli/src/run.rs", "crates/pcode-cli/src/output.rs", "crates/pcode-cli/tests/formato.rs"]
+acepta = "cargo test -p pcode-cli --test formato"
+contexto = [
+  "crates/pcode-cli/src/run.rs (struct `RunArgs` y función `run`: el final, desde `let report = agent.run(&a.task).await;`)",
+  "crates/pcode-cli/src/output.rs (`RunFormat::parse`, `event_json`, `summary_json`)",
+  "crates/pcode-cli/tests/run.rs (funciones `script`, `resp` y `pcode`: cómo se prueba con el proveedor falso `PCODE_MOCK_SCRIPT`)",
+]
+objetivo = '''
+1. `run.rs`, `RunArgs`: añade el campo `format` (firma abajo).
+2. `run.rs`, `run`: al principio, `let format = crate::output::RunFormat::parse(&a.format).map_err(anyhow::Error::msg)?;`.
+   Si `a.backend` es `Some` y `format` no es `Text`, termina con
+   `anyhow::bail!("--formato json y stream-json no están disponibles con --backend")`.
+3. Con `StreamJson`: antes de `agent.run`, engancha un observador al agente con
+   `agent = agent.with_observer(std::sync::Arc::new(|e| println!("{}", crate::output::event_json(e))));`
+   (`agent` ya es `let mut`; `with_observer` consume y devuelve el agente).
+4. Al final, sustituye la impresión actual por: con `Text`, lo de ahora (texto en stdout y la línea
+   `resultado: …` en stderr); con `Json` o `StreamJson`, una sola línea en stdout con
+   `crate::output::summary_json(label, code, &text, &report, &agent.turn_changes())` y nada en stderr.
+5. `output.rs`: quita el `#![allow(dead_code)]` que dejó F5.06a.
+6. Crea `tests/formato.rs` copiando los ayudantes `script`, `resp` y `pcode` de `tests/run.rs` y escribe los
+   tests de la lista. Cada línea de stdout se parsea con `serde_json::from_str::<serde_json::Value>`.
+'''
+firmas = '''
+// crates/pcode-cli/src/run.rs, dentro de `pub struct RunArgs`
+    /// Salida: `texto` (por defecto), `json` (un objeto al final) o `stream-json` (un evento por línea).
+    #[arg(long = "formato", default_value = "texto")]
+    pub format: String,
+'''
+ejemplo = '''
+$ pcode run "haz algo" --formato json            (mock que responde «listo»)
+{"tipo":"fin","resultado":"hecho","codigo":0,"texto":"listo","pasos":1,"uso":{…},"cambios":[],"salida_acepta":null}
+
+$ pcode run "haz algo" --formato stream-json     (mock: llama a `escribir` y luego «listo»)
+{"tipo":"tool","nombre":"escribir","argumentos":{…}}
+{"tipo":"resultado","nombre":"escribir","error":false,"contenido":"…"}
+{"tipo":"texto","texto":"listo"}
+{"tipo":"fin","resultado":"hecho","codigo":0,…}
+'''
+tests = [
+  "formato_json_tiene_campos: con el mock «listo», stdout es una sola línea JSON con `tipo == \"fin\"`, `resultado == \"hecho\"`, `texto == \"listo\"` y las claves `pasos`, `uso`, `cambios` y `salida_acepta`",
+  "stream_json_una_linea_por_evento: todas las líneas de stdout son JSON, hay una con `tipo == \"tool\"` y la última tiene `tipo == \"fin\"`",
+  "formato_texto_no_cambia: sin `--formato`, stdout contiene `listo` y no empieza por `{`",
+  "formato_desconocido_falla: `--formato xml` sale con código distinto de 0 y stderr contiene `formato desconocido`",
+  "json_con_acepta_que_falla_sale_con_2: con `--acepta false` y `--formato json` el código es 2 y `resultado == \"fallo\"`",
+]
+no_hagas = [
+  "No cambies los códigos de salida (0 hecho, 2 fallo, 3 presupuesto, 4 atasco)",
+  "No añadas `.with_checkpoints()` al agente de `pcode run` (corre dentro de las sandboxes de los flujos)",
+  "No toques `tests/run.rs`",
+]
+
+[[tarea]]
+id = "F5.06c"
+nombre = "cli-completions"
+titulo = "CLI: `pcode completions <bash|zsh|fish|powershell>`"
+fase = "F5"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.06b"]
+toca = ["crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/completions.rs"]
+toca_extra = ["Cargo.toml", "crates/pcode-cli/Cargo.toml"]
+acepta = "cargo test -p pcode-cli --test completions"
+contexto = [
+  "crates/pcode-cli/src/main.rs (struct `Cli`, enum `Cmd` y el `match cli.command` de `main`)",
+  "crates/pcode-cli/tests/run.rs (cómo se lanza el binario con `assert_cmd::Command::cargo_bin(\"pcode\")`)",
+]
+objetivo = '''
+1. `Cargo.toml` de la raíz, en `[workspace.dependencies]`: añade `clap_complete = "4"`. En
+   `crates/pcode-cli/Cargo.toml`, en `[dependencies]`: `clap_complete.workspace = true`.
+2. `main.rs`, enum `Cmd`: añade la variante `Completions` (firma abajo), al final.
+3. `main.rs`, `match cli.command`: añade el brazo
+   `Some(Cmd::Completions { shell }) => { use clap::CommandFactory; clap_complete::generate(shell, &mut Cli::command(), "pcode", &mut std::io::stdout()); Ok(()) }`.
+4. Crea `tests/completions.rs` con los tests de la lista.
+'''
+firmas = '''
+// crates/pcode-cli/src/main.rs, dentro de `enum Cmd`
+    /// Imprime el script de autocompletado para tu shell (p. ej. `pcode completions bash > ~/.bash_completion.d/pcode`).
+    Completions {
+        /// Shell: bash, zsh, fish, powershell o elvish.
+        shell: clap_complete::Shell,
+    },
+'''
+ejemplo = '''
+$ pcode completions bash | head -1
+_pcode() {
+$ pcode completions tcsh        -> error de clap (valor no válido), código 2
+'''
+tests = [
+  "completions_bash_no_vacio: `pcode completions bash` sale con 0 y stdout contiene `_pcode` y `completions`",
+  "completions_zsh_y_fish: con `zsh` stdout contiene `#compdef pcode`; con `fish`, contiene `complete -c pcode`",
+  "completions_shell_desconocida_falla: `pcode completions tcsh` sale con código distinto de 0",
+]
+no_hagas = [
+  "No añadas más dependencias que `clap_complete`",
+  "No inicialices nada (configuración, sandbox) para esta orden: solo imprime",
+]
 
 [[tarea]]
 id = "F5.07"
@@ -486,49 +668,407 @@ id = "F5.10"
 nombre = "tui-multiagente"
 titulo = "TUI: árbol de agentes y subagentes, aprobaciones en línea y revisión de cambios"
 fase = "F5"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F5.08", "F5.03"]
-toca = ["crates/pcode-tui/src/side.rs", "crates/pcode-tui/src/tree.rs", "crates/pcode-tui/src/app.rs"]
-acepta = "cargo test -p pcode-tui side && cargo test -p pcode-tui tree"
-contexto = ["docs/interfaces.md (TUI: multiagente y revisión)", "crates/pcode-tui/src/app.rs"]
+depende = ["F5.03", "F9.29"]
+toca = []
+acepta = "cargo test -p pcode-tui arbol"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Árbol: sesiones con sus subagentes (`parent`), estado con símbolo y color (`⏳ ✓ ✗ ⚠ ⧗`), y
-   contador de aprobaciones pendientes; Intro cambia de sesión.
-2. Aprobaciones: lista con acción, motivo y procedencia; `p` permite, `n` niega y `P` permite y
-   recuerda (`approvals.decide`).
-3. Cambios: lista con `+/-` por archivo; Intro muestra el diff (`changes.diff`) con líneas `+`
-   verdes y `-` rojas, además de los prefijos; `a` aplica y `d` descarta (con confirmación);
-   `e` abre el archivo en `$EDITOR` (`Command::OpenEditor`).
-4. Tareas del flujo (si el demonio tiene flujo): estado e intentos por tarea.
+Tarea de cierre de F5.10a (árbol de sesiones y subagentes, lógica pura) y F5.10b (datos y dibujo en la barra
+lateral). Ya estaba hecho: aprobaciones en línea (`Command::Approve { allow, remember }`) y resumen de cambios
+del turno (`run.rs::changes_summary`); la lista de archivos tocados es de F9.29 y la revisión del diff, de F8.25.
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
 '''
-tests = ["arbol_anida_subagentes", "aprobar_emite_rpc", "permitir_y_recordar", "diff_colorea_y_prefija", "aplicar_pide_confirmacion"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.10a"
+nombre = "tui-arbol-sesiones"
+titulo = "TUI: árbol de sesiones y subagentes para la barra lateral (lógica pura)"
+fase = "F5"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.29g"]
+toca = ["crates/pcode-tui/src/tree.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui tree::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (enums `Entry` y `ToolState`: de las entradas `Entry::Tool` salen los subagentes)",
+  "crates/pcode-tui/src/side.rs (función `side_lines`: el estilo de las líneas de la barra lateral)",
+]
+objetivo = '''
+La TUI ejecuta un solo agente en proceso. El «árbol» son las conversaciones guardadas del proyecto y, bajo la
+actual, los subagentes: llamadas a tools cuyo nombre está en `SUBAGENT_TOOLS`.
+1. Crea `tree.rs` con `SessionItem`, `SubagentItem`, `SUBAGENT_TOOLS`, `subagents_of` y `tree_rows` (firmas abajo).
+2. `subagents_of(entries)`: una entrada por cada `Entry::Tool` cuyo `name` esté en `SUBAGENT_TOOLS`, en
+   orden, con su `brief` y su `state`.
+3. `tree_rows(sessions, subagents, width)`: una fila de texto por sesión, en el orden recibido:
+   `" ● <título> (<n>)"` si `current`, `" ○ <título> (<n>)"` si no (`n` = `messages`). Justo debajo de la
+   sesión actual, una fila por subagente: `"   ⏳ <brief>"` si `Running`, `"   ✓ <brief>"` si `Ok`,
+   `"   ✗ <brief>"` si `Err`. Cada fila se recorta a `width` caracteres; si se recorta, el último carácter
+   es `…`. Un título vacío se muestra como `—`.
+4. Si ninguna sesión es `current` y hay subagentes, los subagentes van al final.
+5. `lib.rs`: añade `pub mod tree;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/tree.rs
+use crate::app::{Entry, ToolState};
+
+/// Una conversación guardada del proyecto.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionItem {
+    /// Identificador en la base de sesiones.
+    pub id: i64,
+    /// Título (el primer mensaje, recortado).
+    pub title: String,
+    /// Mensajes guardados.
+    pub messages: usize,
+    /// Es la conversación abierta.
+    pub current: bool,
+}
+
+/// Un subagente lanzado en la conversación actual.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentItem {
+    /// Qué se le encargó (resumen de los argumentos).
+    pub brief: String,
+    /// Estado.
+    pub state: ToolState,
+}
+
+/// Tools que lanzan un subagente.
+pub const SUBAGENT_TOOLS: [&str; 3] = ["subagente", "agente", "task"];
+
+/// Subagentes de la transcripción, en orden.
+pub fn subagents_of(entries: &[Entry]) -> Vec<SubagentItem>;
+/// Filas del árbol, de `width` caracteres como mucho.
+pub fn tree_rows(sessions: &[SessionItem], subagents: &[SubagentItem], width: u16) -> Vec<String>;
+'''
+ejemplo = '''
+sessions = [ {id:2, title:"arregla el test", messages:6, current:true}, {id:1, title:"añade login", messages:12, current:false} ]
+subagents = [ {brief:"busca usos de foo", state:Ok}, {brief:"revisa el diff", state:Running} ]
+tree_rows(&sessions, &subagents, 29) ==
+  [" ● arregla el test (6)", "   ✓ busca usos de foo", "   ⏳ revisa el diff", " ○ añade login (12)"]
+tree_rows(&[{id:1, title:"un título larguísimo que no cabe", messages:3, current:false}], &[], 12) == [" ○ un títul…"]
+'''
+tests = [
+  "arbol_anida_subagentes_bajo_la_sesion_actual: el primer caso del ejemplo, fila a fila",
+  "arbol_recorta_filas_largas: el segundo caso del ejemplo (12 caracteres y acaba en `…`)",
+  "arbol_sin_sesion_actual_pone_subagentes_al_final: dos sesiones no actuales y un subagente dan 3 filas y la última empieza por `   `",
+  "subagentes_salen_de_las_tools_del_catalogo: de `[Tool bash, Tool subagente (Running), User, Tool task (Err)]` salen 2 subagentes con sus estados",
+  "arbol_titulo_vacio_es_raya: una sesión con título vacío da ` ○ — (0)`",
+]
+no_hagas = [
+  "No hagas E/S: ni base de datos ni disco",
+  "No toques `side.rs`, `app.rs` ni `render.rs` (es F5.10b)",
+]
+notas = '''
+Hoy ninguna tool nativa se llama como las de `SUBAGENT_TOOLS`: la lista está preparada para la tool de
+subagentes de la fase F10. Mientras no exista, el árbol muestra solo sesiones.
+'''
+
+[[tarea]]
+id = "F5.10b"
+nombre = "tui-arbol-cableado"
+titulo = "TUI: sesiones del proyecto y subagentes en la barra lateral"
+fase = "F5"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.10a"]
+toca = ["crates/pcode-tui/src/side.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-tui arbol && cargo build -p pcode-cli"
+contexto = [
+  "crates/pcode-tui/src/tree.rs (`SessionItem`, `subagents_of`, `tree_rows`)",
+  "crates/pcode-tui/src/side.rs (función `side_lines` y sus tests: la sección «Sesión» del principio)",
+  "crates/pcode-tui/src/run.rs (struct `TuiOptions` y el principio de `run_tui`, donde se crea `App`)",
+  "crates/pcode-cli/src/chat.rs (función `tui`: construye `TuiOptions`; `Persist.store` es un `pcode_store::Store` con `sessions(limit)` y `events(id)`)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` el campo `pub sessions: Vec<crate::tree::SessionItem>` (doc: «Conversaciones
+   guardadas del proyecto»), vacío en `App::new`.
+2. `run.rs`: añade a `TuiOptions` el campo `pub sessions: Vec<crate::tree::SessionItem>` (doc igual) y, tras
+   crear `app` en `run_tui`, `app.sessions = opts.sessions;` (muévelo antes de que `opts` se consuma por
+   partes: guarda `let sessions = opts.sessions;` al principio si hace falta).
+3. `side.rs`, `side_lines`: la sección de sesión pasa a ser: el título `side_session`; si `app.sessions` está
+   vacío, la línea del título de la sesión como ahora; si no, una línea por fila de
+   `tree_rows(&app.sessions, &subagents_of(&app.entries), width)` (estilo `strong()` para la fila que empieza
+   por ` ●`, `text()` para el resto). Como mucho 8 filas; si hay más, una línea `" … +<resto>"`. El resto de
+   secciones (contexto y cambios) no cambia.
+4. `chat.rs`, función `tui`: antes de mover `p.persist`, calcula las sesiones con
+   `p.persist.store.sessions(20)`: por cada fila, `SessionItem { id, title: row.task, messages: <número de
+   eventos con kind == "mensaje" de store.events(row.id)>, current: p.resumed.map(|r| r.0) == Some(row.id) }`.
+   Si la consulta falla, lista vacía. Pásalas en `TuiOptions { sessions, .. }`.
+5. Tests en `side.rs` (nombres con `arbol`).
+'''
+sin_firmas = "Solo añade el campo `sessions` a App y a TuiOptions; las funciones son las de F5.10a"
+ejemplo = '''
+app.sessions = [ {id:2,title:"arregla el test",messages:6,current:true}, {id:1,title:"añade login",messages:12,current:false} ]
+side_lines(&app, 29) empieza por:
+  " Sesión", " ● arregla el test (6)", " ○ añade login (12)", "", " Contexto", …
+con app.sessions vacío: " Sesión", " (sin título)", "", " Contexto", …   (igual que antes)
+'''
+tests = [
+  "arbol_en_la_barra_lateral: con las dos sesiones del ejemplo, las líneas 1 y 2 de `side_lines` son las filas del árbol",
+  "arbol_sin_sesiones_muestra_el_titulo: con `sessions` vacío la línea 1 es ` (sin título)` (el test `lineas_sin_datos` sigue pasando)",
+  "arbol_con_mas_de_ocho_sesiones_resume: con 11 sesiones hay 8 filas y una línea ` … +3`",
+]
+no_hagas = [
+  "No añadas `pcode-store` como dependencia de `pcode-tui`: los datos llegan por `TuiOptions`",
+  "No cambies `Persist` ni `prepare` en `chat.rs`: solo se lee `store`",
+  "No refresques la lista durante la sesión (se calcula al arrancar)",
+]
 
 [[tarea]]
 id = "F5.11"
 nombre = "tui-atajos-temas"
 titulo = "TUI: atajos configurables, temas claro, oscuro y alto contraste"
 fase = "F5"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F5.07"]
-toca = ["crates/pcode-tui/src/keys.rs", "crates/pcode-tui/src/theme.rs", "crates/pcode-tui/src/app.rs"]
-acepta = "cargo test -p pcode-tui keys && cargo test -p pcode-tui theme"
-contexto = ["AGENTS.md (6.3 Terminal)", "crates/pcode-tui/src/app.rs"]
+depende = ["F9.29"]
+toca = []
+acepta = "cargo test -p pcode-tui keys:: && cargo test -p pcode-tui atajos && cargo test -p pcode-tui theme::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. `keybindings.toml` (en la configuración del usuario o en `.pcode/`): acción → combinación
-   (`"ctrl+k"`, `"shift+enter"`, `"f1"`); si falta, valores por defecto; un conflicto es un error con
-   las dos acciones nombradas.
-2. Temas: `oscuro`, `claro` y `alto-contraste`; con `NO_COLOR`, sin colores pero con símbolos y
-   negrita. Toda la TUI usa `Theme`, sin colores fijos.
-3. F1 muestra la ayuda de atajos (i18n).
+Tarea de cierre de F5.11a (`keybindings.toml`, lógica pura), F5.11b (uso del mapa de atajos en la TUI) y
+F5.11c (ayuda de atajos con F1). Los temas `azul`, `oscuro`, `claro` y `alto-contraste` y el modo sin color ya
+existen en `crates/pcode-tui/src/theme.rs` (`Theme::by_name(name, no_color)`).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F5.11a"
+nombre = "tui-atajos-mapa"
+titulo = "TUI: mapa de atajos y `keybindings.toml` (lógica pura)"
+fase = "F5"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.29g"]
+toca = ["crates/pcode-tui/src/keys.rs", "crates/pcode-tui/src/lib.rs"]
+toca_extra = ["crates/pcode-tui/Cargo.toml"]
+acepta = "cargo test -p pcode-tui keys::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (función `key_main`: los atajos fijos de hoy, que son los valores por defecto del mapa)",
+  "crates/pcode-tui/Cargo.toml (dependencias: los tipos de teclado vienen de `ratatui::crossterm::event`)",
+]
+objetivo = '''
+1. `Cargo.toml` de `pcode-tui`: añade `toml.workspace = true` en `[dependencies]`.
+2. Crea `keys.rs` con `Action`, `KeyCombo`, `KeyMap` y `load_keymap` (firmas abajo).
+3. Nombre de cada acción en el archivo (`Action::name`) y atajo por defecto:
+   `interrumpir` ctrl+c · `salir` ctrl+d · `salidas` ctrl+o · `borrar` ctrl+u · `plan` backtab ·
+   `subir` pageup · `bajar` pagedown · `nueva_linea` alt+enter · `lider` ctrl+x · `lateral` ctrl+b · `ayuda` f1.
+   `Action::ALL` las lista en ese orden.
+4. `KeyCombo::parse("ctrl+shift+k")`: partes separadas por `+`, en minúsculas; todas menos la última son
+   modificadores (`ctrl`, `alt`, `shift`); la última es la tecla: un solo carácter, o `enter`, `tab`,
+   `backtab`, `esc`, `space`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `delete`,
+   `f1` … `f12`. Otra cosa → `Err("atajo no válido «<texto>»")`. `space` es `KeyCode::Char(' ')`.
+5. `KeyCombo::from_event(ev)`: para `KeyCode::Char(c)` guarda `c` en minúsculas y quita `SHIFT` de los
+   modificadores; para `KeyCode::BackTab` quita `SHIFT`. De los modificadores solo cuentan CONTROL, ALT y SHIFT.
+6. `KeyMap::from_toml(s)`: parte de `default_map()`. Lee la tabla `[atajos]` con
+   `toml::from_str::<BTreeMap<String, BTreeMap<String, String>>>(s)` (error de sintaxis →
+   `Err("keybindings.toml: <error>")`). Cada clave es un nombre de acción (desconocida →
+   `Err("acción desconocida «<nombre>»")`) y su valor un atajo. Sustituye el atajo de esa acción. Al final, si
+   dos acciones comparten atajo → `Err("atajo repetido «<atajo>»: <acción1> y <acción2>")` (nombres en el
+   orden de `Action::ALL`). Sin tabla `[atajos]`, el mapa por defecto.
+7. `KeyMap::action(ev)`: la acción cuyo atajo es `KeyCombo::from_event(ev)`. `KeyMap::bindings()`: pares
+   `(acción, texto del atajo)` en el orden de `Action::ALL`; el texto es el que `parse` aceptaría
+   (`"ctrl+c"`, `"backtab"`, `"f1"`).
+8. `load_keymap(paths)`: lee el primer archivo de `paths` que exista y devuelve `from_toml` de su contenido;
+   si no existe ninguno, `Ok(default_map())`.
+9. `lib.rs`: `pub mod keys;` y `pub use keys::{Action, KeyMap};`.
 '''
 firmas = '''
-pub enum Action { Send, NewLine, Cancel, FocusNext, FocusPrev, ToggleSide, Approve, Deny, ApproveRemember, Apply, Discard, OpenEditor, Help, Quit }
-pub struct KeyMap { /* BTreeMap<KeyCombo, Action> */ }
-impl KeyMap { pub fn default_map() -> Self; pub fn from_toml(s: &str) -> Result<Self, String>; pub fn action(&self, ev: &crossterm::event::KeyEvent) -> Option<Action>; }
-pub struct Theme { pub fg: ratatui::style::Color, pub bg: ratatui::style::Color, pub accent: ratatui::style::Color, pub ok: ratatui::style::Color, pub err: ratatui::style::Color, pub warn: ratatui::style::Color, pub use_color: bool }
-impl Theme { pub fn by_name(name: &str, no_color: bool) -> Option<Theme>; }
+// crates/pcode-tui/src/keys.rs
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::collections::BTreeMap;
+
+/// Acción de la TUI que se puede asignar a una tecla.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Action { Interrupt, Quit, ToggleOutputs, ClearInput, TogglePlan, ScrollUp, ScrollDown, NewLine, Leader, ToggleSide, Help }
+
+impl Action {
+    /// Todas, en el orden en que se listan.
+    pub const ALL: [Action; 11];
+    /// Nombre en `keybindings.toml` (`interrumpir`, `salir`…).
+    pub fn name(self) -> &'static str;
+}
+
+/// Una combinación de teclas normalizada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyCombo { pub code: KeyCode, pub mods: KeyModifiers }
+
+impl KeyCombo {
+    /// De texto: `"ctrl+k"`, `"alt+enter"`, `"f1"`.
+    pub fn parse(s: &str) -> Result<KeyCombo, String>;
+    /// De una pulsación.
+    pub fn from_event(ev: &KeyEvent) -> KeyCombo;
+    /// A texto (lo inverso de `parse`).
+    pub fn text(&self) -> String;
+}
+
+/// Qué tecla dispara cada acción.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyMap { /* BTreeMap<Action, KeyCombo> */ }
+
+impl KeyMap {
+    pub fn default_map() -> KeyMap;
+    pub fn from_toml(s: &str) -> Result<KeyMap, String>;
+    pub fn action(&self, ev: &KeyEvent) -> Option<Action>;
+    pub fn bindings(&self) -> Vec<(Action, String)>;
+}
+
+/// Mapa del primer archivo que exista; el de por defecto si no hay ninguno.
+pub fn load_keymap(paths: &[std::path::PathBuf]) -> Result<KeyMap, String>;
 '''
-tests = ["atajos_por_defecto", "toml_sobrescribe", "conflicto_es_error", "no_color_sin_colores", "tema_desconocido_none"]
+ejemplo = '''
+keybindings.toml:
+  [atajos]
+  salir = "ctrl+q"
+  ayuda = "f2"
+-> action(Ctrl+Q) == Some(Action::Quit); action(Ctrl+D) == None; action(F2) == Some(Action::Help)
+
+  [atajos]
+  salidas = "ctrl+b"
+-> Err("atajo repetido «ctrl+b»: salidas y lateral")
+
+KeyCombo::from_event(BackTab con SHIFT) == KeyCombo::parse("backtab").unwrap()
+'''
+tests = [
+  "atajos_por_defecto: `default_map().action` da `Interrupt` para Ctrl+C, `TogglePlan` para BackTab con SHIFT, `Help` para F1 y None para la letra `a`",
+  "toml_sobrescribe: el primer caso del ejemplo",
+  "conflicto_es_error: el segundo caso del ejemplo, con el mensaje exacto",
+  "accion_o_atajo_desconocidos_son_error: `volar = \"f3\"` da `acción desconocida «volar»` y `salir = \"ctrl+\"` da un Err que contiene `atajo no válido`",
+  "texto_y_parse_son_inversos: para cada atajo de `default_map().bindings()`, `KeyCombo::parse(texto).unwrap().text() == texto`",
+  "load_usa_el_primer_archivo_que_existe: con rutas `[no-existe, archivo]` se lee `archivo`; con una lista vacía, el mapa por defecto",
+]
+no_hagas = [
+  "No añadas `crossterm` ni `serde` como dependencias: usa `ratatui::crossterm` y los tipos de la biblioteca estándar con `toml::from_str`",
+  "No toques `app.rs` (es F5.11b)",
+]
+
+[[tarea]]
+id = "F5.11b"
+nombre = "tui-atajos-cableado"
+titulo = "TUI: usar el mapa de atajos en `App` y cargar `keybindings.toml`"
+fase = "F5"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.10b", "F5.11a"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-tui atajos && cargo test -p pcode-tui app:: && cargo build -p pcode-cli"
+contexto = [
+  "crates/pcode-tui/src/keys.rs (`Action`, `KeyMap::default_map`, `KeyMap::action`, `load_keymap`)",
+  "crates/pcode-tui/src/app.rs (función `key_main`: los brazos de Ctrl+C, Ctrl+D, Ctrl+O, Ctrl+U, Ctrl+X, BackTab, PageUp, PageDown y Alt/Mayús+Intro; `toggle_plan` y `leader_key`)",
+  "crates/pcode-cli/src/chat.rs (función `tui`: construye `TuiOptions`; `p.notices` son los avisos de arranque)",
+  "crates/pcode-config/src/lib.rs (función `user_config_path() -> Option<PathBuf>`: ruta del `pcode.toml` del usuario)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` el campo `pub keymap: crate::keys::KeyMap` (doc: «Atajos»), con
+   `KeyMap::default_map()` en `App::new`.
+2. `app.rs`: añade el método privado `fn act(&mut self, a: Action) -> Option<Vec<Command>>` que hace lo que
+   hoy hacen los brazos fijos (mueve ese código, no lo dupliques). `None` significa «esta acción no aplica
+   ahora; trata la tecla como una tecla normal»:
+   - `Interrupt`: lo del brazo de Ctrl+C (cancela si `busy`; si no, borra la entrada; si está vacía, `Quit`).
+   - `Quit`: `Some(vec![Command::Quit])` si la entrada está vacía; si no, `None`.
+   - `ToggleOutputs`: cambia `expand_tools`. `ClearInput`: vacía la entrada. `TogglePlan`: `self.toggle_plan()`.
+   - `ScrollUp` / `ScrollDown`: `scroll` ± 10 con saturación, como PageUp/PageDown.
+   - `NewLine`: añade `'\n'` a la entrada. `Leader`: `self.leader = true`. `ToggleSide`: cambia `show_side`.
+   - `Help`: `None` (lo implementa F5.11c).
+3. `app.rs`, `key_main`: al principio,
+   `if let Some(a) = self.keymap.action(&k) && let Some(cmds) = self.act(a) { return cmds; }`.
+   Después borra del `match` los brazos que ya cubre `act`: BackTab, `Char('c') if ctrl`, `Char('d') if ctrl…`,
+   `Char('o') if ctrl`, `Char('u') if ctrl`, `Char('x') if ctrl`, PageUp y PageDown. El brazo de Intro con
+   modificador queda solo para Mayús+Intro (`KeyModifiers::SHIFT`); Alt+Intro lo cubre `NewLine`.
+4. `run.rs`: añade a `TuiOptions` el campo `pub keymap: crate::keys::KeyMap` (doc: «Atajos») y, tras crear
+   `app`, `app.keymap = …` con ese valor.
+5. `chat.rs`, función `tui`: carga el mapa con
+   `pcode_tui::keys::load_keymap(&[root.join(".pcode/keybindings.toml"), <carpeta de user_config_path()>.join("keybindings.toml")])`
+   (la segunda ruta solo si `pcode_config::user_config_path()` es `Some` y tiene carpeta padre). Si da `Err(e)`,
+   usa `KeyMap::default_map()` y añade `format!("keybindings.toml: {e}")` a los avisos (`notices`).
+'''
+sin_firmas = "Solo añade el campo `keymap` a App y a TuiOptions; `act` es privado"
+ejemplo = '''
+mapa por defecto: Ctrl+O sigue cambiando `expand_tools`; Ctrl+C con la entrada vacía sigue devolviendo [Command::Quit]
+app.keymap = KeyMap::from_toml("[atajos]\nsalir = \"ctrl+q\"\n").unwrap():
+  Ctrl+Q con la entrada vacía -> [Command::Quit]
+  Ctrl+D con la entrada vacía -> [] (ya no sale)
+  con "hola" escrito, Ctrl+Q  -> [] y la entrada sigue siendo "hola"
+'''
+tests = [
+  "atajos_por_defecto_no_cambian_nada: con el mapa por defecto, Ctrl+O cambia `expand_tools`, PageUp sube `scroll` a 10 y Ctrl+D con la entrada vacía devuelve `[Command::Quit]`",
+  "atajos_remapeados_mandan: el segundo caso del ejemplo (Ctrl+Q sale, Ctrl+D ya no)",
+  "atajos_salir_no_aplica_con_texto: con `hola` escrito y `salir = \"ctrl+q\"`, Ctrl+Q no devuelve órdenes y no cambia la entrada",
+  "atajos_lateral_con_ctrl_b: Ctrl+B cambia `show_side` a true",
+]
+no_hagas = [
+  "No cambies las teclas de la aprobación (s/t/n), de las sugerencias ni de la tecla líder (segunda tecla): no son configurables",
+  "No borres tests existentes de `app.rs`: todos deben seguir pasando con el mapa por defecto",
+  "No leas archivos desde `app.rs` ni desde `run.rs`: el mapa llega ya cargado",
+]
+
+[[tarea]]
+id = "F5.11c"
+nombre = "tui-ayuda-atajos"
+titulo = "TUI: F1 muestra la ayuda de atajos"
+fase = "F5"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.11b"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui ayuda_f1"
+contexto = [
+  "crates/pcode-tui/src/app.rs (funciones `key` y `act`: `Action::Help` devuelve `None` hasta esta tarea)",
+  "crates/pcode-tui/src/render.rs (función `render`, sección «Aprobación» y función `centered`: cómo se dibuja una ventana centrada con `Clear`)",
+  "crates/pcode-tui/src/keys.rs (`KeyMap::bindings()` y `Action::name()`)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` el campo `pub help_open: bool` (doc: «Ventana de ayuda de atajos abierta»), a
+   `false` en `App::new`. En `act`, `Action::Help` pasa a `self.help_open = true; Some(vec![])`.
+2. `app.rs`, `key`: después del bloque de la aprobación pendiente, si `self.help_open`: ponlo a `false` y
+   devuelve `vec![]` (cualquier tecla cierra la ventana y no hace nada más).
+3. `i18n.rs`: añade al final de `ES` y `EN` (mismo orden) `help_title` = `" Atajos · cualquier tecla cierra "`
+   / `" Shortcuts · any key closes "` y una clave por acción, `act_<nombre>` con el nombre de
+   `Action::name()`: `act_interrumpir` = «interrumpe al agente, borra la entrada o sale» / «interrupt, clear
+   or quit», `act_salir` = «sale» / «quit», `act_salidas` = «despliega las salidas de las tools» / «expand
+   tool outputs», `act_borrar` = «borra la entrada» / «clear the input», `act_plan` = «modo plan o normal» /
+   «plan or build mode», `act_subir` = «sube en la conversación» / «scroll up», `act_bajar` = «baja en la
+   conversación» / «scroll down», `act_nueva_linea` = «nueva línea» / «new line», `act_lider` = «tecla líder»
+   / «leader key», `act_lateral` = «barra lateral» / «sidebar», `act_ayuda` = «esta ayuda» / «this help».
+4. `render.rs`: al final de `render`, si `app.help_open`, dibuja una ventana centrada sobre `body` (ancho
+   `min(60, body.width - 2)`, alto = filas + 2) con `Clear`, borde redondeado, título `help_title` y una fila
+   por elemento de `app.keymap.bindings()`:
+   `format!("{:<12} {}", atajo, t(app.lang, &format!("act_{}", accion.name())))`.
+'''
+sin_firmas = "Solo añade el campo `help_open` a App; el resto es estado privado, textos y dibujo"
+ejemplo = '''
+F1                         -> app.help_open == true, sin órdenes
+(otra tecla, p. ej. `x`)   -> app.help_open == false, la entrada sigue vacía, sin órdenes
+pantalla 80×24 con help_open: hay una fila con "Atajos · cualquier tecla cierra" y otra con "ctrl+c       interrumpe al agente"
+con salir = "ctrl+q" en el mapa: hay una fila con "ctrl+q       sale"
+'''
+tests = [
+  "ayuda_f1_abre_y_cualquier_tecla_cierra: F1 pone `help_open` a true; después la tecla `x` lo pone a false sin escribir `x` en la entrada",
+  "ayuda_f1_render_80x24_lista_los_atajos: con `help_open = true` la pantalla contiene `Atajos · cualquier tecla cierra` y `ctrl+c       interrumpe al agente`",
+  "ayuda_f1_muestra_el_atajo_remapeado: con `salir = \"ctrl+q\"` la pantalla contiene `ctrl+q       sale`",
+  "ayuda_f1_cabe_en_120x40: a 120×40 la pantalla contiene las 11 acciones (comprueba `f1` y `esta ayuda`)",
+]
+no_hagas = [
+  "No cambies la orden `/ayuda` (lista las órdenes; F1 lista los atajos)",
+  "No pongas textos literales en `render.rs`: todos salen de `t(…)`",
+  "No añadas las claves solo a una tabla de `i18n.rs`",
+]
 
 [[tarea]]
 id = "F5.12"

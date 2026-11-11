@@ -618,64 +618,1046 @@ id = "F8.23"
 nombre = "exportar-sesion"
 titulo = "Exportar y compartir una sesión (Markdown y HTML autocontenido)"
 fase = "F8"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F5.29"]
+toca = []
+acepta = "cargo test -p pcode-cli exportar"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.23a (Markdown y enmascarado), F8.23b (HTML autocontenido) y F8.23c (orden
+`pcode exportar`).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.23a"
+nombre = "exportar-markdown"
+titulo = "Exportar: conversación a Markdown y enmascarado de claves y rutas (lógica pura)"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.29", "F5.06"]
+toca = ["crates/pcode-cli/src/exportar.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli exportar::"
+contexto = [
+  "crates/pcode-models/src/types.rs (structs `Message { role, content, tool_calls, tool_call_id }` y `ToolCall { id, name, arguments }`; enum `Role`; constructores `Message::user`, `Message::assistant`, `Message::tool_result`)",
+  "crates/pcode-cli/src/main.rs (las líneas `mod …;` del principio)",
+]
+objetivo = '''
+1. Crea `exportar.rs` con `env_secrets`, `mask` y `to_markdown` (firmas abajo). Sin E/S.
+2. `env_secrets(vars)`: valores de las variables cuyo NOMBRE, en mayúsculas, contiene `KEY`, `TOKEN`,
+   `SECRET`, `PASSWORD` o `CLAVE`, y cuyo valor mide al menos 8 caracteres. Sin repetidos.
+3. `mask(text, home, secrets)`: sustituye cada secreto por `•••` (primero los más largos) y, si `home` es
+   `Some` y no está vacío ni es `/`, cada aparición de `home` por `~`.
+4. `to_markdown(title, model, messages)` produce, en este orden:
+   - `# <title>`, línea en blanco, `_Modelo: <model> · <n> mensajes_` (n = mensajes de usuario y asistente),
+     línea en blanco.
+   - Por cada mensaje: `Role::System` y `Role::Tool` no se escriben por sí mismos. `Role::User` →
+     `## Usuario`, línea en blanco, el contenido, línea en blanco. `Role::Assistant` → `## Asistente`, línea
+     en blanco, el contenido si no está vacío y línea en blanco; después, por cada `tool_call`, un bloque
+     plegado (ver ejemplo): `<details><summary>🔧 <name></summary>`, los argumentos en JSON con sangría
+     (`serde_json::to_string_pretty`) dentro de una valla de cuatro acentos graves con `json`, y la salida de
+     la tool (el `content` del mensaje `Role::Tool` cuyo `tool_call_id` es el `id` de la llamada; recortado a
+     4000 caracteres, con `\n[… recortado]` si se recorta; `(sin salida)` si no hay mensaje o está vacío)
+     dentro de otra valla de cuatro acentos graves; y `</details>`.
+5. `main.rs`: añade `mod exportar;` junto a los demás `mod`.
+'''
+firmas = '''
+// crates/pcode-cli/src/exportar.rs
+use pcode_models::Message;
+
+/// Valores del entorno que parecen secretos (por el nombre de la variable).
+pub fn env_secrets(vars: impl Iterator<Item = (String, String)>) -> Vec<String>;
+
+/// Oculta los secretos (`•••`) y la carpeta personal (`~`).
+pub fn mask(text: &str, home: Option<&str>, secrets: &[String]) -> String;
+
+/// La conversación en Markdown, con las tools plegadas.
+pub fn to_markdown(title: &str, model: &str, messages: &[Message]) -> String;
+'''
+ejemplo = '''
+mensajes: system("…"), user("crea a.txt"), assistant("") con tool_call {id:"1", name:"escribir", arguments:{"path":"a.txt"}},
+          tool_result("1", "escrito"), assistant("creado a.txt")
+to_markdown("crea a.txt", "m", &mensajes) ==
+# crea a.txt
+
+_Modelo: m · 3 mensajes_
+
+## Usuario
+
+crea a.txt
+
+## Asistente
+
+<details><summary>🔧 escribir</summary>
+
+````json
+{
+  "path": "a.txt"
+}
+````
+
+````
+escrito
+````
+
+</details>
+
+## Asistente
+
+creado a.txt
+
+mask("clave sk-secreto-12345678 en /home/ana/p", Some("/home/ana"), &["sk-secreto-12345678".into()]) == "clave ••• en ~/p"
+'''
+tests = [
+  "markdown_con_tools: la conversación del ejemplo da exactamente el texto del ejemplo",
+  "markdown_salida_larga_se_recorta: una salida de tool de 5000 caracteres aparece con 4000 y `[… recortado]`",
+  "markdown_tool_sin_resultado: una llamada sin mensaje `Tool` muestra `(sin salida)`",
+  "oculta_claves_del_entorno: `env_secrets` de `[(\"OPENAI_API_KEY\",\"sk-secreto-12345678\"), (\"HOME\",\"/home/ana\"), (\"MI_TOKEN\",\"corto\")]` es `[\"sk-secreto-12345678\"]` y `mask` da el resultado del ejemplo",
+  "mask_no_toca_la_raiz: con `home = Some(\"/\")` o `Some(\"\")` el texto no cambia",
+]
+no_hagas = [
+  "No leas el entorno ni archivos en este módulo: los datos llegan por parámetro",
+  "No añadas la orden `pcode exportar` todavía (es F8.23c)",
+  "No uses vallas de tres acentos graves: el contenido puede traerlas",
+]
+notas = '''
+Hasta F8.23c el módulo no se usa desde el binario: pon `#![allow(dead_code)] // se usa en F8.23c` al
+principio de `exportar.rs`.
+'''
+
+[[tarea]]
+id = "F8.23b"
+nombre = "exportar-html"
+titulo = "Exportar: conversación a HTML autocontenido (lógica pura)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.23a"]
+toca = ["crates/pcode-cli/src/exportar.rs"]
+acepta = "cargo test -p pcode-cli exportar::tests::html"
+contexto = [
+  "crates/pcode-cli/src/exportar.rs (función `to_markdown`: el mismo recorrido de mensajes y la misma forma de emparejar cada tool con su salida)",
+]
+objetivo = '''
+1. Añade a `exportar.rs` las funciones `escape_html` y `to_html` (firmas abajo).
+2. `escape_html`: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;` (el `&` primero).
+3. `to_html` devuelve un documento completo: `<!doctype html>`, `<html lang="es">`, `<head>` con
+   `<meta charset="utf-8">`, `<title>` (título escapado) y un único `<style>` en línea; `<body>` con `<h1>`
+   (título), `<p class="meta">Modelo: … · n mensajes</p>` y, por cada mensaje (mismo recorrido que
+   `to_markdown`):
+   - usuario: `<section class="msg user"><h2>Usuario</h2><pre>contenido escapado</pre></section>`
+   - asistente: `<section class="msg assistant"><h2>Asistente</h2>` + `<pre>contenido</pre>` si no está vacío +
+     por cada tool `<details class="tool"><summary>🔧 nombre</summary><pre>argumentos</pre><pre>salida</pre></details>`
+     + `</section>`.
+   Todo el texto que venga de los mensajes pasa por `escape_html`.
+4. El `<style>` usa estos colores: fondo `#0b1220`, texto `#d3e3fd`, acento `#8ab4f8`, fondo de `pre`
+   `#182b46`; con `@media (prefers-color-scheme: light)`: fondo `#ffffff`, texto `#041e49`, acento `#0b57d0`,
+   fondo de `pre` `#eaf2fd`. `pre { white-space: pre-wrap; }`. Fuente: `system-ui, sans-serif` (ninguna
+   fuente remota).
+5. El documento no contiene ninguna URL ni recurso externo: ni `http://` ni `https://` propios, ni `<link`,
+   ni `<script`, ni `<img`.
+'''
+firmas = '''
+// crates/pcode-cli/src/exportar.rs
+/// Escapa texto para meterlo en HTML.
+pub fn escape_html(s: &str) -> String;
+
+/// La conversación como una página HTML que no carga nada de fuera.
+pub fn to_html(title: &str, model: &str, messages: &[Message]) -> String;
+'''
+ejemplo = '''
+escape_html("a < b && \"c\"") == "a &lt; b &amp;&amp; &quot;c&quot;"
+to_html("t", "m", &[Message::user("<script>alert(1)</script>")]) contiene
+  "<pre>&lt;script&gt;alert(1)&lt;/script&gt;</pre>"  y no contiene "<script"
+'''
+tests = [
+  "html_escapa_el_contenido: el segundo caso del ejemplo (contiene el `<pre>` escapado y no contiene `<script`)",
+  "html_sin_recursos_externos: con la conversación de 5 mensajes de `markdown_con_tools`, el resultado no contiene `<link`, `<script`, `<img` ni `http`",
+  "html_es_un_documento_completo: empieza por `<!doctype html>`, contiene `<meta charset=\"utf-8\">`, un solo `<style>` y acaba en `</html>` (con o sin salto de línea final)",
+  "html_tools_plegadas: la conversación con una tool contiene `<details class=\"tool\"><summary>🔧 escribir</summary>` y la salida `escrito`",
+]
+no_hagas = [
+  "No conviertas Markdown a HTML: el contenido va tal cual dentro de `<pre>`",
+  "No añadas dependencias",
+  "No cambies `to_markdown` ni `mask`",
+]
+
+[[tarea]]
+id = "F8.23c"
+nombre = "exportar-orden"
+titulo = "CLI: `pcode exportar [sesión] --formato md|html [--salida archivo]`"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.23b"]
 toca = ["crates/pcode-cli/src/exportar.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/exportar.rs"]
 acepta = "cargo test -p pcode-cli --test exportar"
-contexto = ["crates/pcode-store/src/lib.rs (events)"]
+contexto = [
+  "crates/pcode-store/src/lib.rs (`Store::open(path)`, `Store::sessions(limit) -> Vec<SessionRow { id, model, task, … }>` y `Store::events(id) -> Vec<Event { kind, payload, … }>`)",
+  "crates/pcode-cli/src/chat.rs (función `load_last`: cómo se reconstruyen los `Message` de los eventos `mensaje`)",
+  "crates/pcode-cli/tests/chat.rs (funciones `resp` y `pcode`, y el test `chat_con_prompt_inicial_y_sin_stdin`: cómo crear una sesión con el proveedor falso)",
+  "crates/pcode-cli/src/main.rs (enum `Cmd` y el `match cli.command`)",
+]
 objetivo = '''
-`pcode exportar [sesión] --formato md|html` con la conversación, las tools y sus salidas plegadas; el HTML usa el tema de
-Studio, sin recursos externos y con las claves y rutas absolutas del usuario enmascaradas.
+1. `exportar.rs`: quita el `#![allow(dead_code)]`. Añade `ExportArgs` (firma abajo) y
+   `pub fn export(a: ExportArgs) -> anyhow::Result<i32>`.
+2. `export`: abre `Store::open(&cwd.join(".pcode/pcode.db"))`. Lista `store.sessions(u32::MAX)`. Elige la
+   sesión con `id == a.session` o, si no se da, la primera (la más reciente). Si no hay sesiones o no existe
+   ese id: escribe en stderr `no hay ninguna sesión guardada en este proyecto` (o `no existe la sesión <id>`)
+   y devuelve `Ok(2)`.
+3. Mensajes: los eventos con `kind == "mensaje"`, cada `payload` con `serde_json::from_value::<Message>`
+   (los que no se puedan leer se saltan).
+4. Texto: `to_markdown(&row.task, &row.model, &msgs)` si `a.format == "md"`; `to_html(…)` si es `"html"`;
+   otro valor → `anyhow::bail!("formato desconocido «{}»: usa md o html", a.format)`.
+5. Enmascara el texto final con
+   `mask(&texto, std::env::var("HOME").ok().as_deref(), &env_secrets(std::env::vars()))`.
+6. Salida: si `a.output` es `Some(ruta)`, escribe el archivo e imprime en stderr `exportado a <ruta>`; si no,
+   imprime el texto en stdout. Devuelve `Ok(0)`.
+7. `main.rs`: variante `Exportar(exportar::ExportArgs)` en `Cmd` con el doc
+   `/// Exporta una conversación guardada a Markdown o a una página HTML autocontenida.` y el brazo
+   `Some(Cmd::Exportar(a)) => std::process::exit(exportar::export(a)?),`.
+8. Crea `tests/exportar.rs` (copia los ayudantes `resp` y `pcode` de `tests/chat.rs`).
 '''
-tests = ["markdown_con_tools", "html_sin_recursos_externos", "oculta_claves_del_entorno"]
+firmas = '''
+// crates/pcode-cli/src/exportar.rs
+/// Argumentos de `pcode exportar`.
+#[derive(Debug, clap::Args)]
+pub struct ExportArgs {
+    /// Número de sesión (por defecto, la última de este proyecto).
+    pub session: Option<i64>,
+    /// `md` (por defecto) o `html`.
+    #[arg(long = "formato", default_value = "md")]
+    pub format: String,
+    /// Archivo de salida (por defecto, la salida estándar).
+    #[arg(long = "salida")]
+    pub output: Option<std::path::PathBuf>,
+}
+
+/// Ejecuta `pcode exportar` y devuelve el código de salida.
+pub fn export(a: ExportArgs) -> anyhow::Result<i32>;
+'''
+ejemplo = '''
+$ pcode chat di hola            (con el mock que responde «hola desde el mock»)
+$ pcode exportar
+# di hola
+…
+## Asistente
+
+hola desde el mock
+$ pcode exportar --formato html --salida s.html     -> crea s.html, que empieza por <!doctype html>
+$ pcode exportar 99                                  -> stderr «no existe la sesión 99», código 2
+'''
+tests = [
+  "exportar_markdown_de_la_ultima_sesion: tras un `pcode chat di hola` con el mock, `pcode exportar` sale con 0 y stdout contiene `## Usuario`, `di hola` y `hola desde el mock`",
+  "exportar_html_a_un_archivo: `--formato html --salida s.html` crea el archivo, que empieza por `<!doctype html>` y no contiene `<script`",
+  "exportar_oculta_claves_del_entorno: con `MI_API_KEY=sk-secreto-12345678` en el entorno y un mock que responde con ese texto, stdout no contiene `sk-secreto-12345678` y sí `•••`",
+  "exportar_sin_sesiones_sale_con_2: en un directorio vacío, código 2 y stderr contiene `no hay ninguna sesión`",
+  "exportar_sesion_inexistente_sale_con_2: tras crear una sesión, `pcode exportar 99` sale con 2 y stderr contiene `no existe la sesión 99`",
+]
+no_hagas = [
+  "No llames al modelo ni cargues `pcode.toml`: esta orden solo lee la base de sesiones",
+  "No cambies `load_last` de `chat.rs` ni lo hagas público: repite aquí sus tres líneas",
+  "No toques `tests/chat.rs`",
+]
 
 [[tarea]]
 id = "F8.24"
 nombre = "tui-selectores"
 titulo = "TUI: selectores de sesiones y de modelos"
 fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.34", "F5.10", "F5.11"]
+toca = []
+acepta = "cargo test -p pcode-tui selector && cargo test -p pcode-cli selector"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.24a (lista con búsqueda difusa, lógica pura), F8.24b (`/sesiones` y `/modelos` en la
+TUI) y F8.24c (datos reales y retomar una conversación).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.24a"
+nombre = "tui-selector-nucleo"
+titulo = "TUI: lista seleccionable con búsqueda difusa (lógica pura)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F5.34"]
-toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
-acepta = "cargo test -p pcode-tui selector"
-contexto = ["crates/pcode-tui/src/app.rs"]
+toca = ["crates/pcode-tui/src/picker.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui picker::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (función `fuzzy_score(pattern, candidate) -> Option<i32>`: la puntuación difusa que se reutiliza)",
+]
 objetivo = '''
-`/sesiones` abre una lista de conversaciones anteriores (título, fecha, mensajes) para retomar; `/modelos` una lista de
-modelos del proveedor; ambas con búsqueda difusa, ↑/↓ e Intro.
+1. Crea `picker.rs` con `PickItem`, `Picker` y `PickerOutcome` (firmas abajo). Sin E/S ni dibujo.
+2. `filtered()`: con `query` vacío, todos los elementos en su orden. Si no, los que tienen
+   `crate::app::fuzzy_score(&self.query, &item.label)` distinto de `None`, de mayor a menor puntuación; a
+   igual puntuación, el orden original (usa `sort_by` estable).
+3. `key(k)`:
+   - `Up` / `Down`: mueve `selected` dentro de `filtered()` sin salirse (0 … len-1). → `Pending`.
+   - `Char(c)` sin CONTROL: añade `c` a `query` y pone `selected = 0`. → `Pending`.
+   - `Backspace`: quita el último carácter de `query` y pone `selected = 0`. → `Pending`.
+   - `Enter`: si `filtered()` tiene elemento en `selected` → `Chosen(id de ese elemento)`; si no → `Pending`.
+   - `Esc` → `Closed`. Cualquier otra tecla → `Pending`.
+4. `rows(width, max)`: como mucho `max` filas de `filtered()`, empezando en un desplazamiento tal que la
+   seleccionada sea visible (`inicio = selected.saturating_sub(max - 1)`). Cada fila es
+   `("› <label>  <detail>", true)` para la seleccionada y `("  <label>  <detail>", false)` para el resto,
+   recortada a `width` caracteres. Si `detail` está vacío no se añaden los dos espacios.
+5. `lib.rs`: añade `pub mod picker;`.
 '''
-tests = ["selector_filtra_y_elige", "retomar_carga_historial", "esc_cierra_sin_cambiar"]
+firmas = '''
+// crates/pcode-tui/src/picker.rs
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// Un elemento de la lista.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickItem {
+    /// Lo que se devuelve al elegirlo.
+    pub id: String,
+    /// Texto principal (sobre el que se busca).
+    pub label: String,
+    /// Texto secundario.
+    pub detail: String,
+}
+
+/// Lista con búsqueda.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Picker {
+    /// Título de la ventana.
+    pub title: String,
+    /// Elementos.
+    pub items: Vec<PickItem>,
+    /// Lo escrito para filtrar.
+    pub query: String,
+    /// Índice elegido dentro de `filtered()`.
+    pub selected: usize,
+}
+
+/// Qué pasó con una tecla.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickerOutcome { Pending, Chosen(String), Closed }
+
+impl Picker {
+    pub fn new(title: impl Into<String>, items: Vec<PickItem>) -> Picker;
+    pub fn filtered(&self) -> Vec<&PickItem>;
+    pub fn key(&mut self, k: KeyEvent) -> PickerOutcome;
+    pub fn rows(&self, width: u16, max: usize) -> Vec<(String, bool)>;
+}
+'''
+ejemplo = '''
+items: [ {id:"1", label:"claude-sonnet", detail:""}, {id:"2", label:"gpt-mini", detail:"openai"}, {id:"3", label:"glm-4", detail:""} ]
+sin query: rows(40, 10) == [("› claude-sonnet", true), ("  gpt-mini  openai", false), ("  glm-4", false)]
+teclear "g", "p"         -> filtered() == [gpt-mini]; selected == 0
+Down, Down (sin query)   -> selected == 2; otro Down -> sigue en 2
+Enter con selected == 1  -> Chosen("2")
+Esc                      -> Closed
+'''
+tests = [
+  "selector_filtra_y_elige: tras teclear `gp`, `filtered()` solo tiene `gpt-mini` e Intro devuelve `Chosen(\"2\")`",
+  "selector_flechas_no_se_salen: tres Down dejan `selected == 2` y cuatro Up lo dejan en 0",
+  "selector_esc_cierra_sin_elegir: Esc devuelve `Closed`",
+  "selector_intro_sin_resultados_no_elige: con la búsqueda `zzz` no hay filas e Intro devuelve `Pending`",
+  "selector_filas_con_detalle_y_recorte: el caso `rows(40, 10)` del ejemplo y `rows(8, 10)[0].0` mide 8 caracteres",
+  "selector_ventana_sigue_a_la_seleccion: con 20 elementos, `selected = 15` y `max = 5`, la última fila devuelta es la seleccionada",
+]
+no_hagas = [
+  "No dibujes nada aquí (el dibujo es F8.24b)",
+  "No copies `fuzzy_score`: úsala desde `crate::app`",
+]
+
+[[tarea]]
+id = "F8.24b"
+nombre = "tui-selector-ordenes"
+titulo = "TUI: `/sesiones` y `/modelos` abren un selector (y Ctrl+X l / Ctrl+X m)"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.24a", "F5.10b", "F5.11c"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/commands.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui selector"
+contexto = [
+  "crates/pcode-tui/src/picker.rs (`Picker::new`, `Picker::key`, `Picker::rows`, `PickItem`, `PickerOutcome`)",
+  "crates/pcode-tui/src/app.rs (enum `Command`, struct `App` con `sessions: Vec<SessionItem>`, funciones `key`, `submit` y `leader_key`)",
+  "crates/pcode-tui/src/render.rs (función `render`: la ventana de ayuda `help_open`, que es el modelo de ventana centrada)",
+  "crates/pcode-tui/src/commands.rs (tabla `COMMANDS`: se añaden entradas al final)",
+]
+objetivo = '''
+1. `app.rs`: añade `pub enum PickerKind { Sessions, Models }` (Debug, Clone, Copy, PartialEq, Eq), la
+   variante `Command::Resume(i64)` (doc: «Retomar la conversación guardada con ese id») y a `App` los campos
+   `pub picker: Option<(PickerKind, crate::picker::Picker)>` y `pub models: Vec<String>` (doc: «Modelos que
+   se ofrecen en `/modelos`»); `None` y `vec![]` en `App::new`.
+2. `commands.rs`: añade al final de `COMMANDS` `sesiones`/`sessions` («retoma una conversación anterior» /
+   «resume an earlier conversation») y `modelos`/`models` («elige el modelo de una lista» / «pick the model
+   from a list»), con `external: false`.
+3. `i18n.rs`: añade al final de `ES` y `EN`: `pick_sessions` = `" Sesiones · escribe para filtrar "` /
+   `" Sessions · type to filter "`, `pick_models` = `" Modelos · escribe para filtrar "` /
+   `" Models · type to filter "`, `no_sessions` = `"No hay conversaciones guardadas en este proyecto."` /
+   `"There are no saved conversations in this project."`, `no_models` =
+   `"No hay modelos configurados: usa /modelo <nombre>."` / `"No models configured: use /model <name>."`,
+   `messages` = `"mensajes"` / `"messages"`.
+4. `app.rs`, `submit`, nuevos brazos del `match name`:
+   - `"sesiones" | "sessions"`: si `self.sessions` está vacío, `Entry::Info(no_sessions)`; si no, abre el
+     selector con un `PickItem { id: <id en texto>, label: <title>, detail: "<n> <messages>" }` por sesión y
+     título `pick_sessions`. Devuelve `vec![]`.
+   - `"modelos" | "models"`: igual con `self.models` (`id` y `label` = nombre, `detail` vacío), título
+     `pick_models`, o `Entry::Info(no_models)` si está vacío.
+5. `app.rs`, `key`: después de los bloques de aprobación y de ayuda, si `self.picker` es `Some`, pasa la
+   tecla a `Picker::key` y devuelve: `Pending` → `vec![]`; `Closed` → cierra (`picker = None`) y `vec![]`;
+   `Chosen(id)` → cierra y, si era `Models`, `self.model = id.clone()` y `vec![Command::SetModel(id)]`; si
+   era `Sessions`, `vec![Command::Resume(id.parse().unwrap_or(0))]`.
+6. `app.rs`, `leader_key`: `Char('l')` ejecuta `/sesiones`; `Char('m')` ejecuta `/modelos` si `self.models`
+   no está vacío (si lo está, sigue dejando `/modelo ` en la entrada como ahora).
+7. `render.rs`: al final de `render`, si hay selector, una ventana centrada sobre `body` (ancho
+   `min(70, body.width - 2)`, alto `min(filas + 3, body.height)`) con `Clear`, borde redondeado y el título
+   del selector; primera línea `"> <query>"`; después `picker.rows(ancho - 2, alto - 3)`, la seleccionada con
+   `th.bubble()` y el resto con `th.text()`.
+'''
+firmas = '''
+// crates/pcode-tui/src/app.rs
+/// Qué se está eligiendo en el selector abierto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerKind { Sessions, Models }
+
+// en `pub enum Command`
+    /// Retomar la conversación guardada con ese id.
+    Resume(i64),
+
+// en `pub struct App`
+    /// Selector abierto.
+    pub picker: Option<(PickerKind, crate::picker::Picker)>,
+    /// Modelos que se ofrecen en `/modelos`.
+    pub models: Vec<String>,
+'''
+ejemplo = '''
+app.models = ["m1", "m2"]; teclear "/modelos" + Intro -> app.picker es Some((Models, _)); Down, Intro ->
+  [Command::SetModel("m2")], app.model == "m2", app.picker == None
+app.sessions = [{id:7, title:"arregla el test", messages:6, current:false}]; "/sesiones" + Intro, Intro ->
+  [Command::Resume(7)]
+"/sesiones" con app.sessions vacío -> Entry::Info("No hay conversaciones guardadas en este proyecto.")
+pantalla 80×24 con el selector de sesiones: contiene "Sesiones · escribe para filtrar" y "› arregla el test  6 mensajes"
+'''
+tests = [
+  "selector_de_modelos_elige_y_cambia: el primer caso del ejemplo",
+  "selector_de_sesiones_pide_retomar: el segundo caso del ejemplo (`Command::Resume(7)`)",
+  "selector_esc_cierra_sin_cambiar: con el selector de modelos abierto, Esc deja `picker == None`, `model` sin cambiar y no devuelve órdenes",
+  "selector_sin_datos_avisa: `/sesiones` sin sesiones y `/modelos` sin modelos añaden un `Entry::Info` y no abren nada",
+  "selector_teclas_no_llegan_a_la_entrada: con el selector abierto, teclear `x` deja `input` vacío y `query == \"x\"`",
+  "selector_render_80x24_y_120x40: la pantalla contiene el título `Sesiones · escribe para filtrar` y la fila `› arregla el test  6 mensajes` en los dos tamaños",
+  "selector_lider_l_abre_sesiones: Ctrl+X y `l` con una sesión abren el selector de sesiones",
+]
+no_hagas = [
+  "No cargues sesiones ni modelos aquí: `sessions` y `models` los rellena quien arranca la TUI (F8.24c)",
+  "No quites la orden `/modelo <nombre>`",
+  "No cambies los tests de `commands.rs` ni los del líder que ya existen",
+]
+
+[[tarea]]
+id = "F8.24c"
+nombre = "tui-selector-datos"
+titulo = "TUI: lista real de modelos y retomar una conversación guardada"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.24b"]
+toca = ["crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-tui selector_retomar && cargo test -p pcode-cli selector"
+contexto = [
+  "crates/pcode-tui/src/run.rs (struct `TuiOptions`; en `run_tui`, el bloque `if history.len() > 1 { for m in &history { … } }` y el `match cmd` de órdenes)",
+  "crates/pcode-cli/src/chat.rs (struct `Persist`, funciones `load_last` y `tui`)",
+  "crates/pcode-config/src/lib.rs (struct `Config`: `providers: BTreeMap<String, ProviderCfg>` con `model: Option<String>` y `preferences.model: Option<String>`)",
+]
+objetivo = '''
+1. `run.rs`: saca el bucle que convierte el historial en entradas a una función pública
+   `entries_of(history: &[Message]) -> Vec<Entry>` (mensajes de usuario → `Entry::User`; de asistente con
+   texto → `Entry::Assistant { done: true }`; el resto se salta) y úsala en `run_tui`
+   (`app.entries.extend(entries_of(&history))` dentro del mismo `if history.len() > 1`).
+2. `run.rs`, `TuiOptions`: añade `pub models: Vec<String>` (doc: «Modelos para `/modelos`») y
+   `pub load_session: LoadSession` (firma abajo). En `run_tui`: `app.models = …` tras crear `app`, y guarda
+   `let mut load_session = opts.load_session;`.
+3. `run.rs`, `match cmd`: añade `Command::Resume(id)`: si `turn.is_some()`, añade
+   `Entry::Info(t(lang, "wait").into())`; si no, llama a `load_session(id)`: con `Some(msgs)`,
+   `history = msgs; app.entries = entries_of(&history); app.title.clear();` y marca
+   `s.current = s.id == id` en cada elemento de `app.sessions`; con `None`, `Entry::Info(t(lang, "unknown").into())`.
+4. `chat.rs`: añade `fn load_session(store: &Store, id: i64) -> Option<Vec<Message>>` (los eventos `mensaje`
+   de esa sesión, como en `load_last`; `None` si no hay ninguno) y haz que `load_last` la use.
+5. `chat.rs`: añade `fn model_choices(cfg: &Config, current: &str) -> Vec<String>`: `current`, el
+   `preferences.model` y el `model` de cada proveedor, sin vacíos ni repetidos, con `current` primero y el
+   resto en orden alfabético.
+6. `chat.rs`, función `tui`: carga `let (cfg, _) = Config::load_layered(&a.config)?;` para `model_choices`.
+   Comparte `persist` entre los dos cierres con `Arc<Mutex<Persist>>` (`std::sync`): `on_turn` hace lo de
+   ahora tras `lock()`; `load_session` es
+   `Box::new(move |id| { let mut p = persist2.lock().unwrap(); let msgs = load_session(&p.store, id)?; p.session = Some(id); p.saved = msgs.len(); Some(msgs) })`.
+'''
+firmas = '''
+// crates/pcode-tui/src/run.rs
+/// Carga los mensajes de una conversación guardada (y la deja como conversación en curso).
+pub type LoadSession = Box<dyn FnMut(i64) -> Option<Vec<Message>> + Send>;
+
+/// Entradas de la transcripción para un historial ya guardado.
+pub fn entries_of(history: &[Message]) -> Vec<crate::Entry>;
+
+// crates/pcode-cli/src/chat.rs (privadas)
+fn load_session(store: &Store, id: i64) -> Option<Vec<Message>>;
+fn model_choices(cfg: &Config, current: &str) -> Vec<String>;
+'''
+ejemplo = '''
+entries_of(&[system("s"), user("hola"), assistant(""), assistant("qué tal")]) ==
+  [Entry::User("hola"), Entry::Assistant { text: "qué tal", done: true }]
+cfg de: [preferencias]\nmodelo = "p"\n[proveedores.a]\ntipo = "openai"\nurl = "http://x"\nmodelo = "m1"\n[proveedores.b]\ntipo = "openai"\nurl = "http://x"\nmodelo = "m0"
+model_choices(&cfg, "actual") == ["actual", "m0", "m1", "p"]
+model_choices(&cfg, "m1")     == ["m1", "m0", "p"]
+'''
+tests = [
+  "selector_retomar_carga_historial: (en `run.rs`) el caso `entries_of` del ejemplo",
+  "selector_modelos_sin_repetidos_y_actual_primero: (en `chat.rs`, nuevo `mod tests`) los dos casos de `model_choices`, con la `Config` creada con `toml::from_str`",
+  "selector_carga_una_sesion_guardada: (en `chat.rs`) con `Store::open_in_memory()`, una sesión con dos eventos `mensaje` y otro de otro tipo, `load_session` devuelve 2 mensajes y `None` para un id que no existe",
+]
+no_hagas = [
+  "No añadas `pcode-store` ni `pcode-config` como dependencias de `pcode-tui`",
+  "No pidas la lista de modelos al proveedor por red: sale solo de la configuración",
+  "No cambies el comportamiento de `--continuar`",
+]
 
 [[tarea]]
 id = "F8.25"
 nombre = "tui-diff"
 titulo = "TUI: revisar el diff del turno y aceptar o revertir por archivo"
 fase = "F8"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F8.15"]
-toca = ["crates/pcode-tui/src/diff.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs"]
-acepta = "cargo test -p pcode-tui diff"
-contexto = ["crates/pcode-core/src/checkpoint.rs"]
+toca = []
+acepta = "cargo test -p pcode-core --test checkpoint archivo && cargo test -p pcode-tui diff"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-Al terminar un turno con cambios, Ctrl+R abre la revisión: lista de archivos con +/−, diff coloreado con símbolos, `a`
-acepta, `r` revierte ese archivo (con el punto de control) y `e` abre en `$EDITOR`.
+Tarea de cierre de F8.25a (diff y reversión de un archivo en los puntos de control), F8.25b (vista de
+revisión, lógica pura) y F8.25c (`/cambios` en la TUI).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
 '''
-tests = ["diff_render_80x24", "revertir_un_archivo", "sin_cambios_no_abre"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+notas = '''
+Respecto al plan antiguo: la revisión se abre con `/cambios` (o Ctrl+X d) y no con Ctrl+R, que queda para la
+búsqueda en el historial (F10.34); abrir el archivo en `$EDITOR` desde la revisión queda fuera.
+'''
+
+[[tarea]]
+id = "F8.25a"
+nombre = "checkpoint-diff-archivo"
+titulo = "Puntos de control: diff de un archivo de un turno y revertir solo ese archivo"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.15"]
+toca = ["crates/pcode-core/src/checkpoint.rs", "crates/pcode-core/tests/checkpoint.rs"]
+acepta = "cargo test -p pcode-core --test checkpoint archivo"
+contexto = [
+  "crates/pcode-core/src/checkpoint.rs (funciones `changes`, `undo`, `manifest`, `turn_dir`, `read_opt` y `put`: el manifiesto es `{\"files\":[{\"path\":…,\"existed\":bool}]}` y el contenido anterior del archivo `i` está en `<turno>/antes/<i>`)",
+  "crates/pcode-core/tests/checkpoint.rs (test `deshacer_restaura_y_borra_creados`: cómo se prepara un turno en un directorio temporal)",
+]
+objetivo = '''
+1. `checkpoint.rs`, en `impl Checkpoints`: añade `file_diff` y `revert_file` (firmas abajo).
+2. Las dos buscan `path` en `manifest(turn)["files"]` (comparando con el campo `path`); el índice `i` de esa
+   entrada da el archivo `turn_dir(turn)/antes/<i>`. «Antes» es su contenido si `existed` es `true`; si no,
+   el archivo no existía.
+3. `file_diff(turn, path)`: `None` si el turno o el archivo no están. Si no, el diff unificado entre «antes»
+   (cadena vacía si no existía) y el contenido actual de `root/path` (cadena vacía si no existe), con
+   `similar::TextDiff::from_lines(&antes, &ahora).unified_diff().context_radius(3).header(&format!("a/{path}"), &format!("b/{path}")).to_string()`.
+   Convierte los bytes con `String::from_utf8_lossy`. Si no hay diferencias devuelve `Some(String::new())`.
+4. `revert_file(turn, path)`: `Ok(false)` si el turno o el archivo no están. Si no, deja `root/path` como
+   «antes» con `put(&self.root.join(path), antes.as_deref())` (lo borra si no existía) y devuelve `Ok(true)`.
+   No cambia el manifiesto.
+5. Añade los tests de la lista a `tests/checkpoint.rs`.
+'''
+firmas = '''
+// crates/pcode-core/src/checkpoint.rs, en `impl Checkpoints`
+    /// Diff unificado de `path` entre como estaba antes de `turn` y como está ahora (`None` si el turno no
+    /// tocó ese archivo).
+    pub fn file_diff(&self, turn: u64, path: &str) -> Option<String>;
+
+    /// Deja `path` como estaba antes de `turn` (lo borra si el turno lo creó). `Ok(false)` si el turno no
+    /// tocó ese archivo.
+    pub fn revert_file(&mut self, turn: u64, path: &str) -> io::Result<bool>;
+'''
+ejemplo = '''
+a.txt era "uno\ndos\n"; en el turno 1 se guarda (`cp.save("a.txt")`) y pasa a "uno\nDOS\n"; b.txt se crea con "b\n".
+cp.file_diff(1, "a.txt").unwrap() contiene "--- a/a.txt", "+++ b/a.txt", "-dos" y "+DOS"
+cp.file_diff(1, "b.txt").unwrap() contiene "+b"
+cp.file_diff(1, "c.txt") == None
+cp.revert_file(1, "a.txt") == Ok(true)  -> a.txt vuelve a ser "uno\ndos\n"; b.txt sigue existiendo
+cp.revert_file(1, "b.txt") == Ok(true)  -> b.txt ya no existe
+cp.revert_file(1, "c.txt") == Ok(false)
+'''
+tests = [
+  "diff_de_un_archivo_del_turno: los tres casos de `file_diff` del ejemplo",
+  "revertir_un_archivo_no_toca_los_demas: tras `revert_file(1, \"a.txt\")`, `a.txt` tiene el contenido anterior y `b.txt` sigue igual",
+  "revertir_un_archivo_creado_lo_borra: `revert_file(1, \"b.txt\")` devuelve true y `b.txt` deja de existir",
+  "revertir_un_archivo_ajeno_al_turno: `revert_file(1, \"c.txt\")` devuelve `Ok(false)` y no crea nada",
+  "deshacer_tras_revertir_un_archivo_sigue_funcionando: tras revertir `a.txt`, `cp.undo()` devuelve el turno y deja `a.txt` como antes y `b.txt` borrado",
+]
+no_hagas = [
+  "No cambies `undo`, `redo` ni el formato del manifiesto",
+  "No añadas dependencias: `similar` ya está en `pcode-core`",
+  "No borres ni cambies los tests que ya hay en `tests/checkpoint.rs`",
+]
+notas = '''
+El filtro de `acepta` es `archivo`: los cinco nombres de test lo contienen; no los renombres.
+'''
+
+[[tarea]]
+id = "F8.25b"
+nombre = "tui-diff-vista"
+titulo = "TUI: vista de revisión de cambios (lista de archivos y diff), lógica pura"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.25a", "F8.24b"]
+toca = ["crates/pcode-tui/src/diff.rs", "crates/pcode-tui/src/lib.rs", "crates/pcode-tui/src/commands.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui diff::"
+contexto = [
+  "crates/pcode-tui/src/side.rs (función `change_row(c, width)`: la fila ` M ruta +3 −1` que se reutiliza)",
+  "crates/pcode-tui/src/theme.rs (estilos `good()`, `bad()`, `strong()`, `dimmed()`, `text()`)",
+  "crates/pcode-tui/src/markdown.rs (función `wrap(line, width) -> Vec<Line>`)",
+]
+objetivo = '''
+1. Crea `diff.rs` con `DiffView`, `DiffAction` y `diff_lines` (firmas abajo). Sin E/S.
+2. `DiffView::new(turn, files)`: `selected = 0`, `diff` vacío, `scroll = 0`.
+3. `DiffView::key(k)`:
+   - `Up` o `Char('k')`: si `selected > 0`, lo baja en 1, pone `scroll = 0` y devuelve `Load(ruta nueva)`;
+     si ya es 0, `None`. `Down` o `Char('j')`: lo mismo hacia abajo sin pasar de `files.len() - 1`.
+   - `PageDown`: `scroll += 10`; `PageUp`: `scroll = scroll.saturating_sub(10)`. → `None`.
+   - `Char('r')`: `Revert(ruta seleccionada)`. `Char('a')`, `Char('q')` o `Esc`: `Close`.
+   - Otra tecla, o `files` vacío: `None` (salvo cerrar, que siempre funciona).
+4. `DiffView::file_rows(width)`: por cada archivo, `(texto, seleccionada)` con
+   `"›" + change_row(c, width - 1)` para la seleccionada y `" " + change_row(c, width - 1)` para el resto.
+5. `diff_lines(diff, width, th)`: una o más `Line` por línea del diff (pártelas con `wrap`): las que empiezan
+   por `+++` o `---` con `th.strong()`; por `@@` con `th.dimmed()`; por `+` con `th.good()`; por `-` con
+   `th.bad()`; el resto con `th.text()`. El texto no se altera (el prefijo `+`/`-` se conserva: el color
+   nunca es la única señal). Un diff vacío da una sola línea con `t(lang, "diff_empty")` en `th.dimmed()`.
+6. `commands.rs`: añade al final de `COMMANDS` `cambios`/`diff` («revisa los cambios del último turno» /
+   «review the last turn's changes»), `external: false`.
+7. `i18n.rs`: añade al final de `ES` y `EN`: `diff_title` =
+   `" Cambios del turno · ↑/↓ archivo · r revierte · a acepta "` / `" Turn changes · ↑/↓ file · r revert · a accept "`,
+   `diff_empty` = `"(sin diferencias)"` / `"(no differences)"`, `no_changes` =
+   `"El último turno no cambió ningún archivo."` / `"The last turn did not change any file."`,
+   `reverted` = `"↶ Revertido:"` / `"↶ Reverted:"`.
+8. `lib.rs`: añade `pub mod diff;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/diff.rs
+use crate::i18n::Lang;
+use crate::theme::Theme;
+use pcode_core::FileChange;
+use ratatui::crossterm::event::KeyEvent;
+use ratatui::text::Line;
+
+/// Revisión de los cambios de un turno.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiffView {
+    /// Turno (número del punto de control).
+    pub turn: u64,
+    /// Archivos que cambió.
+    pub files: Vec<FileChange>,
+    /// Archivo elegido.
+    pub selected: usize,
+    /// Diff del archivo elegido (lo rellena quien ejecuta `Load`).
+    pub diff: String,
+    /// Líneas desplazadas del diff.
+    pub scroll: u16,
+}
+
+/// Lo que pide una tecla en la revisión.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiffAction { None, Close, Load(String), Revert(String) }
+
+impl DiffView {
+    pub fn new(turn: u64, files: Vec<FileChange>) -> DiffView;
+    pub fn key(&mut self, k: KeyEvent) -> DiffAction;
+    pub fn file_rows(&self, width: u16) -> Vec<(String, bool)>;
+}
+
+/// Líneas del diff con estilo, ajustadas a `width`.
+pub fn diff_lines(diff: &str, width: u16, th: &Theme, lang: Lang) -> Vec<Line<'static>>;
+'''
+ejemplo = '''
+vista con files = [a.rs (+3 −1), b.rs (creado, +2)]:
+  file_rows(30) == [("› M a.rs +3 −1", true), ("  A b.rs +2", false)]
+  Down -> Load("b.rs") y selected == 1; otro Down -> None
+  `r`  -> Revert("b.rs");  Esc -> Close
+diff_lines("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-dos\n+DOS\n uno\n", 80, &th, Lang::Es) -> 6 líneas cuyo texto es el de entrada;
+  con un tema con color, la de "+DOS" tiene fg == th.ok y la de "-dos" fg == th.err
+diff_lines("", 80, &th, Lang::Es) -> ["(sin diferencias)"]
+'''
+tests = [
+  "diff_flechas_cambian_de_archivo_y_piden_cargar: el caso de Down del ejemplo, y Up en el primero devuelve `None`",
+  "diff_r_revierte_el_seleccionado_y_esc_cierra: `r` da `Revert(\"a.rs\")` con `selected == 0`; Esc, `a` y `q` dan `Close`",
+  "diff_filas_de_archivos_marcan_la_seleccion: el caso `file_rows(30)` del ejemplo",
+  "diff_lineas_conservan_prefijo_y_colorean: el caso de 6 líneas del ejemplo, con `Theme::by_name(\"oscuro\", false)`",
+  "diff_sin_color_mantiene_los_prefijos: con `Theme::by_name(\"oscuro\", true)` el texto de las líneas sigue empezando por `+` y `-`",
+  "diff_vacio_lo_dice: el último caso del ejemplo",
+  "diff_pagina_desplaza: PageDown deja `scroll == 10` y PageUp lo devuelve a 0",
+]
+no_hagas = [
+  "No lances `git` ni leas archivos: el diff llega como texto",
+  "No toques `app.rs`, `render.rs` ni `run.rs` (es F8.25c)",
+]
+
+[[tarea]]
+id = "F8.25c"
+nombre = "tui-diff-cableado"
+titulo = "TUI: `/cambios` abre la revisión del último turno y `r` revierte un archivo"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.25b", "F8.24c"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-tui diff"
+contexto = [
+  "crates/pcode-tui/src/diff.rs (`DiffView`, `DiffAction`, `diff_lines`)",
+  "crates/pcode-tui/src/run.rs (función `undo_redo`: cómo se abre `pcode_core::Checkpoints::open(root)`; y el `match cmd` de `run_tui`)",
+  "crates/pcode-core/src/checkpoint.rs (`Checkpoints::list() -> Vec<TurnInfo { turn, undone, … }>` del más reciente al más antiguo, `changes(turn)`, `file_diff(turn, path)`, `revert_file(turn, path)`)",
+  "crates/pcode-tui/src/app.rs (funciones `key`, `submit` y `leader_key`; el bloque del selector `picker` es el modelo)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` `pub diff: Option<crate::diff::DiffView>` (`None` en `App::new`) y a `Command` las
+   variantes `OpenDiff`, `LoadDiff { turn: u64, path: String }` y `RevertFile { turn: u64, path: String }`
+   (con su `///`).
+2. `app.rs`, `submit`: brazo `"cambios" | "changes" | "diff"`: si `self.busy`, `Entry::Info(wait)` y
+   `vec![]`; si no, `vec![Command::OpenDiff]`. En `leader_key`: `Char('d')` ejecuta `/cambios`.
+3. `app.rs`, `key`: tras los bloques de aprobación y ayuda (antes del selector), si `self.diff` es `Some(v)`:
+   `match v.key(k)`: `None` → `vec![]`; `Close` → `self.diff = None; vec![]`; `Load(path)` →
+   `vec![Command::LoadDiff { turn: v.turn, path }]`; `Revert(path)` → `vec![Command::RevertFile { turn: v.turn, path }]`.
+4. `run.rs`: añade la función pública `open_diff(root, lang) -> Result<DiffView, String>`: abre
+   `Checkpoints::open(root)`, toma el primer turno de `list()` con `undone == false`, sus `changes(turn)`;
+   si no hay turno o no hay cambios → `Err(t(lang, "no_changes").into())`; si no, una `DiffView::new` con
+   `diff` = `file_diff(turn, primer archivo).unwrap_or_default()`.
+5. `run.rs`, `match cmd`: `Command::OpenDiff` → `match open_diff(&root, lang)`: `Ok(v)` → `app.diff = Some(v)`;
+   `Err(m)` → `Entry::Info(m)`. `Command::LoadDiff { turn, path }` → si `app.diff` es `Some`, pon su `diff` a
+   `Checkpoints::open(&root).file_diff(turn, &path).unwrap_or_default()`. `Command::RevertFile { turn, path }`
+   → `Checkpoints::open(&root).revert_file(turn, &path)`: con `Ok(true)`, añade
+   `Entry::Info(format!("{} {path}", t(lang, "reverted")))` y recarga en la vista `files` (con
+   `changes(turn)`) y `diff` (con `file_diff`); con `Ok(false)` nada; con `Err(e)`, `Entry::Info(format!("✗ {e}"))`.
+6. `render.rs`: al final de `render`, si `app.diff` es `Some(v)`, dibuja sobre todo `body` (con `Clear`) un
+   bloque con borde redondeado y título `diff_title`; dentro, arriba, las filas de `v.file_rows(ancho)`
+   (como mucho 6; la seleccionada con `th.bubble()`), una línea vacía y debajo
+   `Paragraph::new(diff_lines(&v.diff, ancho, th, app.lang)).scroll((v.scroll, 0))`.
+'''
+firmas = '''
+// crates/pcode-tui/src/app.rs, en `pub enum Command`
+    /// Abrir la revisión de los cambios del último turno.
+    OpenDiff,
+    /// Cargar el diff de un archivo en la revisión abierta.
+    LoadDiff { turn: u64, path: String },
+    /// Dejar un archivo como estaba antes del turno.
+    RevertFile { turn: u64, path: String },
+
+// crates/pcode-tui/src/run.rs
+/// Revisión del último turno aplicado del proyecto (`Err` con el aviso si no cambió nada).
+pub fn open_diff(root: &std::path::Path, lang: Lang) -> Result<crate::diff::DiffView, String>;
+'''
+ejemplo = '''
+"/cambios" + Intro (no ocupado)            -> [Command::OpenDiff]
+con app.diff = Some(vista de a.rs y b.rs): Down -> [Command::LoadDiff { turn: 1, path: "b.rs" }]
+                                           `r`  -> [Command::RevertFile { turn: 1, path: "b.rs" }]
+                                           Esc  -> app.diff == None
+open_diff(dir sin puntos de control, Es)   -> Err("El último turno no cambió ningún archivo.")
+open_diff(dir con un turno que cambió a.txt de "uno\n" a "dos\n") -> Ok(v) con v.files.len() == 1 y v.diff que contiene "+dos"
+pantalla 80×24 con la vista: contiene "Cambios del turno" y "› M a.rs +3 −1"
+'''
+tests = [
+  "diff_orden_cambios_pide_abrir: `/cambios` devuelve `[Command::OpenDiff]`; con `busy = true` no devuelve nada",
+  "diff_teclas_van_a_la_vista: con la vista abierta, Down devuelve `LoadDiff`, `r` devuelve `RevertFile` y Esc la cierra, sin escribir en la entrada",
+  "diff_sin_cambios_no_abre: (en `run.rs`) `open_diff` en un directorio temporal vacío devuelve el `Err` del ejemplo",
+  "diff_abre_el_ultimo_turno: (en `run.rs`) el caso de `open_diff` con un turno (prepáralo como en el test `resumen_de_cambios_y_deshacer`)",
+  "diff_render_80x24: con una vista de dos archivos y un diff de 3 líneas, la pantalla contiene `Cambios del turno`, `› M a.rs +3 −1` y una línea del diff",
+  "diff_render_120x40: lo mismo a 120×40",
+]
+no_hagas = [
+  "No uses `git` para el diff: sale de los puntos de control",
+  "No cambies `undo_redo` ni las órdenes `/deshacer` y `/rehacer`",
+  "No abras la revisión sola al terminar un turno: solo con `/cambios` o Ctrl+X d",
+]
 
 [[tarea]]
 id = "F8.26"
 nombre = "tui-raton"
 titulo = "TUI: ratón opcional, enlaces y copiar al portapapeles"
 fase = "F8"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F5.30"]
-toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-config/src/lib.rs"]
-acepta = "cargo test -p pcode-tui raton"
-contexto = ["crates/pcode-tui/src/run.rs"]
+toca = []
+acepta = "cargo test -p pcode-tui osc:: && cargo test -p pcode-tui copiar && cargo test -p pcode-tui raton"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-`[preferencias] raton = true` activa la rueda y el clic en tools (desplegar) y en rutas (abrir en Studio o `$EDITOR`);
-`/copiar` copia la última respuesta con OSC 52 (funciona por SSH).
+Tarea de cierre de F8.26a (OSC 52, lógica pura), F8.26b (`/copiar`), F8.26c (`[preferencias] raton` y rueda)
+y F8.26d (clic para desplegar la salida de una tool).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
 '''
-tests = ["rueda_desplaza", "clic_en_tool_despliega", "osc52_bien_formado"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+notas = '''
+Fuera de alcance respecto al plan antiguo: el clic en rutas para abrirlas en Studio o en `$EDITOR`.
+'''
+
+[[tarea]]
+id = "F8.26a"
+nombre = "tui-osc52"
+titulo = "TUI: secuencia OSC 52 para copiar al portapapeles (lógica pura)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = ["crates/pcode-tui/src/osc.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui osc::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (enum `Entry`: variante `Assistant { text, done }`)",
+]
+objetivo = '''
+OSC 52 es la secuencia de escape con la que un programa de terminal pone texto en el portapapeles (funciona
+también por SSH): `ESC ] 52 ; c ; <texto en base64> BEL`.
+1. Crea `osc.rs` con `base64`, `osc52` y `last_assistant_text` (firmas abajo). Sin dependencias nuevas: el
+   base64 se escribe a mano.
+2. `base64(bytes)`: alfabeto estándar `A–Z a–z 0–9 + /`, con relleno `=`. Procesa de 3 en 3 bytes.
+3. `osc52(text)`: `format!("\x1b]52;c;{}\x07", base64(text.as_bytes()))`. Si `text` mide más de 100 000
+   bytes, se usa solo el principio (corta en un límite de carácter con `is_char_boundary`).
+4. `last_assistant_text(entries)`: el `text` de la última `Entry::Assistant` cuyo texto no está vacío
+   (recorre desde el final); `None` si no hay.
+5. `lib.rs`: añade `pub mod osc;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/osc.rs
+use crate::app::Entry;
+
+/// Base64 estándar con relleno.
+pub fn base64(bytes: &[u8]) -> String;
+/// Secuencia OSC 52 que copia `text` al portapapeles de la terminal.
+pub fn osc52(text: &str) -> String;
+/// Texto de la última respuesta del asistente.
+pub fn last_assistant_text(entries: &[Entry]) -> Option<String>;
+'''
+ejemplo = '''
+base64(b"") == ""        base64(b"f") == "Zg=="      base64(b"fo") == "Zm8="
+base64(b"foo") == "Zm9v" base64(b"foobar") == "Zm9vYmFy"
+base64("ñ".as_bytes()) == "w7E="
+osc52("hola") == "\x1b]52;c;aG9sYQ==\x07"
+last_assistant_text(&[User("a"), Assistant{text:"uno",done:true}, Tool{…}, Assistant{text:"",done:true}]) == Some("uno")
+'''
+tests = [
+  "base64_vectores_conocidos: los seis casos de `base64` del ejemplo",
+  "osc52_bien_formado: `osc52(\"hola\")` es exactamente la cadena del ejemplo",
+  "osc52_recorta_textos_enormes: con un texto de 200 000 letras `a`, la secuencia mide menos de 140 000 bytes y acaba en `\\x07`",
+  "ultima_respuesta_salta_las_vacias: el caso de `last_assistant_text` del ejemplo, y `None` con una lista sin asistente",
+]
+no_hagas = [
+  "No añadas el crate `base64` ni ninguna otra dependencia",
+  "No escribas en la terminal desde este módulo",
+]
+
+[[tarea]]
+id = "F8.26b"
+nombre = "tui-copiar"
+titulo = "TUI: `/copiar` copia la última respuesta al portapapeles"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.26a", "F8.25c"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/commands.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui copiar"
+contexto = [
+  "crates/pcode-tui/src/osc.rs (`osc52`, `last_assistant_text`)",
+  "crates/pcode-tui/src/app.rs (enum `Command` y el `match name` de `submit`)",
+  "crates/pcode-tui/src/run.rs (el `match cmd` de `run_tui`)",
+]
+objetivo = '''
+1. `app.rs`: añade la variante `Command::Copy(String)` (doc: «Copiar un texto al portapapeles de la terminal»).
+2. `app.rs`, `submit`: brazo `"copiar" | "copy"`: con `crate::osc::last_assistant_text(&self.entries)`: si es
+   `None`, añade `Entry::Info(t(self.lang, "nothing_to_copy").into())` y devuelve `vec![]`; si es `Some(txt)`,
+   añade `Entry::Info(t(self.lang, "copied").into())` y devuelve `vec![Command::Copy(txt)]`.
+3. `commands.rs`: añade al final de `COMMANDS` `copiar`/`copy` («copia la última respuesta al portapapeles» /
+   «copy the last answer to the clipboard»), `external: false`.
+4. `i18n.rs`: añade al final de `ES` y `EN`: `copied` = `"⎘ Última respuesta copiada al portapapeles."` /
+   `"⎘ Last answer copied to the clipboard."` y `nothing_to_copy` = `"Aún no hay ninguna respuesta que copiar."`
+   / `"There is no answer to copy yet."`.
+5. `run.rs`, `match cmd`: `Command::Copy(text)` →
+   `{ use std::io::Write; let mut out = std::io::stdout(); let _ = write!(out, "{}", crate::osc::osc52(&text)); let _ = out.flush(); }`.
+'''
+sin_firmas = "Solo añade la variante `Command::Copy(String)`; el resto es un brazo de `submit`, textos y una escritura en stdout"
+ejemplo = '''
+entradas: [User("hola"), Assistant{text:"respuesta", done:true}]
+teclear "/copiar" + Intro -> [Command::Copy("respuesta")] y la última entrada es Info("⎘ Última respuesta copiada al portapapeles.")
+sin ninguna respuesta     -> [] y la última entrada es Info("Aún no hay ninguna respuesta que copiar.")
+'''
+tests = [
+  "copiar_la_ultima_respuesta: el primer caso del ejemplo",
+  "copiar_sin_respuestas_avisa: el segundo caso del ejemplo",
+  "copiar_esta_en_el_catalogo: `commands::find(\"copiar\")` y `commands::find(\"copy\")` devuelven la misma entrada",
+]
+no_hagas = [
+  "No uses ningún programa externo (xclip, pbcopy…): solo la secuencia OSC 52",
+  "No escribas en stdout desde `app.rs`",
+]
+
+[[tarea]]
+id = "F8.26c"
+nombre = "tui-raton-rueda"
+titulo = "TUI: `[preferencias] raton = true` activa el ratón y la rueda desplaza la conversación"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.26b"]
+toca = ["crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/app.rs"]
+acepta = "cargo test -p pcode-tui raton && cargo test -p pcode-config raton && cargo build -p pcode-cli"
+contexto = [
+  "crates/pcode-config/src/lib.rs (struct `PrefsCfg` y, en la función que mezcla la configuración del usuario con la del proyecto, la línea `c.preferences.theme = p.theme.or(c.preferences.theme);`)",
+  "crates/pcode-cli/src/chat.rs (struct `Prepared` con el campo `theme`, función `prepare` y función `tui`)",
+  "crates/pcode-tui/src/run.rs (struct `TuiOptions`; en `run_tui`: el hilo de teclado con `match event::read()`, y las líneas `EnableBracketedPaste` / `DisableBracketedPaste`)",
+  "crates/pcode-tui/src/app.rs (enum `Event`, función `update` y los brazos de PageUp/PageDown en `act`)",
+]
+objetivo = '''
+1. `pcode-config/src/lib.rs`, `PrefsCfg`: añade el campo `mouse` (firma abajo). En la mezcla de
+   preferencias, junto a la línea del tema: `c.preferences.mouse = p.mouse.or(c.preferences.mouse);`.
+2. `chat.rs`: añade `mouse: bool` a `Prepared`, rellénalo en `prepare` con
+   `cfg.preferences.mouse.unwrap_or(false)` y pásalo en `tui` como `TuiOptions { mouse: p.mouse, .. }`.
+3. `run.rs`, `TuiOptions`: añade `pub mouse: bool` (doc: «Capturar el ratón (rueda y clic)»). En `run_tui`,
+   guarda `let mouse = opts.mouse;`; junto a `EnableBracketedPaste`, si `mouse`,
+   `let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);` y, junto a
+   `DisableBracketedPaste`, si `mouse`, lo mismo con `event::DisableMouseCapture`.
+4. `run.rs`, hilo de teclado: nuevo brazo en el `match event::read()`:
+   `Ok(TermEvent::Mouse(m))` → según `m.kind`: `event::MouseEventKind::ScrollUp` envía
+   `Msg::Ui(Event::Scroll(3))`; `ScrollDown` envía `Msg::Ui(Event::Scroll(-3))`; el resto se ignora.
+5. `app.rs`: añade la variante `Event::Scroll(i16)` (doc: «Rueda del ratón: líneas hacia arriba (positivo) o
+   hacia abajo») y en `update`: positivo → `self.scroll = self.scroll.saturating_add(n as u16)`; negativo →
+   `saturating_sub`; devuelve `vec![]`.
+'''
+firmas = '''
+// crates/pcode-config/src/lib.rs, en `pub struct PrefsCfg`
+    /// Capturar el ratón en la TUI (rueda y clic). Por defecto no, para no quitar la selección de texto de la terminal.
+    #[serde(rename = "raton")]
+    pub mouse: Option<bool>,
+
+// crates/pcode-tui/src/app.rs, en `pub enum Event`
+    /// Rueda del ratón: líneas hacia arriba (positivo) o hacia abajo (negativo).
+    Scroll(i16),
+'''
+ejemplo = '''
+pcode.toml:  [preferencias]\nraton = true      -> cfg.preferences.mouse == Some(true)
+sin la clave                                    -> None (la TUI no captura el ratón)
+app.update(Event::Scroll(3))  -> app.scroll == 3;  después Event::Scroll(-3) -> 0;  otro Scroll(-3) -> 0 (no baja de 0)
+'''
+tests = [
+  "raton_rueda_desplaza: (en `app.rs`) los tres pasos del ejemplo",
+  "raton_preferencia_se_lee: (en `pcode-config`, `mod tests`) `toml::from_str::<Config>(\"[preferencias]\\nraton = true\\n\")` da `preferences.mouse == Some(true)` y sin la clave da `None`",
+]
+no_hagas = [
+  "No actives el ratón por defecto",
+  "No trates el clic todavía (es F8.26d)",
+  "No cambies otros campos de `PrefsCfg`",
+]
+
+[[tarea]]
+id = "F8.26d"
+nombre = "tui-raton-clic"
+titulo = "TUI: clic en una tool despliega o pliega su salida"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.26c"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-tui raton"
+contexto = [
+  "crates/pcode-tui/src/render.rs (funciones `transcript_lines` y `render`: el `Layout::vertical` del principio, el cálculo de `input_h` y el de `offset` para la transcripción)",
+  "crates/pcode-tui/src/app.rs (campo `expand_tools`, enum `Event`, función `update`)",
+  "crates/pcode-tui/src/run.rs (hilo de teclado de `run_tui`, brazo `TermEvent::Mouse`; y el bucle principal, donde `Msg::Ui(ev)` llega antes de `app.update(ev)`)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` `pub expanded: std::collections::BTreeSet<usize>` (doc: «Índices de las tools con
+   la salida desplegada a mano»), vacío en `App::new`; y a `Event` las variantes `Click { col: u16, row: u16 }`
+   y `ToggleEntry(usize)`. En `update`: `ToggleEntry(i)`: si `self.entries.get(i)` es un `Entry::Tool`,
+   quita `i` de `expanded` si estaba o lo añade si no; `Click { .. }` no hace nada (lo traduce `run.rs`). Las
+   dos devuelven `vec![]`. En el brazo `"nuevo" | "new"` de `submit`, vacía `expanded`.
+2. `render.rs`: convierte el cuerpo de `transcript_lines` en una función privada
+   `fn transcript_owned(app, width) -> Vec<(usize, Line<'static>)>` que devuelve cada línea con el índice de
+   su entrada (la línea en blanco tras cada entrada también lleva ese índice); `transcript_lines` pasa a ser
+   `transcript_owned(app, width).into_iter().map(|x| x.1).collect()`. En el cálculo de `max` de una tool usa
+   `app.expand_tools || app.expanded.contains(&idx) || *state == ToolState::Err`.
+3. `render.rs`: saca a una función pública `body_area(app, area) -> Rect` el cálculo de la zona de la
+   transcripción que hoy hace `render` (el `Layout::vertical` con `input_h`, y el recorte de la barra lateral
+   si está visible) y úsala en `render`.
+4. `render.rs`: añade `entry_at(app, area, col, row) -> Option<usize>`: `None` si `(col, row)` no está dentro
+   de `body_area(app, area)`; si no, calcula las líneas con `transcript_owned(app, body.width)`, el mismo
+   `offset` que usa `render` y devuelve el índice de entrada de la línea `offset + (row - body.y)` (o `None`
+   si no hay línea ahí).
+5. `run.rs`, hilo de teclado: en el brazo `TermEvent::Mouse(m)`, con
+   `event::MouseEventKind::Down(event::MouseButton::Left)` envía
+   `Msg::Ui(Event::Click { col: m.column, row: m.row })`.
+6. `run.rs`, bucle principal: justo antes de `app.update(ev)`, si `ev` es `Event::Click { col, row }`,
+   sustitúyelo: con `let size = term.size()?;` y
+   `crate::render::entry_at(&app, Rect::new(0, 0, size.width, size.height), col, row)`, `Some(i)` →
+   `Event::ToggleEntry(i)`; `None` → deja el `Click`.
+'''
+firmas = '''
+// crates/pcode-tui/src/app.rs, en `pub enum Event`
+    /// Clic izquierdo en una celda de la pantalla.
+    Click { col: u16, row: u16 },
+    /// Desplegar o plegar la salida de la tool de esa entrada.
+    ToggleEntry(usize),
+
+// crates/pcode-tui/src/render.rs
+/// Zona de la pantalla donde se dibuja la transcripción.
+pub fn body_area(app: &App, area: ratatui::layout::Rect) -> ratatui::layout::Rect;
+/// Índice de la entrada dibujada en esa celda (`None` fuera de la transcripción).
+pub fn entry_at(app: &App, area: ratatui::layout::Rect, col: u16, row: u16) -> Option<usize>;
+'''
+ejemplo = '''
+app de `sample()` (tests de render.rs): entradas [User, Assistant, Tool bash con 5 líneas de salida], pantalla 80×24.
+La tool se dibuja en la fila 7 ("✓ bash cargo test").
+entry_at(&app, Rect::new(0,0,80,24), 5, 7) == Some(2)        entry_at(…, 5, 2) == Some(0)
+entry_at(…, 5, 0) == None (cabecera)                          entry_at(…, 5, 23) == None (barra de estado)
+app.update(Event::ToggleEntry(2)) -> app.expanded == {2} y la pantalla muestra "    l5"; otra vez -> se pliega ("… +2 líneas")
+app.update(Event::ToggleEntry(0)) -> no cambia nada (no es una tool)
+'''
+tests = [
+  "raton_clic_en_tool_despliega: `ToggleEntry(2)` sobre `sample()` hace que la pantalla 80×24 contenga `    l5`, y repetirlo vuelve a mostrar `… +2 líneas`",
+  "raton_clic_fuera_de_tools_no_hace_nada: `ToggleEntry(0)` y `ToggleEntry(99)` dejan `expanded` vacío",
+  "raton_entry_at_localiza_la_entrada: los cuatro casos de `entry_at` del ejemplo",
+  "raton_entry_at_con_scroll: con 50 entradas `Info` y `app.scroll = 10`, la fila 18 corresponde a la entrada 44",
+  "raton_transcripcion_no_cambia: `transcript_lines` devuelve el mismo número de líneas que antes para `sample()` (12) y los tests de render existentes siguen pasando",
+]
+no_hagas = [
+  "No cambies lo que dibuja `render` cuando `expanded` está vacío",
+  "No abras archivos ni enlaces con el clic",
+  "No dupliques el cálculo del layout: `render` y `entry_at` usan `body_area`",
+]
 
 [[tarea]]
 id = "F8.27"

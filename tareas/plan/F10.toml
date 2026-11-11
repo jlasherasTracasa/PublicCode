@@ -1,0 +1,1691 @@
+# Tareas de la fase F10. Índice de fases e hitos: tareas/plan.toml. Tras editar: tools/tareas/generar.py
+
+[[tarea]]
+id = "F10.31"
+nombre = "tui-ordenes-externas"
+titulo = "TUI: órdenes `/` que resuelve quien arranca la TUI (`Command::Extra`)"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.26"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/commands.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-tui extra && cargo build -p pcode-cli"
+contexto = [
+  "crates/pcode-tui/src/app.rs (enum `Command` y el `match name` de `submit`, cuyo último brazo `_ =>` es «orden desconocida»)",
+  "crates/pcode-tui/src/run.rs (struct `TuiOptions` y, en `run_tui`, el brazo `Command::Send(text)` del `match cmd`: cómo se lanza un turno)",
+  "crates/pcode-tui/src/commands.rs (struct `CommandSpec` con el campo `external` y la tabla `COMMANDS`)",
+  "crates/pcode-cli/src/chat.rs (función `tui`: donde se construye `TuiOptions`)",
+]
+objetivo = '''
+Algunas órdenes necesitan datos que `pcode-tui` no tiene (configuración, skills, base de sesiones). Se
+resuelven con un cierre que pasa quien arranca la TUI.
+1. `commands.rs`: añade al final de `COMMANDS`, con `external: true`: `skills`/`skills` («lista las skills
+   del proyecto» / «list the project's skills»), `mcp`/`mcp` («servidores MCP configurados» / «configured MCP
+   servers») y `permisos`/`permissions` («reglas de permisos en vigor» / «permission rules in force»).
+2. `app.rs`: añade `Command::Extra { name: String, arg: String }` (doc: «Orden que resuelve quien arranca la
+   TUI; `name` es el nombre en español»). En el `match name` de `submit`, justo antes del brazo `_ =>`:
+   `n if crate::commands::find(n).is_some_and(|c| c.external) => vec![Command::Extra { name: crate::commands::find(n).unwrap().name.to_string(), arg: arg.to_string() }]`.
+3. `run.rs`: añade `Reply`, `Extras` y `apply_reply` (firmas abajo) y a `TuiOptions` el campo
+   `pub extras: Extras` (doc: «Resuelve las órdenes externas»). `apply_reply`: con `Reply::Info(s)` añade
+   `Entry::Info(s)` y devuelve `None`; con `Reply::Prompt { label, text }`: si `app.busy`, añade
+   `Entry::Info(t(app.lang, "wait").into())` y devuelve `None`; si no, añade `Entry::User(label.clone())`,
+   pone `app.busy = true` y `app.scroll = 0`, y devuelve `Some((label, text))`.
+4. `run.rs`, `run_tui`: guarda `let mut extras = opts.extras;` al principio. En el `match cmd`:
+   `Command::Extra { name, arg }` → `if let Some((label, text)) = apply_reply(&mut app, extras(&name, &arg))`
+   lanza un turno igual que el brazo `Command::Send`, pero con `text` como mensaje completo (sin
+   `expand_message`) y `Msg::Turn(label, r)` al terminar.
+5. `chat.rs`, función `tui`: pasa en `TuiOptions`
+   `extras: Box::new(|name, _| pcode_tui::run::Reply::Info(format!("La orden /{name} no está disponible.")))`
+   (F10.32 la sustituye por la real).
+'''
+firmas = '''
+// crates/pcode-tui/src/run.rs
+/// Respuesta a una orden externa.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reply {
+    /// Texto que se muestra como aviso.
+    Info(String),
+    /// Mensaje que se envía al agente: `label` es lo que se ve en la conversación y `text` lo que recibe el modelo.
+    Prompt { label: String, text: String },
+}
+
+/// Resuelve una orden externa: recibe el nombre (en español) y el argumento.
+pub type Extras = Box<dyn FnMut(&str, &str) -> Reply + Send>;
+
+/// Aplica la respuesta al estado; devuelve `(label, text)` si hay que lanzar un turno con `text`.
+pub fn apply_reply(app: &mut App, reply: Reply) -> Option<(String, String)>;
+
+// crates/pcode-tui/src/app.rs, en `pub enum Command`
+    /// Orden que resuelve quien arranca la TUI; `name` es el nombre en español.
+    Extra { name: String, arg: String },
+'''
+ejemplo = '''
+teclear "/skills" + Intro          -> [Command::Extra { name: "skills", arg: "" }]
+teclear "/permissions x" + Intro   -> [Command::Extra { name: "permisos", arg: "x" }]
+apply_reply(&mut app, Reply::Info("hola".into()))                         -> None; última entrada Info("hola")
+apply_reply(&mut app, Reply::Prompt{label:"/init".into(), text:"T".into()}) -> Some(("/init","T")); última entrada User("/init"); app.busy
+con app.busy = true, la misma Prompt                                      -> None y un Info con el aviso de espera
+'''
+tests = [
+  "extra_orden_externa_emite_command: (en `app.rs`) los dos primeros casos del ejemplo",
+  "extra_orden_normal_no_cambia: (en `app.rs`) `/uso` no devuelve ningún `Command::Extra`",
+  "extra_reply_info_se_muestra: (en `run.rs`) el caso `Reply::Info` del ejemplo",
+  "extra_reply_prompt_lanza_turno: (en `run.rs`) el caso `Reply::Prompt` del ejemplo",
+  "extra_reply_prompt_ocupado_espera: (en `run.rs`) el último caso del ejemplo",
+]
+no_hagas = [
+  "No implementes aquí qué hacen `/skills`, `/mcp` ni `/permisos`: es F10.32",
+  "No añadas dependencias a `pcode-tui`",
+  "No cambies el brazo `Command::Send`",
+]
+
+[[tarea]]
+id = "F10.32"
+nombre = "ordenes-skills-mcp-permisos"
+titulo = "TUI: `/skills`, `/mcp` y `/permisos` muestran lo que hay configurado"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.23", "F10.31"]
+toca = ["crates/pcode-cli/src/tui_extras.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/chat.rs"]
+toca_extra = ["crates/pcode-cli/Cargo.toml"]
+acepta = "cargo test -p pcode-cli tui_extras::"
+contexto = [
+  "crates/pcode-skills/src/registry.rs (`Registry::load(dirs: &[PathBuf]) -> Result<Registry, SkillError>`, `Registry::all()` y `Registry::index()`: una línea `- nombre: descripción` por skill)",
+  "crates/pcode-config/src/lib.rs (struct `McpCfg { command: Vec<String>, disabled: bool, … }`; `Config.mcp: BTreeMap<String, McpCfg>`; `user_config_path()`)",
+  "crates/pcode-policy/src/caps.rs (struct `Capabilities`: `read`, `write`, `deny_write`, `deny_commands`, `ask_commands`, `allow_commands`, `net_allow`; `Capabilities::interactive_defaults()`)",
+  "crates/pcode-cli/src/chat.rs (funciones `interactive_policy` y `tui`; `crate::run::load_capabilities(path)` lee `[politica]` de un archivo)",
+]
+objetivo = '''
+1. `crates/pcode-cli/Cargo.toml`: añade `pcode-skills = { path = "../pcode-skills" }` en `[dependencies]`.
+2. Crea `tui_extras.rs` con `ExtraCtx`, `skills_text`, `mcp_text`, `permissions_text` y `reply` (firmas abajo).
+3. `skills_text(root)`: `Registry::load(&[root.join(".claude/skills"), root.join(".pcode/skills")])`. Con
+   error → `"✗ skills: <error>"`. Sin skills → `"No hay skills en .claude/skills ni en .pcode/skills."`. Si
+   hay → `"Skills (<n>):\n" + reg.index()`.
+4. `mcp_text(mcp)`: vacío → `"No hay servidores MCP configurados. Añade uno en [mcp.<nombre>] de pcode.toml."`.
+   Si no → `"Servidores MCP (<n>):"` y una línea por servidor, `"  · <nombre>: <orden unida con espacios>"`,
+   con `" (desactivado)"` al final si `disabled`; última línea:
+   `"pcode mcp muestra las tools de cada uno."`.
+5. `permissions_text(layers)`: por cada capa `(nombre, caps)`: una línea `"<nombre>:"` y, por cada lista NO
+   vacía, en este orden y con esta etiqueta, `"  <etiqueta>: <elementos unidos con ", ">"`: `leer`,
+   `escribir`, `no_escribir`, `denegar_ordenes`, `preguntar_ordenes`, `permitir_ordenes`, `red_permitir`. Si
+   una lista tiene más de 6 elementos, muestra los 6 primeros y `" … (+<resto>)"`. Si todas están vacías,
+   `"  (sin reglas)"`.
+6. `reply(ctx, name, _arg)`: `"skills"` → `Reply::Info(skills_text(&ctx.root))`; `"mcp"` →
+   `Reply::Info(mcp_text(&ctx.cfg.mcp))`; `"permisos"` → `Reply::Info(permissions_text(&capas))` con las capas
+   `("por defecto", Capabilities::interactive_defaults())`, `("usuario", load_capabilities(ruta))` solo si
+   `pcode_config::user_config_path()` es un archivo, y `("proyecto", load_capabilities(&ctx.config_path))`;
+   otro nombre → `Reply::Info(format!("La orden /{name} no está disponible."))`.
+7. `main.rs`: añade `mod tui_extras;`. `chat.rs`, función `tui`: construye
+   `ExtraCtx { root: cwd, cfg: Config::load_layered(&a.config)?.0, config_path: a.config.clone() }` y pasa
+   `extras: Box::new(move |name, arg| crate::tui_extras::reply(&ctx, name, arg))`.
+'''
+firmas = '''
+// crates/pcode-cli/src/tui_extras.rs
+use pcode_config::{Config, McpCfg};
+use pcode_policy::Capabilities;
+use pcode_tui::run::Reply;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+/// Lo que necesitan las órdenes externas de la TUI.
+pub struct ExtraCtx {
+    /// Raíz del proyecto.
+    pub root: PathBuf,
+    /// Configuración ya cargada.
+    pub cfg: Config,
+    /// Ruta del `pcode.toml` del proyecto.
+    pub config_path: PathBuf,
+}
+
+/// Skills del proyecto, una por línea.
+pub fn skills_text(root: &Path) -> String;
+/// Servidores MCP configurados.
+pub fn mcp_text(mcp: &BTreeMap<String, McpCfg>) -> String;
+/// Reglas de permisos, capa a capa.
+pub fn permissions_text(layers: &[(&str, Capabilities)]) -> String;
+/// Respuesta a una orden externa de la TUI.
+pub fn reply(ctx: &ExtraCtx, name: &str, arg: &str) -> Reply;
+'''
+ejemplo = '''
+proyecto con .claude/skills/adr/SKILL.md (name: adr, description: Registra una decisión):
+  skills_text(root) == "Skills (1):\n- adr: Registra una decisión"
+mcp = { github: orden ["npx","-y","srv"], viejo: orden ["x"], desactivado }:
+  "Servidores MCP (2):\n  · github: npx -y srv\n  · viejo: x (desactivado)\npcode mcp muestra las tools de cada uno."
+permissions_text(&[("proyecto", Capabilities { write: vec!["src/**".into()], ..Default::default() }), ("usuario", Capabilities::default())]) ==
+  "proyecto:\n  escribir: src/**\nusuario:\n  (sin reglas)"
+'''
+tests = [
+  "skills_lista_las_del_proyecto: en un directorio temporal con una skill (frontmatter `name` y `description`), el texto del ejemplo",
+  "skills_sin_carpeta_lo_dice: en un directorio vacío devuelve `No hay skills en .claude/skills ni en .pcode/skills.`",
+  "mcp_lista_servidores_y_marca_desactivados: el caso del ejemplo, y con el mapa vacío el aviso de que no hay servidores",
+  "permisos_por_capas_y_listas_largas: el caso del ejemplo, y una lista de 8 órdenes muestra 6 y ` … (+2)`",
+  "reply_orden_desconocida: `reply(&ctx, \"nada\", \"\")` es `Reply::Info` con `no está disponible`",
+]
+no_hagas = [
+  "No conectes con los servidores MCP en `/mcp` (eso lo hace `pcode mcp`): solo se lista la configuración",
+  "No cambies `interactive_policy`",
+  "No añadas más dependencias que `pcode-skills`",
+]
+notas = '''
+Formato mínimo de `SKILL.md` para los tests: `---\nname: adr\ndescription: Registra una decisión\n---\nCuerpo\n`.
+'''
+
+[[tarea]]
+id = "F10.33"
+nombre = "ordenes-init-revisar-exportar"
+titulo = "TUI: `/init`, `/revisar` y `/exportar`"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.23", "F10.32"]
+toca = ["crates/pcode-cli/src/tui_extras.rs", "crates/pcode-tui/src/commands.rs"]
+acepta = "cargo test -p pcode-cli tui_extras:: && cargo test -p pcode-tui commands::"
+contexto = [
+  "crates/pcode-cli/src/tui_extras.rs (función `reply` y struct `ExtraCtx { root, cfg, config_path }`)",
+  "crates/pcode-server/src/assist.rs (función `pub fn review_prompt(root: &Path) -> Result<String, String>`: el prompt de revisión de los cambios sin commit)",
+  "crates/pcode-cli/src/exportar.rs (`to_markdown`, `to_html`, `mask`, `env_secrets`)",
+  "crates/pcode-store/src/lib.rs (`Store::open`, `Store::sessions(limit)`, `Store::events(id)`)",
+]
+objetivo = '''
+1. `commands.rs`: añade al final de `COMMANDS`, con `external: true`: `init`/`init` («crea o actualiza
+   AGENTS.md con lo que el agente ve del proyecto» / «create or update AGENTS.md from the project»),
+   `revisar`/`review` («revisa los cambios sin commit» / «review the uncommitted changes») y
+   `exportar`/`export` («guarda la conversación en Markdown o HTML» / «save the conversation as Markdown or HTML»).
+2. `tui_extras.rs`: añade la constante `INIT_PROMPT` y la función `export_session` (firmas abajo), y tres
+   brazos a `reply`:
+   - `"init"` → `Reply::Prompt { label: "/init".into(), text: INIT_PROMPT.into() }`.
+   - `"revisar"` → `match pcode_server::assist::review_prompt(&ctx.root)`: `Ok(p)` →
+     `Reply::Prompt { label: "/revisar".into(), text: p }`; `Err(e)` → `Reply::Info(format!("✗ {e}"))`.
+   - `"exportar"` → `Reply::Info(export_session(&ctx.root, arg))`.
+3. `INIT_PROMPT` (texto exacto, una sola cadena): «Analiza este proyecto y crea (o actualiza) `AGENTS.md` en
+   la raíz con: 1) qué es el proyecto, en dos frases; 2) las órdenes para compilar, probar y comprobar el
+   estilo; 3) un mapa de las carpetas principales; 4) las convenciones del código que se ven en el
+   repositorio. Sé breve (menos de 60 líneas) y no inventes órdenes: compruébalas leyendo los archivos de
+   configuración. Si `AGENTS.md` ya existe, consérvalo y añade solo lo que falte.»
+4. `export_session(root, arg)`: `arg` vacío o `"md"` → Markdown; `"html"` → HTML; otro →
+   `"Uso: /exportar [md|html]"`. Abre `Store::open(&root.join(".pcode/pcode.db"))`, toma la sesión más
+   reciente (`sessions(1)`) y sus mensajes (eventos `mensaje`, como en `exportar::export`). Sin sesión o sin
+   mensajes → `"Todavía no hay nada que exportar."`. Genera el texto con `to_markdown` / `to_html`, pásalo
+   por `mask` (con `HOME` y `env_secrets(std::env::vars())`), escríbelo en
+   `<root>/.pcode/export/sesion-<id>.<md|html>` (crea la carpeta) y devuelve
+   `"Exportado a .pcode/export/sesion-<id>.<ext>"`. Cualquier error de E/S o de la base → `"✗ <error>"`.
+'''
+firmas = '''
+// crates/pcode-cli/src/tui_extras.rs
+/// Lo que se le pide al agente con `/init`.
+pub const INIT_PROMPT: &str = "…";
+
+/// Exporta la conversación más reciente del proyecto y devuelve el aviso para mostrar.
+pub fn export_session(root: &std::path::Path, arg: &str) -> String;
+'''
+ejemplo = '''
+reply(&ctx, "init", "")                         == Reply::Prompt { label: "/init", text: INIT_PROMPT }
+reply(&ctx, "revisar", "") en una carpeta sin git == Reply::Info("✗ el proyecto no es un repositorio git")
+export_session(dir sin base de sesiones, "")    == "Todavía no hay nada que exportar."
+export_session(dir con la sesión 1 guardada, "html") == "Exportado a .pcode/export/sesion-1.html"  (y el archivo empieza por <!doctype html>)
+export_session(dir, "pdf")                      == "Uso: /exportar [md|html]"
+'''
+tests = [
+  "init_envia_el_prompt: el primer caso del ejemplo, e `INIT_PROMPT` contiene `AGENTS.md`",
+  "revisar_sin_git_avisa: el segundo caso del ejemplo, en un directorio temporal",
+  "exportar_sin_sesiones_avisa: el tercer caso del ejemplo",
+  "exportar_escribe_el_archivo: crea con `Store` una sesión con un evento `mensaje` de usuario y otro de asistente; `export_session(root, \"html\")` devuelve la ruta del ejemplo y el archivo existe",
+  "exportar_formato_desconocido_explica_el_uso: el último caso del ejemplo",
+  "catalogo_tiene_las_ordenes_nuevas: (en `commands.rs` de pcode-tui) `find(\"init\")`, `find(\"review\")` y `find(\"export\")` existen y son `external`",
+]
+no_hagas = [
+  "No dupliques `to_markdown` ni `to_html`: úsalas desde `crate::exportar`",
+  "No cambies `review_prompt`",
+  "No escribas fuera de `.pcode/export/`",
+]
+
+[[tarea]]
+id = "F10.34"
+nombre = "tui-historial"
+titulo = "TUI: historial de entradas persistente con ↑/↓ y búsqueda con Ctrl+R"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = []
+acepta = "cargo test -p pcode-tui history:: && cargo test -p pcode-tui historial"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.34a (archivo de historial y búsqueda, lógica pura) y F10.34b (cargar, guardar y
+Ctrl+R en la TUI).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.34a"
+nombre = "tui-historial-archivo"
+titulo = "TUI: archivo de historial de entradas y búsqueda hacia atrás (lógica pura)"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = ["crates/pcode-tui/src/history.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui history::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (campos `history: Vec<String>` y `history_pos`, y función `browse`: el historial en memoria que hoy se pierde al salir)",
+]
+objetivo = '''
+1. Crea `history.rs` con `MAX_ENTRIES`, `load`, `append` y `search` (firmas abajo).
+2. Formato del archivo: una entrada por línea, cada una como cadena JSON (`serde_json::to_string(&texto)`),
+   así una entrada con saltos de línea ocupa una sola línea. La más antigua primero.
+3. `load(path)`: si el archivo no existe o no se puede leer, `vec![]`. Las líneas que no sean una cadena JSON
+   válida se saltan. Devuelve como mucho las últimas `MAX_ENTRIES`.
+4. `append(path, entry)`: no hace nada si `entry.trim()` está vacío. Crea la carpeta si falta. Añade la línea
+   al final (abre con `OpenOptions::new().create(true).append(true)`). Después, si el archivo tiene más de
+   `MAX_ENTRIES + 100` líneas, lo reescribe con solo las últimas `MAX_ENTRIES`.
+5. `search(history, query, before)`: el mayor índice `i < before` tal que `history[i]` contiene `query` sin
+   distinguir mayúsculas; `None` si `query` está vacío o no hay ninguno. `before` puede ser mayor que la
+   longitud (se trata como la longitud).
+6. `lib.rs`: añade `pub mod history;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/history.rs
+use std::path::Path;
+
+/// Entradas que se conservan en el archivo.
+pub const MAX_ENTRIES: usize = 500;
+
+/// Entradas guardadas, de la más antigua a la más reciente.
+pub fn load(path: &Path) -> Vec<String>;
+/// Añade una entrada al archivo (y lo recorta si ha crecido demasiado).
+pub fn append(path: &Path, entry: &str) -> std::io::Result<()>;
+/// Índice de la entrada más reciente anterior a `before` que contiene `query`.
+pub fn search(history: &[String], query: &str, before: usize) -> Option<usize>;
+'''
+ejemplo = '''
+append(p, "hola"); append(p, "dos\nlíneas"); append(p, "  ");
+contenido del archivo: "\"hola\"\n\"dos\\nlíneas\"\n"
+load(p) == ["hola", "dos\nlíneas"]
+h = ["cargo test", "git status", "Cargo build"]
+search(&h, "cargo", 3) == Some(2);  search(&h, "cargo", 2) == Some(0);  search(&h, "cargo", 0) == None
+search(&h, "", 3) == None;  search(&h, "zzz", 99) == None
+'''
+tests = [
+  "guarda_y_carga_con_saltos_de_linea: los `append` del ejemplo dejan ese archivo y `load` devuelve las dos entradas",
+  "carga_sin_archivo_es_vacio: `load` de una ruta que no existe es `[]`",
+  "lineas_corruptas_se_saltan: un archivo con `\"a\"`, `basura` y `\"b\"` carga `[\"a\", \"b\"]`",
+  "recorta_cuando_crece: tras 601 `append`, el archivo tiene 500 líneas y la última entrada es la última añadida",
+  "busca_hacia_atras_sin_distinguir_mayusculas: los cinco casos de `search` del ejemplo",
+]
+no_hagas = [
+  "No toques `app.rs` ni `run.rs` (es F10.34b)",
+  "No añadas dependencias: `serde_json` ya está en `pcode-tui`",
+]
+
+[[tarea]]
+id = "F10.34b"
+nombre = "tui-historial-busqueda"
+titulo = "TUI: el historial se guarda en `.pcode/historial.jsonl` y Ctrl+R busca en él"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.31", "F10.34a"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui historial"
+contexto = [
+  "crates/pcode-tui/src/history.rs (`load`, `append`, `search`)",
+  "crates/pcode-tui/src/app.rs (funciones `key` y `key_main`; el bloque del selector `picker` en `key` es el modelo de «modo que captura el teclado»)",
+  "crates/pcode-tui/src/render.rs (función `render`, sección «Entrada»: el título de la caja y las líneas `input_lines`)",
+  "crates/pcode-tui/src/run.rs (función `run_tui`: donde se crea `app` y la línea `for cmd in app.update(ev)`)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` `pub search: Option<(String, Option<usize>)>` (doc: «Búsqueda en el historial:
+   lo escrito y el índice de la entrada encontrada»), `None` en `App::new`.
+2. `app.rs`, `key_main`: nuevo brazo `KeyCode::Char('r') if ctrl => { self.search = Some((String::new(), None)); vec![] }`.
+3. `app.rs`, `key`: después de los bloques de aprobación, ayuda, revisión y selector, si `self.search` es
+   `Some((query, found))`, la tecla se trata aquí y se devuelve `vec![]`:
+   - `Char('r')` con CONTROL: busca otra más antigua:
+     `found = history::search(&self.history, &query, found.unwrap_or(self.history.len()))` (si da `None`,
+     conserva la que había).
+   - `Char(c)` sin CONTROL: añade `c` a `query` y busca desde el final (`before = self.history.len()`).
+   - `Backspace`: quita un carácter de `query` y busca desde el final.
+   - `Enter`: si hay entrada encontrada, `self.input = self.history[i].clone()`; cierra la búsqueda.
+   - `Esc` o cualquier otra tecla: cierra la búsqueda sin tocar la entrada.
+4. `i18n.rs`: añade al final de `ES` y `EN`: `search` = `" Historial (Ctrl+R anterior · Intro usa · Esc sale) "`
+   / `" History (Ctrl+R older · Enter use · Esc close) "`.
+5. `render.rs`, caja de la entrada: si `app.search` es `Some((query, found))`, el título es
+   `format!("{}«{}» ", t(app.lang, "search"), query)` y el contenido de la caja es la entrada encontrada
+   (`app.history[i]`) o vacío; el resto de la caja se dibuja igual.
+6. `run.rs`, `run_tui`: `let hist = root.join(".pcode/historial.jsonl");` y, tras crear `app`,
+   `app.history = crate::history::load(&hist);`. En el bucle, guarda `let n = app.history.len();` antes de
+   `app.update(ev)` y, después de procesar las órdenes, si `app.history.len() > n`,
+   `let _ = crate::history::append(&hist, app.history.last().unwrap());`.
+'''
+sin_firmas = "Solo añade el campo `search` a App; el resto es manejo de teclas, un título y dos llamadas a `history`"
+ejemplo = '''
+app.history = ["cargo test", "git status", "cargo build"]
+Ctrl+R                 -> app.search == Some(("", None))
+teclear "cargo"        -> app.search == Some(("cargo", Some(2)))
+Ctrl+R otra vez        -> Some(("cargo", Some(0)))
+Intro                  -> app.input == "cargo test", app.search == None, ninguna orden enviada
+(en otra búsqueda) Esc -> app.search == None y app.input como estaba
+pantalla 80×24 con search = Some(("git", Some(1))): la fila 20 contiene "Historial" y "«git»"; la fila 21 contiene "git status"
+'''
+tests = [
+  "historial_ctrl_r_busca_mientras_se_escribe: los tres primeros pasos del ejemplo",
+  "historial_intro_usa_la_encontrada_sin_enviar: Intro deja `input == \"cargo test\"`, cierra la búsqueda y no devuelve `Command::Send`",
+  "historial_esc_cierra_sin_cambiar_la_entrada: con `input = \"x\"`, Ctrl+R, `g`, Esc deja `input == \"x\"`",
+  "historial_sin_coincidencias_no_falla: buscar `zzz` deja `found == None` e Intro deja la entrada como estaba",
+  "historial_render_80x24_muestra_la_busqueda: el último caso del ejemplo",
+]
+no_hagas = [
+  "No cambies ↑/↓ (`browse`): siguen recorriendo `app.history`, que ahora viene cargado del archivo",
+  "No guardes el historial desde `app.rs`: la E/S va en `run.rs`",
+  "No añadas campos a `TuiOptions`",
+]
+
+[[tarea]]
+id = "F10.35"
+nombre = "tui-editor-externo"
+titulo = "TUI: editar el mensaje en `$EDITOR` con Ctrl+G"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = []
+acepta = "cargo test -p pcode-tui editor"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.35a (elegir y lanzar el editor, sin TUI) y F10.35b (Ctrl+G en la TUI).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.35a"
+nombre = "tui-editor-lanzar"
+titulo = "TUI: elegir el editor (`$VISUAL`, `$EDITOR`) y editar un texto en un archivo temporal"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = ["crates/pcode-tui/src/editor.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui editor::"
+contexto = [
+  "crates/pcode-tui/src/run.rs (función `project_files`: ejemplo de `std::process::Command` en este crate)",
+]
+objetivo = '''
+1. Crea `editor.rs` con `editor_argv` y `edit_text` (firmas abajo).
+2. `editor_argv(visual, editor)`: usa `visual` si es `Some` y no está en blanco; si no, `editor` igual; si
+   no, `["vi"]` (en Windows, tras `#[cfg(windows)]`, `["notepad"]`). El valor se parte por espacios en blanco
+   (`split_whitespace`): `"code --wait"` → `["code", "--wait"]`.
+3. `edit_text(argv, dir, text)`: crea `dir` si falta; escribe `text` en `dir/mensaje.md`; ejecuta
+   `argv[0]` con el resto de `argv` y, como último argumento, la ruta del archivo, heredando la entrada y la
+   salida (`Command::new(..).args(..).arg(&ruta).status()`); espera a que termine. Si el estado no es éxito →
+   `Err(io::Error::other("el editor terminó con error"))`. Si va bien, lee el archivo, quita los saltos de
+   línea finales (`trim_end_matches('\n')`, y también `\r`) y lo devuelve. Borra el archivo en los dos casos.
+   Con `argv` vacío → `Err(io::Error::other("no hay editor configurado"))`.
+4. `lib.rs`: añade `pub mod editor;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/editor.rs
+use std::io;
+use std::path::Path;
+
+/// Orden del editor: `$VISUAL`, `$EDITOR` o el de por defecto, partida por espacios.
+pub fn editor_argv(visual: Option<&str>, editor: Option<&str>) -> Vec<String>;
+
+/// Abre `text` en el editor (archivo `dir/mensaje.md`) y devuelve lo que quede al cerrarlo.
+pub fn edit_text(argv: &[String], dir: &Path, text: &str) -> io::Result<String>;
+'''
+ejemplo = '''
+editor_argv(Some("code --wait"), Some("nano")) == ["code", "--wait"]
+editor_argv(None, Some("nano"))                == ["nano"]
+editor_argv(Some("  "), None)                  == ["vi"]            (en Linux)
+editor falso para los tests (solo Unix): argv = ["sh", "-c", "printf 'nuevo\\n' > \"$1\"", "x"]
+  edit_text(&argv, dir, "viejo") == Ok("nuevo")   y dir/mensaje.md ya no existe
+editor que solo añade: argv = ["sh", "-c", "printf ' más' >> \"$1\"", "x"]
+  edit_text(&argv, dir, "hola") == Ok("hola más")
+argv = ["false"]  -> Err (y el archivo temporal se borra)
+'''
+tests = [
+  "editor_prefiere_visual_y_parte_argumentos: los tres casos de `editor_argv` del ejemplo",
+  "editor_devuelve_el_texto_editado: (con `#[cfg(unix)]`) el editor falso que escribe `nuevo` devuelve `Ok(\"nuevo\")` y borra el archivo",
+  "editor_recibe_el_texto_actual: (con `#[cfg(unix)]`) el editor que añade ` más` devuelve `hola más`",
+  "editor_que_falla_es_error: (con `#[cfg(unix)]`) con `[\"false\"]` devuelve `Err` y `dir/mensaje.md` no existe",
+  "editor_sin_orden_es_error: con `argv` vacío devuelve `Err`",
+]
+no_hagas = [
+  "No leas variables de entorno dentro de `editor_argv`: llegan por parámetro",
+  "No toques la terminal (modo raw, pantalla alternativa) en este módulo: es F10.35b",
+  "No añadas `shell-words` ni otra dependencia a `pcode-tui`",
+]
+
+[[tarea]]
+id = "F10.35b"
+nombre = "tui-editor-ctrl-g"
+titulo = "TUI: Ctrl+G abre el mensaje en el editor y vuelve con el texto"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.34b", "F10.35a"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-tui editor"
+contexto = [
+  "crates/pcode-tui/src/editor.rs (`editor_argv`, `edit_text`)",
+  "crates/pcode-tui/src/run.rs (función `run_tui`: el hilo de teclado con la bandera `stop`, `ratatui::init()`, `ratatui::restore()` y `EnableBracketedPaste`)",
+  "crates/pcode-tui/src/app.rs (enums `Event` y `Command`, funciones `update` y `key_main`)",
+]
+objetivo = '''
+1. `app.rs`: añade `Command::EditInput` (doc: «Abrir el mensaje en el editor externo») y
+   `Event::InputEdited(String)` (doc: «Texto que devolvió el editor»). En `key_main`:
+   `KeyCode::Char('g') if ctrl => vec![Command::EditInput]`. En `update`: `Event::InputEdited(s)` →
+   `self.input = s; self.history_pos = None; vec![]`.
+2. `run.rs`, `run_tui`: crea `let paused = Arc::new(AtomicBool::new(false));` junto a `stop` y pásale un clon
+   al hilo de teclado; al principio de cada vuelta del `while` del hilo:
+   `if key_paused.load(Ordering::Relaxed) { std::thread::sleep(Duration::from_millis(50)); continue; }`
+   (así el hilo no le roba teclas al editor).
+3. `run.rs`, `match cmd`: `Command::EditInput` →
+   a. `paused.store(true, …)` y `tokio::time::sleep(Duration::from_millis(150)).await` (para que el hilo
+      salga de su `poll` de 120 ms);
+   b. `ratatui::restore();`
+   c. `let argv = crate::editor::editor_argv(std::env::var("VISUAL").ok().as_deref(), std::env::var("EDITOR").ok().as_deref());`
+      y `let r = tokio::task::block_in_place(|| crate::editor::edit_text(&argv, &root.join(".pcode"), &app.input));`
+   d. `term = ratatui::init();` vuelve a ejecutar `EnableBracketedPaste`, `term.clear()?;` y
+      `paused.store(false, …)`;
+   e. con `Ok(text)` → `app.update(Event::InputEdited(text));`; con `Err(e)` →
+      `app.entries.push(Entry::Info(format!("✗ {e}")))`.
+   Para poder reasignarlo, `term` debe estar declarado como `let mut term`.
+'''
+firmas = '''
+// crates/pcode-tui/src/app.rs
+// en `pub enum Command`
+    /// Abrir el mensaje en el editor externo.
+    EditInput,
+// en `pub enum Event`
+    /// Texto que devolvió el editor.
+    InputEdited(String),
+'''
+ejemplo = '''
+con "borrador" escrito, Ctrl+G                   -> [Command::EditInput] y la entrada sigue siendo "borrador"
+app.update(Event::InputEdited("texto\nlargo"))  -> app.input == "texto\nlargo", sin órdenes (no se envía solo)
+'''
+tests = [
+  "editor_ctrl_g_pide_abrir: (en `app.rs`) el primer caso del ejemplo",
+  "editor_texto_editado_vuelve_a_la_entrada_sin_enviar: (en `app.rs`) el segundo caso del ejemplo",
+  "editor_ctrl_g_con_aprobacion_pendiente_no_hace_nada: (en `app.rs`) con `approval` pendiente, Ctrl+G no devuelve órdenes",
+]
+no_hagas = [
+  "No lances el editor desde `app.rs`",
+  "No uses `spawn_blocking` para el editor: tiene que terminar antes de volver a dibujar (`block_in_place`)",
+  "No dejes el hilo de teclado leyendo mientras el editor está abierto",
+]
+notas = '''
+El paso 3 no se puede probar sin una terminal real: los tests cubren el estado (`app.rs`) y `editor.rs`.
+Dilo en el informe.
+'''
+
+[[tarea]]
+id = "F10.36"
+nombre = "tui-entrada-multilinea"
+titulo = "TUI: cursor dentro de la entrada, edición multilínea y pegado sin enviar"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = []
+acepta = "cargo test -p pcode-tui edit:: && cargo test -p pcode-tui cursor && cargo test -p pcode-tui pegado"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.36a (operaciones de edición con cursor, lógica pura), F10.36b (cursor en la TUI) y
+F10.36c (pegado de varias líneas).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.36a"
+nombre = "tui-edicion-cursor"
+titulo = "TUI: operaciones de edición de texto con cursor (lógica pura)"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = ["crates/pcode-tui/src/edit.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui edit::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (función `key_main`: hoy la entrada solo se edita por el final con `push` y `pop`)",
+]
+objetivo = '''
+Funciones libres que editan un `String` con un cursor. El cursor es un índice en BYTES que siempre cae en un
+límite de carácter (`text.is_char_boundary(cursor)`) y está entre 0 y `text.len()`.
+1. Crea `edit.rs` con las funciones de las firmas. Todas dejan el cursor en un límite de carácter.
+2. `insert` / `insert_str`: insertan en el cursor y lo avanzan tras lo insertado.
+3. `backspace`: borra el carácter anterior al cursor (nada si el cursor es 0). `delete`: borra el carácter
+   bajo el cursor (nada si está al final).
+4. `left` / `right`: un carácter (no un byte). `home` / `end`: al principio / al final de la LÍNEA en la que
+   está el cursor (las líneas se separan con `\n`).
+5. `up` / `down`: a la línea anterior / siguiente, a la misma columna (contada en caracteres) o al final de
+   esa línea si es más corta. Devuelven `false`, sin mover nada, si no hay línea anterior / siguiente.
+6. `word_left`: retrocede sobre los espacios en blanco y después hasta el principio de la palabra.
+   `word_right`: avanza hasta el final de la palabra y después sobre los espacios en blanco.
+7. `delete_word_back`: borra desde `word_left` hasta el cursor. `kill_to_end`: borra desde el cursor hasta
+   el final de la línea (sin el `\n`).
+8. `row_col`: fila (líneas antes del cursor) y columna (caracteres desde el principio de su línea).
+9. `lib.rs`: añade `pub mod edit;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/edit.rs
+/// Inserta un carácter en el cursor.
+pub fn insert(text: &mut String, cursor: &mut usize, c: char);
+/// Inserta una cadena en el cursor.
+pub fn insert_str(text: &mut String, cursor: &mut usize, s: &str);
+/// Borra el carácter anterior al cursor.
+pub fn backspace(text: &mut String, cursor: &mut usize);
+/// Borra el carácter bajo el cursor.
+pub fn delete(text: &mut String, cursor: &mut usize);
+/// Mueve el cursor un carácter a la izquierda / derecha.
+pub fn left(text: &str, cursor: &mut usize);
+pub fn right(text: &str, cursor: &mut usize);
+/// Principio / final de la línea del cursor.
+pub fn home(text: &str, cursor: &mut usize);
+pub fn end(text: &str, cursor: &mut usize);
+/// Línea anterior / siguiente (`false` si no hay).
+pub fn up(text: &str, cursor: &mut usize) -> bool;
+pub fn down(text: &str, cursor: &mut usize) -> bool;
+/// Palabra anterior / siguiente.
+pub fn word_left(text: &str, cursor: &mut usize);
+pub fn word_right(text: &str, cursor: &mut usize);
+/// Borra la palabra anterior al cursor.
+pub fn delete_word_back(text: &mut String, cursor: &mut usize);
+/// Borra hasta el final de la línea.
+pub fn kill_to_end(text: &mut String, cursor: &mut usize);
+/// Fila y columna (en caracteres) del cursor.
+pub fn row_col(text: &str, cursor: usize) -> (usize, usize);
+'''
+ejemplo = '''
+text = "año", cursor = 4 (final): backspace -> "añ", cursor 3;  left -> cursor 1 (la `ñ` ocupa 2 bytes)
+text = "hola mundo", cursor = 4: insert('!') -> "hola! mundo", cursor 5
+text = "uno\ndos tres\nx", cursor = 8 (tras "dos "): home -> 4; end -> 12; up -> true, cursor 3 (columna 4 no existe en "uno": final de línea);
+     down desde 8 -> true, cursor 14 (final de "x"); up desde 2 -> false
+text = "git  commit -m", cursor = 14: word_left -> 12; word_left -> 5; delete_word_back con cursor 11 -> "git   -m" (tres espacios), cursor 5
+text = "a b\nc", cursor = 1: kill_to_end -> "a\nc", cursor 1
+row_col("uno\ndos", 6) == (1, 2)
+'''
+tests = [
+  "insertar_y_borrar_con_acentos: el caso `año` y el de `hola mundo` del ejemplo",
+  "inicio_y_fin_de_linea: `home` y `end` del tercer caso del ejemplo",
+  "arriba_y_abajo_conservan_la_columna: los casos `up` y `down` del ejemplo, incluido el que devuelve false",
+  "palabras_a_izquierda_y_derecha: los `word_left` del ejemplo y `word_right` desde 0 en `git  commit` deja el cursor en 5",
+  "borrar_palabra_y_hasta_fin_de_linea: `delete_word_back` y `kill_to_end` del ejemplo",
+  "limites_no_fallan: `left` en 0, `right` y `delete` al final y `backspace` en 0 no cambian nada ni entran en pánico",
+  "fila_y_columna: `row_col(\"uno\\ndos\", 6) == (1, 2)` y `row_col(\"\", 0) == (0, 0)`",
+]
+no_hagas = [
+  "No uses índices de `char` como si fueran bytes: usa `char_indices`, `is_char_boundary` o `chars().rev()`",
+  "No toques `app.rs` (es F10.36b)",
+]
+
+[[tarea]]
+id = "F10.36b"
+nombre = "tui-cursor-entrada"
+titulo = "TUI: cursor movible en la entrada (flechas, Inicio/Fin, Ctrl+A/E/W/K)"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.35b", "F10.36a"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs"]
+acepta = "cargo test -p pcode-tui cursor && cargo test -p pcode-tui app:: && cargo test -p pcode-tui render::"
+contexto = [
+  "crates/pcode-tui/src/edit.rs (todas las funciones: `insert`, `backspace`, `left`, `up`, `row_col`…)",
+  "crates/pcode-tui/src/app.rs (funciones `key`, `key_main`, `act`, `browse`, `complete_mention`, `refresh_suggestions`, `leader_key` y `submit`: todos los sitios que cambian `self.input`)",
+  "crates/pcode-tui/src/render.rs (función `render`, sección «Entrada»: el cálculo de `(cx, cy)` y `f.set_cursor_position`)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` `pub cursor: usize` (doc: «Posición del cursor en `input`, en bytes»), 0 en `App::new`.
+2. `app.rs`, al principio de `key`: si `self.cursor > self.input.len()` o
+   `!self.input.is_char_boundary(self.cursor)`, pon `self.cursor = self.input.len()`.
+3. `app.rs`: sustituye la edición por el final por las funciones de `crate::edit` (con
+   `&mut self.input, &mut self.cursor`): `self.input.push(c)` → `edit::insert`; el `pop` del brazo
+   `Backspace` → `edit::backspace`; los `push('\n')` → `edit::insert(.., '\n')`; `push_str("    ")` →
+   `edit::insert_str`. El brazo «Intro con `\` al final» solo aplica si además
+   `self.cursor == self.input.len()` (quita la barra con `edit::backspace` e inserta `\n`).
+4. `app.rs`: en TODOS los demás sitios que cambian `self.input` entero (búscalos con
+   `grep -n "self.input" crates/pcode-tui/src/app.rs`: `clear()`, asignaciones `self.input = …`, `truncate`
+   y `push`/`push_str` de `complete_mention`), añade justo después `self.cursor = self.input.len();`.
+5. `app.rs`, `key_main`, brazos nuevos (antes del de `Char(c) if !ctrl`): `Left` → `edit::left`; `Right` →
+   `edit::right`; `Home` y `Char('a') if ctrl` → `edit::home`; `End` y `Char('e') if ctrl` → `edit::end`;
+   `Delete` → `edit::delete`; `Char('w') if ctrl` → `edit::delete_word_back`; `Char('k') if ctrl` →
+   `edit::kill_to_end`; `Left`/`Right` con `KeyModifiers::ALT` → `edit::word_left` / `edit::word_right`.
+   Todos devuelven `vec![]`.
+6. `app.rs`, brazos `Up` / `Down`: quita la condición `!self.input.contains('\n')`. Nuevo comportamiento: si
+   la entrada contiene `\n` y `edit::up` (o `edit::down`) devuelve `true`, no hagas nada más; en otro caso
+   llama a `self.browse(..)` como ahora.
+7. `app.rs`, `refresh_suggestions`: si `self.cursor != self.input.len()`, vacía las sugerencias y vuelve.
+8. `render.rs`: el cursor se dibuja donde está `app.cursor`: calcula las líneas ajustadas de
+   `&app.input[..app.cursor]` igual que `input_lines` (partir por `\n` y `wrap` con `inner_w`); `cx` = ancho
+   de la última, `cy` = número de líneas − 1 − `skip` (con `saturating_sub`).
+'''
+sin_firmas = "Solo añade el campo `cursor` a App; el resto cambia el manejo de teclas y el dibujo del cursor"
+ejemplo = '''
+teclear "hola", Left, Left, teclear "X"      -> input == "hoXla", cursor == 3
+teclear "a b", Ctrl+A, teclear "z"           -> input == "za b"
+teclear "git commit", Ctrl+W                 -> input == "git "
+input "uno\ndos" con el cursor al final: Up  -> cursor == 3 (final de "uno"), input sin cambiar, no se toca el historial
+input "una línea" + Up con historial ["x"]   -> input == "x" y cursor == 1
+pantalla 80×24 con input "hola" y cursor 2: la posición del cursor del terminal es (3, 21)
+'''
+tests = [
+  "cursor_inserta_en_medio: el primer caso del ejemplo",
+  "cursor_inicio_fin_y_borrados: el segundo y el tercer caso del ejemplo; y con `a b` y el cursor en 1 (Ctrl+A, Right), Ctrl+K deja `a`",
+  "cursor_arriba_en_multilinea_no_toca_el_historial: el cuarto caso del ejemplo",
+  "cursor_arriba_en_una_linea_recorre_el_historial: el quinto caso del ejemplo",
+  "cursor_al_final_tras_completar_y_borrar: tras completar una mención con Tab y tras Ctrl+U, `cursor == input.len()`",
+  "cursor_render_80x24_en_su_sitio: con `input = \"hola\"` y `cursor = 2`, `term.get_cursor_position()` del `TestBackend` es `(3, 21)`",
+]
+no_hagas = [
+  "No borres ni cambies tests existentes de `app.rs` ni de `render.rs`: todos deben seguir pasando",
+  "No cambies la firma de `App::new`",
+  "No copies la lógica de `edit.rs` dentro de `app.rs`",
+]
+notas = '''
+Para el test de render: `let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap(); term.draw(|f| render(&app, f)).unwrap();`
+y después `term.get_cursor_position().unwrap()` devuelve una `Position { x, y }`.
+'''
+
+[[tarea]]
+id = "F10.36c"
+nombre = "tui-pegado-multilinea"
+titulo = "TUI: pegar varias líneas no envía, y un pegado grande se muestra resumido"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.36b"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui pegado"
+contexto = [
+  "crates/pcode-tui/src/run.rs (hilo de teclado de `run_tui`, brazo `Ok(TermEvent::Paste(s))`: hoy convierte el pegado en teclas sueltas)",
+  "crates/pcode-tui/src/app.rs (enum `Event`, funciones `update` y `submit`; campo `cursor` y `crate::edit::insert_str`)",
+]
+objetivo = '''
+1. `app.rs`: añade `Event::Paste(String)` (doc: «Texto pegado de una vez») y a `App`
+   `pub pastes: Vec<String>` (doc: «Pegados grandes pendientes de enviar»), vacío en `App::new`.
+2. `app.rs`: añade las funciones públicas `paste_marker` y `expand_pastes` (firmas abajo).
+   `paste_marker(lang, n, lines)` = `"[<pasted> #<n>: <lines> <lines-palabra>]"` con `t(lang, "pasted")` y
+   `t(lang, "lines")`. `expand_pastes(text, lang, pastes)`: sustituye cada marcador `#<n>` (con el número de
+   líneas real de `pastes[n-1]`) por el texto de ese pegado; los marcadores que no existan se dejan igual.
+3. `app.rs`, `update`, `Event::Paste(s)`: normaliza `\r\n` y `\r` a `\n`. Si hay una aprobación pendiente,
+   no hagas nada. Si `s` tiene más de 5 líneas o más de 800 caracteres: guarda `s` en `self.pastes` e inserta
+   en el cursor el marcador `paste_marker(self.lang, self.pastes.len(), <líneas de s>)`. Si no, inserta `s`
+   tal cual con `edit::insert_str`. Nunca envía. Devuelve `vec![]`.
+4. `app.rs`, `submit`: tras calcular `text`, si no es una orden `/` ni `!`: lo que se muestra
+   (`Entry::User`) es `text` con los marcadores; lo que se envía (`Command::Send`) es
+   `expand_pastes(&text, self.lang, &self.pastes)`. Al enviar (y en `/nuevo`), vacía `self.pastes`.
+5. `i18n.rs`: añade al final de `ES` y `EN`: `pasted` = `"pegado"` / `"pasted"`.
+6. `run.rs`, hilo de teclado: el brazo `Ok(TermEvent::Paste(s))` pasa a ser
+   `let _ = key_tx.send(Msg::Ui(Event::Paste(s)));`.
+'''
+firmas = '''
+// crates/pcode-tui/src/app.rs
+/// Marcador que se muestra en la entrada en lugar de un pegado grande.
+pub fn paste_marker(lang: Lang, n: usize, lines: usize) -> String;
+/// Sustituye los marcadores por el texto pegado.
+pub fn expand_pastes(text: &str, lang: Lang, pastes: &[String]) -> String;
+
+// en `pub enum Event`
+    /// Texto pegado de una vez.
+    Paste(String),
+'''
+ejemplo = '''
+paste_marker(Lang::Es, 1, 34) == "[pegado #1: 34 líneas]"
+Event::Paste("a\nb")                 -> input == "a\nb", pastes vacío, ninguna orden (no envía)
+Event::Paste(texto de 10 líneas)     -> input == "[pegado #1: 10 líneas]", pastes.len() == 1
+teclear " explica" + Intro           -> Entry::User("[pegado #1: 10 líneas] explica") y
+                                        [Command::Send("<las 10 líneas> explica")]; pastes queda vacío
+Event::Paste("x\r\ny")               -> input == "x\ny"
+'''
+tests = [
+  "pegado_multilinea_no_envia: `Event::Paste(\"a\\nb\")` deja `input == \"a\\nb\"` y no devuelve órdenes",
+  "pegado_grande_se_resume: un pegado de 10 líneas deja el marcador del ejemplo en la entrada y un elemento en `pastes`",
+  "pegado_grande_se_expande_al_enviar: el cuarto caso del ejemplo (la entrada mostrada lleva el marcador y el `Command::Send` lleva el texto completo)",
+  "pegado_normaliza_retornos_de_carro: `Event::Paste(\"x\\r\\ny\")` deja `input == \"x\\ny\"`",
+  "pegado_en_medio_respeta_el_cursor: con `input = \"ab\"` y el cursor en 1, pegar `X` deja `aXb`",
+  "pegado_con_aprobacion_pendiente_se_ignora: con `approval` pendiente, `Event::Paste` no cambia la entrada",
+]
+no_hagas = [
+  "No conviertas el pegado en teclas (rompería el marcador y enviaría al encontrar un Intro)",
+  "No cambies `expand_message` de `run.rs`",
+]
+
+[[tarea]]
+id = "F10.37"
+nombre = "tui-modo-vi"
+titulo = "TUI: modo vi opcional en la entrada"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F10.36"]
+toca = []
+acepta = "cargo test -p pcode-tui vi && cargo test -p pcode-config modo_vi"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.37a (máquina de estados de vi, lógica pura), F10.37b (uso en la TUI) y F10.37c
+(`[preferencias] modo_vi`).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.37a"
+nombre = "tui-vi-nucleo"
+titulo = "TUI: modo vi de la entrada (modos normal e inserción), lógica pura"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.36a"]
+toca = ["crates/pcode-tui/src/vi.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui vi::"
+contexto = [
+  "crates/pcode-tui/src/edit.rs (funciones `left`, `right`, `up`, `down`, `home`, `end`, `word_left`, `word_right`, `delete`, `kill_to_end`, `insert`: vi se construye sobre ellas)",
+]
+objetivo = '''
+1. Crea `vi.rs` con `ViMode`, `ViOutcome` y `Vi` (firmas abajo). `Vi::new()` empieza en `Insert`.
+2. `Vi::key(text, cursor, k)` en modo `Insert`: `Esc` → pasa a `Normal`, devuelve `Handled`. Cualquier otra
+   tecla → `PassThrough` (la trata la TUI como siempre).
+3. En modo `Normal`: si la tecla lleva CONTROL o ALT → `PassThrough`. `Enter` → `Submit`. Para
+   `KeyCode::Char(c)` (todas devuelven `Handled`):
+   - movimiento: `h` → `left`; `l` → `right`; `k` → `up`; `j` → `down`; `0` → `home`; `$` → `end`;
+     `w` → `word_right`; `b` → `word_left`.
+   - a inserción: `i` (sin mover); `a` (`right` y después inserción); `I` (`home`); `A` (`end`);
+     `o` (`end`, inserta `\n`).
+   - borrado: `x` → `delete`; `D` → `kill_to_end`; `d` seguido de `d` → borra la línea del cursor entera,
+     con su salto de línea (si es la última línea, el salto anterior), y deja el cursor al principio de la
+     línea que queda en su lugar. Una `d` suelta se recuerda en `pending`; cualquier otra tecla la cancela.
+   - cualquier otro carácter: no hace nada.
+   Las demás teclas (flechas, Backspace, Tab…) → `PassThrough`.
+4. `lib.rs`: añade `pub mod vi;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/vi.rs
+use ratatui::crossterm::event::KeyEvent;
+
+/// Modo de vi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViMode { Insert, Normal }
+
+/// Qué hizo vi con una tecla.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViOutcome {
+    /// Tratada: no hay nada más que hacer.
+    Handled,
+    /// No es de vi: que la trate la TUI.
+    PassThrough,
+    /// Enviar el mensaje.
+    Submit,
+}
+
+/// Estado del modo vi de la entrada.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Vi {
+    /// Modo actual.
+    pub mode: ViMode,
+    pending: Option<char>,
+}
+
+impl Vi {
+    /// Empieza en modo inserción.
+    pub fn new() -> Vi;
+    /// Trata una tecla sobre `text` con el cursor `cursor` (índice en bytes).
+    pub fn key(&mut self, text: &mut String, cursor: &mut usize, k: KeyEvent) -> ViOutcome;
+}
+'''
+ejemplo = '''
+modo Insert, tecla `x`            -> PassThrough (el texto no cambia aquí)
+Esc                               -> Handled, mode == Normal
+text "hola mundo", cursor 10, Normal:  `0` -> cursor 0;  `w` -> 5;  `x` -> "hola undo";  `$` -> 9
+`A` -> cursor al final y mode == Insert;  `i` -> mode == Insert sin mover
+text "uno\ndos\ntres", cursor 5 (en "dos"), Normal: `d`,`d` -> "uno\ntres", cursor 4
+text "uno\ndos", cursor 5: `d`,`d` -> "uno", cursor 0
+text "solo", `d`,`d` -> "", cursor 0
+`d`, `w` -> no borra nada (la `d` pendiente se cancela) y el cursor avanza una palabra
+Enter en Normal -> Submit;  Ctrl+C en Normal -> PassThrough
+'''
+tests = [
+  "vi_empieza_en_insercion_y_esc_pasa_a_normal: los dos primeros casos del ejemplo",
+  "vi_movimientos_en_normal: `0`, `w`, `$`, `h` y `l` sobre `hola mundo` dejan el cursor donde dice el ejemplo",
+  "vi_x_borra_bajo_el_cursor: el caso `x` del ejemplo",
+  "vi_i_a_y_A_pasan_a_insercion: `i` no mueve, `a` avanza uno y `A` va al final; las tres dejan `mode == Insert`",
+  "vi_o_abre_linea_debajo: en `uno\\ndos` con el cursor en 1, `o` deja `uno\\n\\ndos`, el cursor en 4 y `mode == Insert`",
+  "vi_dd_borra_la_linea: los tres casos `d`,`d` del ejemplo",
+  "vi_d_suelta_se_cancela: `d` y después `w` no cambia el texto",
+  "vi_intro_envia_y_control_pasa: Intro en Normal da `Submit` y Ctrl+C da `PassThrough`",
+]
+no_hagas = [
+  "No implementes más órdenes de vi que las de la lista (ni contadores, ni registros, ni `:`)",
+  "No toques `app.rs` (es F10.37b)",
+]
+notas = '''
+Clippy pide `impl Default for Vi` si hay `new()` sin argumentos: añádelo (`fn default() -> Self { Self::new() }`).
+'''
+
+[[tarea]]
+id = "F10.37b"
+nombre = "tui-vi-entrada"
+titulo = "TUI: usar el modo vi en la entrada y mostrar el modo"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F10.36c", "F10.37a"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui vi_entrada"
+contexto = [
+  "crates/pcode-tui/src/vi.rs (`Vi::new`, `Vi::key`, `ViMode`, `ViOutcome`)",
+  "crates/pcode-tui/src/app.rs (función `key`: el orden de los bloques — aprobación, ayuda, revisión, selector, búsqueda, líder, sugerencias — y `key_main`)",
+  "crates/pcode-tui/src/render.rs (función `render`, sección «Entrada»: el `Block` de la caja)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` `pub vi: Option<crate::vi::Vi>` (doc: «Modo vi de la entrada, si está activado»),
+   `None` en `App::new`.
+2. `app.rs`, `key`: después de los bloques modales (aprobación, ayuda, revisión, selector, búsqueda y líder)
+   y ANTES del bloque de sugerencias, si `self.vi` es `Some(vi)` y no se cumple
+   `self.busy && k.code == KeyCode::Esc` (Esc sigue interrumpiendo al agente):
+   `match vi.key(&mut self.input, &mut self.cursor, k)`: `Handled` → `return vec![]`; `Submit` →
+   `return self.submit()`; `PassThrough` → sigue con el código actual.
+3. `i18n.rs`: añade al final de `ES` y `EN`: `vi_normal` = `" -- NORMAL -- "` y `vi_insert` =
+   `" -- INSERT -- "` (iguales en los dos idiomas).
+4. `render.rs`, caja de la entrada: si `app.vi` es `Some(vi)`, añade al `Block` un título arriba a la derecha:
+   `.title_top(Line::from(Span::styled(t(app.lang, clave), estilo)).right_aligned())`, con `vi_normal` y
+   `th.warning()` en modo `Normal`, o `vi_insert` y `th.dimmed()` en modo `Insert`.
+'''
+sin_firmas = "Solo añade el campo `vi` a App; el resto es una llamada a `Vi::key`, dos textos y un título"
+ejemplo = '''
+app.vi = Some(Vi::new()); teclear "hola" -> input == "hola" (inserción: las teclas pasan)
+Esc                      -> modo Normal; input sigue "hola"; ninguna orden
+`0`, `x`                 -> input == "ola"
+`i`, teclear "H"         -> input == "Hola"
+Esc, Intro               -> [Command::Send("Hola")]
+con app.busy = true y vi en inserción, Esc -> [Command::Cancel] (no cambia de modo)
+con app.vi == None, la tecla `x` se escribe como siempre
+pantalla 80×24: en Normal la fila 20 acaba en "-- NORMAL -- ╮"; en inserción, en "-- INSERT -- ╮"
+'''
+tests = [
+  "vi_entrada_edita_en_normal_y_vuelve_a_insertar: los cinco primeros pasos del ejemplo",
+  "vi_entrada_esc_interrumpe_si_esta_ocupado: con `busy = true`, Esc devuelve `[Command::Cancel]` y el modo sigue siendo `Insert`",
+  "vi_entrada_desactivado_no_cambia_nada: con `vi == None`, Esc y `x` se comportan como antes (`x` se escribe)",
+  "vi_entrada_render_muestra_el_modo_80x24: la fila 20 contiene `-- NORMAL --` en modo normal y `-- INSERT --` en inserción; sin vi, ninguna de las dos",
+]
+no_hagas = [
+  "No actives vi por defecto",
+  "No dejes que vi capture teclas cuando hay una ventana modal abierta (aprobación, ayuda, revisión, selector, búsqueda)",
+  "No cambies el título izquierdo de la caja ni el título inferior del modo Build/Plan",
+]
+
+[[tarea]]
+id = "F10.37c"
+nombre = "tui-vi-preferencia"
+titulo = "Configuración: `[preferencias] modo_vi = true` activa el modo vi de la TUI"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F10.37b"]
+toca = ["crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-config modo_vi && cargo build -p pcode-cli"
+contexto = [
+  "crates/pcode-config/src/lib.rs (struct `PrefsCfg`, campo `mouse`, y la línea `c.preferences.mouse = p.mouse.or(c.preferences.mouse);` de la mezcla de preferencias)",
+  "crates/pcode-cli/src/chat.rs (struct `Prepared` con el campo `mouse`, función `prepare` y función `tui`)",
+  "crates/pcode-tui/src/run.rs (struct `TuiOptions` con el campo `mouse`, y el principio de `run_tui`, donde se crea `app`)",
+]
+objetivo = '''
+Sigue el mismo camino que la preferencia `raton` (campo `mouse`).
+1. `pcode-config/src/lib.rs`, `PrefsCfg`: añade el campo `vi_mode` (firma abajo) y, en la mezcla de
+   preferencias, `c.preferences.vi_mode = p.vi_mode.or(c.preferences.vi_mode);`.
+2. `chat.rs`: añade `vi: bool` a `Prepared`, rellénalo en `prepare` con
+   `cfg.preferences.vi_mode.unwrap_or(false)` y pásalo en `tui` como `TuiOptions { vi: p.vi, .. }`.
+3. `run.rs`: añade a `TuiOptions` `pub vi: bool` (doc: «Modo vi en la entrada») y, tras crear `app` en
+   `run_tui`, `if opts.vi { app.vi = Some(crate::vi::Vi::new()); }` (guarda `let vi = opts.vi;` antes si
+   `opts` ya se ha consumido por partes).
+'''
+firmas = '''
+// crates/pcode-config/src/lib.rs, en `pub struct PrefsCfg`
+    /// Modo vi en la entrada de la TUI.
+    #[serde(rename = "modo_vi")]
+    pub vi_mode: Option<bool>,
+'''
+ejemplo = '''
+pcode.toml:  [preferencias]\nmodo_vi = true   -> cfg.preferences.vi_mode == Some(true) -> la TUI arranca con app.vi == Some(_)
+sin la clave                                   -> None -> app.vi == None
+'''
+tests = [
+  "modo_vi_preferencia_se_lee: (en `pcode-config`, `mod tests`) `toml::from_str::<Config>(\"[preferencias]\\nmodo_vi = true\\n\")` da `preferences.vi_mode == Some(true)` y sin la clave da `None`",
+]
+no_hagas = [
+  "No añadas una opción de línea de órdenes: solo la preferencia",
+  "No cambies otros campos de `PrefsCfg` ni de `TuiOptions`",
+]
+
+[[tarea]]
+id = "F10.38"
+nombre = "tui-cola-mensajes"
+titulo = "TUI: escribir el siguiente mensaje mientras el agente trabaja (cola)"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.37"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-tui/src/i18n.rs"]
+acepta = "cargo test -p pcode-tui cola"
+contexto = [
+  "crates/pcode-tui/src/app.rs (función `submit`: el bloque `if self.busy { … \"wait\" … return vec![]; }`; y en `update`, los brazos `Event::TurnDone` y `Event::Cancelled`)",
+  "crates/pcode-tui/src/render.rs (función `render`, sección «Entrada»: el `Block` de la caja y sus títulos)",
+  "crates/pcode-tui/src/run.rs (bucle de `run_tui`: `for cmd in app.update(ev)` ejecuta también las órdenes que devuelve `TurnDone`; no hay que tocarlo)",
+]
+objetivo = '''
+Hoy, si el agente está trabajando, Intro muestra «espera» y el mensaje se pierde. Con la cola, se guarda y
+se envía solo al terminar el turno.
+1. `app.rs`: añade a `App` `pub queue: Vec<String>` (doc: «Mensajes en cola mientras el agente trabaja»),
+   vacío en `App::new`.
+2. `app.rs`, `submit`, bloque `if self.busy` (el de los mensajes normales, tras las órdenes `/`): si el texto
+   empieza por `!`, deja el aviso de espera como ahora; si no, `self.queue.push(text)` y devuelve `vec![]`
+   sin añadir ninguna entrada a la conversación.
+3. `app.rs`, `update`, `Event::TurnDone`: tras lo que hace ahora, si `problem` era `None` y la cola no está
+   vacía: saca el primero (`self.queue.remove(0)`), añade `Entry::User(texto)`, pon `self.busy = true` y
+   `self.scroll = 0`, y devuelve `vec![Command::Send(texto)]` (si el mensaje lleva marcadores de pegado,
+   envía `expand_pastes(..)` como hace `submit`). Si `problem` era `Some`, llama a `self.unqueue()`.
+4. `app.rs`, `update`, `Event::Cancelled`: tras lo de ahora, `self.unqueue()`.
+5. `app.rs`: método privado `fn unqueue(&mut self)`: si la cola no está vacía, pon en la entrada los
+   mensajes de la cola unidos con `\n`, seguidos (tras otro `\n`) de lo que hubiera escrito si no estaba
+   vacío; vacía la cola y deja el cursor al final. Así nada se pierde y el usuario decide.
+6. `app.rs`, brazo `"nuevo" | "new"` de `submit`: vacía la cola.
+7. `i18n.rs`: añade al final de `ES` y `EN`: `queued` = `"en cola"` / `"queued"`.
+8. `render.rs`, caja de la entrada: si la cola no está vacía, añade un título abajo a la derecha:
+   `.title_bottom(Line::from(Span::styled(format!(" ⧗ {} {} ", app.queue.len(), t(app.lang, "queued")), th.warning())).right_aligned())`.
+'''
+sin_firmas = "Solo añade el campo `queue` a App; el resto cambia `submit`, `update` y el dibujo"
+ejemplo = '''
+ocupado; teclear "siguiente" + Intro   -> ninguna orden; app.queue == ["siguiente"]; entrada vacía
+Event::TurnDone { problem: None, .. }  -> [Command::Send("siguiente")]; última entrada User("siguiente"); busy; cola vacía
+con dos en cola ["a", "b"]: TurnDone   -> envía "a" y la cola queda ["b"]
+con ["a", "b"] en cola y "c" escrito: Event::Cancelled -> cola vacía, input == "a\nb\nc", busy == false
+TurnDone con problem Some("✗ fallo") y ["a"] en cola -> no envía nada; input == "a"
+ocupado; "!ls" + Intro                 -> aviso de espera, la cola sigue vacía
+pantalla 80×24 con 2 en cola: la fila 22 contiene "⧗ 2 en cola"
+'''
+tests = [
+  "cola_guarda_el_mensaje_mientras_trabaja: el primer caso del ejemplo",
+  "cola_envia_al_terminar_el_turno: el segundo y el tercer caso del ejemplo",
+  "cola_vuelve_a_la_entrada_al_cancelar: el cuarto caso del ejemplo",
+  "cola_vuelve_a_la_entrada_si_el_turno_falla: el quinto caso del ejemplo",
+  "cola_no_acepta_ordenes_de_shell: el sexto caso del ejemplo",
+  "cola_render_80x24_muestra_cuantos_hay: el último caso del ejemplo; con la cola vacía la fila 22 no contiene `⧗`",
+]
+no_hagas = [
+  "No toques `run.rs`: ya ejecuta las órdenes que devuelve `update`",
+  "No encoles las órdenes `/` (siguen ejecutándose al momento, como ahora)",
+  "No cambies el test `chat_intro_envia_y_marca_ocupado`: debe seguir pasando (Intro ocupado no devuelve órdenes)",
+]
+
+[[tarea]]
+id = "F10.39"
+nombre = "tui-linea-estado"
+titulo = "TUI: línea de estado configurable (modelo, tokens, contexto, coste, rama, modo)"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F10.38"]
+toca = []
+acepta = "cargo test -p pcode-tui status && cargo test -p pcode-config linea_de_estado"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.39a (elementos y texto de la línea de estado, lógica pura), F10.39b (dibujo en la
+TUI) y F10.39c (`[preferencias] estado`, precios y rama de git).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.39a"
+nombre = "tui-estado-nucleo"
+titulo = "TUI: elementos de la línea de estado y su texto (lógica pura)"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.30"]
+toca = ["crates/pcode-tui/src/status.rs", "crates/pcode-tui/src/lib.rs"]
+acepta = "cargo test -p pcode-tui status::"
+contexto = [
+  "crates/pcode-tui/src/app.rs (función `human_tokens(n) -> String`: `950`, `3.1k`, `1.2M`)",
+  "crates/pcode-tui/src/i18n.rs (función `t(lang, clave)` y las claves `context` = «contexto» y `plan` = «PLAN», que ya existen)",
+  "crates/pcode-models/src/types.rs (struct `Usage { input_tokens, output_tokens, cached_input_tokens }`)",
+]
+objetivo = '''
+1. Crea `status.rs` con `StatusItem`, `parse_items`, `StatusData`, `cost_usd` y `status_text` (firmas abajo).
+2. Nombres en la configuración: `modelo` → `Model`, `tokens` → `Tokens`, `contexto` → `Context`, `coste` →
+   `Cost`, `rama` → `Branch`, `modo` → `Mode`. `parse_items` devuelve los elementos en el orden recibido; un
+   nombre desconocido →
+   `Err("elemento de estado desconocido «<nombre>»: usa modelo, tokens, contexto, coste, rama o modo")`.
+3. `cost_usd(usage, price_in, price_out)`: precios en dólares por MILLÓN de tokens:
+   `(input_tokens * price_in + output_tokens * price_out) / 1_000_000`.
+4. `status_text(items, d, lang)`: el texto de cada elemento, unidos con `" · "`. Los que no tienen dato se
+   omiten (sin dejar separador):
+   - `Model` → `d.model`.
+   - `Tokens` → `"↑<in> ↓<out>"` con `human_tokens`.
+   - `Context` → `"<contexto> <pct> %"` con `t(lang, "context")`; se omite si `context_percent` es `None`.
+   - `Cost` → `"$<coste con 2 decimales>"`; se omite si `cost` es `None`.
+   - `Branch` → `"⎇ <rama>"`; se omite si `branch` es `None`.
+   - `Mode` → `t(lang, "plan")` si `d.plan`; se omite si no.
+5. `lib.rs`: añade `pub mod status;`.
+'''
+firmas = '''
+// crates/pcode-tui/src/status.rs
+use crate::i18n::Lang;
+use pcode_models::Usage;
+
+/// Un elemento de la línea de estado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusItem { Model, Tokens, Context, Cost, Branch, Mode }
+
+/// Elementos a partir de sus nombres en `[preferencias] estado`.
+pub fn parse_items(names: &[String]) -> Result<Vec<StatusItem>, String>;
+
+/// Datos que puede mostrar la línea de estado.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusData<'a> {
+    pub model: &'a str,
+    pub usage: Usage,
+    pub context_percent: Option<u64>,
+    pub cost: Option<f64>,
+    pub branch: Option<&'a str>,
+    pub plan: bool,
+}
+
+/// Coste en dólares con precios por millón de tokens.
+pub fn cost_usd(usage: &Usage, price_in: f64, price_out: f64) -> f64;
+
+/// Texto de la línea de estado.
+pub fn status_text(items: &[StatusItem], d: &StatusData, lang: Lang) -> String;
+'''
+ejemplo = '''
+d = StatusData { model: "glm-4", usage: Usage { input_tokens: 12_300, output_tokens: 950, cached_input_tokens: 0 },
+                 context_percent: Some(25), cost: Some(0.4267), branch: Some("main"), plan: true }
+status_text(&[Model, Tokens, Context, Cost, Branch, Mode], &d, Lang::Es) ==
+  "glm-4 · ↑12.3k ↓950 · contexto 25 % · $0.43 · ⎇ main · PLAN"
+con context_percent: None, cost: None, branch: None, plan: false ->  "glm-4 · ↑12.3k ↓950"
+status_text(&[], &d, Lang::Es) == ""
+cost_usd(&Usage { input_tokens: 1_000_000, output_tokens: 500_000, .. }, 3.0, 15.0) == 10.5
+parse_items(&["rama".into(), "modelo".into()]) == Ok(vec![Branch, Model])
+'''
+tests = [
+  "status_texto_completo: el primer caso del ejemplo",
+  "status_omite_lo_que_no_hay: el segundo caso del ejemplo (sin separadores de más)",
+  "status_sin_elementos_es_vacio: `status_text(&[], …)` es la cadena vacía",
+  "status_coste_por_millon: el caso `cost_usd` del ejemplo",
+  "status_parse_respeta_el_orden_y_rechaza_desconocidos: el caso `parse_items` del ejemplo y `[\"hora\"]` da el `Err` con `elemento de estado desconocido «hora»`",
+]
+no_hagas = [
+  "No lances `git` ni leas nada aquí: la rama llega en `StatusData`",
+  "No pongas precios de modelos en el código: llegan de la configuración (F10.39c)",
+]
+
+[[tarea]]
+id = "F10.39b"
+nombre = "tui-estado-dibujo"
+titulo = "TUI: dibujar la línea de estado configurada"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F10.38", "F10.39a"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/render.rs"]
+acepta = "cargo test -p pcode-tui status_linea && cargo test -p pcode-tui render::"
+contexto = [
+  "crates/pcode-tui/src/status.rs (`StatusItem`, `StatusData`, `status_text`, `cost_usd`)",
+  "crates/pcode-tui/src/render.rs (función `render`, sección «Barra de estado»: las variables `left`, `spans`, `used` y el cálculo de `right` con los atajos)",
+  "crates/pcode-tui/src/app.rs (struct `App`, `App::new` y `context_percent`)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` tres campos con su `///`: `pub status_items: Vec<crate::status::StatusItem>`
+   («Elementos de la línea de estado; vacío = la de siempre»), `pub branch: Option<String>` («Rama de git
+   del proyecto») y `pub prices: Option<(f64, f64)>` («Precio de entrada y de salida, en dólares por millón
+   de tokens»). En `App::new`: `vec![]`, `None`, `None`.
+2. `render.rs`, barra de estado: si `app.status_items` está vacío, TODO se dibuja exactamente como ahora. Si
+   no, la parte izquierda (lo que hoy son los tokens y el medidor de contexto) se sustituye por un solo
+   `Span::styled(format!(" {} ", texto), th.dimmed())`, con `texto = status_text(&app.status_items, &datos, app.lang)` y
+   `datos = StatusData { model: &app.model, usage: app.usage, context_percent: (app.context_limit > 0).then(|| app.context_percent()), cost: app.prices.map(|(i, o)| cost_usd(&app.usage, i, o)), branch: app.branch.as_deref(), plan: app.plan }`.
+   `used` pasa a ser el número de caracteres de ese span. La parte derecha (atajos `hint` / `hint_short`,
+   relleno) no cambia.
+'''
+sin_firmas = "Solo añade los campos `status_items`, `branch` y `prices` a App; el dibujo usa las funciones de F10.39a"
+ejemplo = '''
+app.status_items = [Model, Branch, Context]; app.model = "glm-4"; app.branch = Some("main"); límite 160000, uso 40000
+pantalla 80×24: la fila 23 empieza por " glm-4 · ⎇ main · contexto 25 % " y acaba en "Ctrl+C sale"
+app.status_items = [Cost]; app.prices = Some((3.0, 15.0)); usage 1_000_000 / 500_000 -> la fila 23 empieza por " $10.50 "
+app.status_items vacío -> la fila 23 empieza por " ↑0 ↓0 tokens" (como siempre)
+'''
+tests = [
+  "status_linea_configurada_80x24: el primer caso del ejemplo",
+  "status_linea_configurada_120x40: lo mismo a 120×40 (fila 39)",
+  "status_linea_con_coste: el segundo caso del ejemplo",
+  "status_linea_por_defecto_no_cambia: con `status_items` vacío la fila 23 empieza por ` ↑0 ↓0 tokens`",
+]
+no_hagas = [
+  "No cambies la barra por defecto: los tests `render_80x24_transcripcion_entrada_y_estado` y `medidor_de_contexto_en_la_barra_80x24_y_120x40` deben seguir pasando",
+  "No cambies la barra cuando la tecla líder está activa (`app.leader`)",
+  "No leas la rama de git desde `render.rs`",
+]
+
+[[tarea]]
+id = "F10.39c"
+nombre = "tui-estado-preferencias"
+titulo = "Configuración: `[preferencias] estado`, precios por millón de tokens y rama de git en la TUI"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.37c", "F10.39b"]
+toca = ["crates/pcode-config/src/lib.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tui/src/run.rs"]
+acepta = "cargo test -p pcode-config linea_de_estado && cargo test -p pcode-tui rama_de_git && cargo build -p pcode-cli"
+contexto = [
+  "crates/pcode-config/src/lib.rs (struct `PrefsCfg` y la mezcla de preferencias: las líneas `c.preferences.<campo> = p.<campo>.or(c.preferences.<campo>);`)",
+  "crates/pcode-cli/src/chat.rs (struct `Prepared`, funciones `prepare` y `tui`; `p.notices` son los avisos de arranque)",
+  "crates/pcode-tui/src/run.rs (struct `TuiOptions`, función `project_files` — ejemplo de lanzar `git -C <root>` — y, en `run_tui`, el brazo `Msg::Turn`)",
+  "crates/pcode-tui/src/status.rs (`parse_items(names) -> Result<Vec<StatusItem>, String>`)",
+]
+objetivo = '''
+1. `pcode-config/src/lib.rs`, `PrefsCfg`: añade `status`, `price_in` y `price_out` (firmas abajo) y sus tres
+   líneas en la mezcla de preferencias (mismo patrón `p.x.or(c.preferences.x)`).
+2. `chat.rs`: añade a `Prepared` `status: Vec<String>` y `prices: Option<(f64, f64)>`; en `prepare`:
+   `cfg.preferences.status.clone().unwrap_or_default()` y
+   `cfg.preferences.price_in.zip(cfg.preferences.price_out)`.
+3. `chat.rs`, función `tui`: `pcode_tui::status::parse_items(&p.status)`: con `Err(e)`, añade `e` a los
+   avisos (`notices`) y usa una lista vacía. Pasa `status_items` y `prices` en `TuiOptions`.
+4. `run.rs`: añade a `TuiOptions` `pub status_items: Vec<crate::status::StatusItem>` y
+   `pub prices: Option<(f64, f64)>` (con su `///`), y cópialos a `app` tras crearla.
+5. `run.rs`: añade `pub fn git_branch(root: &Path) -> Option<String>`: ejecuta
+   `git -C <root> rev-parse --abbrev-ref HEAD`; si sale bien y la salida recortada no está vacía, la
+   devuelve; en cualquier otro caso `None`.
+6. `run.rs`, `run_tui`: `app.branch = git_branch(&root);` tras crear `app` y otra vez en el brazo
+   `Msg::Turn` (el agente puede haber cambiado de rama).
+'''
+firmas = '''
+// crates/pcode-config/src/lib.rs, en `pub struct PrefsCfg`
+    /// Elementos de la línea de estado de la TUI, en orden: `modelo`, `tokens`, `contexto`, `coste`, `rama`, `modo`.
+    #[serde(rename = "estado")]
+    pub status: Option<Vec<String>>,
+    /// Precio de los tokens de entrada, en dólares por millón (para el elemento `coste`).
+    #[serde(rename = "precio_entrada")]
+    pub price_in: Option<f64>,
+    /// Precio de los tokens de salida, en dólares por millón.
+    #[serde(rename = "precio_salida")]
+    pub price_out: Option<f64>,
+
+// crates/pcode-tui/src/run.rs
+/// Rama actual del repositorio git de `root` (`None` si no es un repositorio).
+pub fn git_branch(root: &std::path::Path) -> Option<String>;
+'''
+ejemplo = '''
+pcode.toml:
+  [preferencias]
+  estado = ["modelo", "rama", "contexto", "coste"]
+  precio_entrada = 3.0
+  precio_salida = 15.0
+-> preferences.status == Some(["modelo","rama","contexto","coste"]), price_in == Some(3.0), price_out == Some(15.0)
+git_branch(directorio temporal sin git) == None
+git_branch(repositorio recién creado con `git init -q -b tema` y un commit) == Some("tema")
+'''
+tests = [
+  "linea_de_estado_preferencias_se_leen: (en `pcode-config`, `mod tests`) el toml del ejemplo da esos tres valores; sin las claves, los tres son `None`",
+  "rama_de_git_sin_repositorio_es_none: (en `run.rs`) `git_branch` de un directorio temporal vacío es `None`",
+  "rama_de_git_de_un_repositorio: (en `run.rs`) tras `git init -q -b tema`, configurar `user.email` y `user.name` y hacer un commit, `git_branch` es `Some(\"tema\")`",
+]
+no_hagas = [
+  "No pongas precios por defecto: sin `precio_entrada` y `precio_salida` el elemento `coste` no se muestra",
+  "No llames a git en cada tecla ni en cada dibujo: solo al arrancar y al terminar un turno",
+  "No hagas fallar el arranque por un nombre de elemento desconocido: es un aviso",
+]
+
+[[tarea]]
+id = "F10.40"
+nombre = "cli-sesiones"
+titulo = "CLI: `pcode sesiones` (listar, buscar, bifurcar) y retomar con `--sesion <id>`"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.33"]
+toca = []
+acepta = "cargo test -p pcode-store sesion && cargo test -p pcode-cli --test sesiones"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.40a (consultas en `pcode-store`), F10.40b (`pcode sesiones`) y F10.40c
+(`--sesion <id>` en `pcode chat` y `pcode tui`). Ya existía: `--continuar` retoma la última conversación.
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.40a"
+nombre = "store-buscar-bifurcar"
+titulo = "`pcode-store`: sesión por id, número de mensajes, búsqueda de texto y bifurcación"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.33"]
+toca = ["crates/pcode-store/src/lib.rs"]
+acepta = "cargo test -p pcode-store sesion"
+contexto = [
+  "crates/pcode-store/src/lib.rs (struct `SessionRow`, funciones `sessions`, `events`, `create_session`, `append_event` y los tests del final: cómo se usa `Store::open_in_memory()`)",
+]
+objetivo = '''
+Las conversaciones se guardan como eventos de tipo `"mensaje"` cuyo `payload` es un `Message` en JSON
+(`{"role":"user","content":"…"}`; los roles son `system`, `user`, `assistant` y `tool`): el texto está en
+`payload["content"]`.
+1. Añade a `lib.rs` la struct `SearchHit` y a `impl Store` los métodos `session`, `message_count`, `search`
+   y `fork` (firmas abajo).
+2. `session(id)`: la fila de esa sesión o `None` (misma consulta que `sessions`, con `WHERE id = ?1`).
+3. `message_count(id)`: `SELECT COUNT(*) FROM events WHERE session_id = ?1 AND kind = 'mensaje'`.
+4. `search(text, limit)`: con `text` en blanco, `vec![]`. Si no, recorre `self.sessions(u32::MAX)` (de la
+   más reciente a la más antigua) y, en cada una, sus eventos `mensaje` en orden, saltando los de `payload["role"] == "system"` (el
+   prompt de sistema no es conversación); el primero cuyo `payload["content"]` (cadena) contenga `text` sin distinguir mayúsculas da un `SearchHit` de esa sesión
+   (como mucho uno por sesión). Para al llegar a `limit`.
+5. `snippet`: los 30 caracteres anteriores a la coincidencia, la coincidencia y los 50 siguientes, con los
+   saltos de línea cambiados por espacios; `…` delante si se recortó por delante y `…` detrás si se recortó
+   por detrás. Trabaja con `Vec<char>` de la versión en minúsculas y de la original (misma longitud en
+   caracteres para el texto habitual; si las longitudes difieren, usa como fragmento los primeros 80
+   caracteres del contenido).
+6. `fork(id)`: `Ok(None)` si la sesión no existe. Si existe: crea otra con el mismo `model` y
+   `task = format!("⑂ {}", task)`, copia en orden todos sus eventos (`kind` y `payload`) y devuelve
+   `Ok(Some(id_nuevo))`. La original no cambia.
+'''
+firmas = '''
+// crates/pcode-store/src/lib.rs
+/// Una sesión en la que aparece un texto buscado.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchHit {
+    /// La sesión.
+    pub session: SessionRow,
+    /// Fragmento del mensaje donde aparece.
+    pub snippet: String,
+}
+
+impl Store {
+    /// Una sesión por su id.
+    pub fn session(&self, id: i64) -> Result<Option<SessionRow>, StoreError>;
+    /// Mensajes guardados de una sesión.
+    pub fn message_count(&self, id: i64) -> Result<u64, StoreError>;
+    /// Sesiones (de la más reciente a la más antigua) con algún mensaje que contiene `text`.
+    pub fn search(&self, text: &str, limit: u32) -> Result<Vec<SearchHit>, StoreError>;
+    /// Copia una sesión con todos sus eventos; devuelve el id de la copia.
+    pub fn fork(&self, id: i64) -> Result<Option<i64>, StoreError>;
+}
+'''
+ejemplo = '''
+sesión 1 (task "login"): mensajes {"role":"system","content":"eres un agente"}, {"role":"user","content":"añade el Login con OAuth"}
+                         y {"role":"assistant","content":"hecho"}
+sesión 2 (task "tests"): mensaje {"role":"user","content":"arregla los tests"}; y un evento de tipo "otro"
+message_count(1) == 3;  message_count(2) == 1;  session(9) == None
+search("login", 10) -> 1 resultado: session.id == 1, snippet == "añade el Login con OAuth"
+search("e", 10)     -> 2 resultados, el primero de la sesión 2
+search("e", 1)      -> 1 resultado;   search("  ", 10) -> vacío;   search("zzz", 10) -> vacío
+search("agente", 10) -> vacío (solo aparece en el mensaje de sistema)
+fork(1) == Some(3): session(3).task == "⑂ login", message_count(3) == 3;  fork(9) == None
+'''
+tests = [
+  "sesion_por_id_y_numero_de_mensajes: los casos `message_count` y `session` del ejemplo",
+  "sesion_buscar_encuentra_sin_distinguir_mayusculas: `search(\"login\", 10)` da la sesión 1 con ese fragmento",
+  "sesion_buscar_ordena_por_reciente_y_respeta_el_limite: los casos `search(\"e\", …)` del ejemplo",
+  "sesion_buscar_vacio_o_sin_resultados: `search(\"  \", 10)` y `search(\"zzz\", 10)` son vacíos",
+  "sesion_buscar_salta_el_mensaje_de_sistema: `search(\"agente\", 10)` es vacío",
+  "sesion_buscar_recorta_el_fragmento: en un mensaje de 300 caracteres con la palabra en medio, el fragmento empieza y acaba por `…` y mide menos de 100 caracteres",
+  "sesion_bifurcar_copia_los_eventos: los casos `fork` del ejemplo, y `events(3)` tiene los mismos `kind` y `payload` que `events(1)`",
+]
+no_hagas = [
+  "No cambies el esquema de la base ni `VERSION`: no hace falta ninguna tabla nueva",
+  "No cambies los métodos que ya existen",
+  "No añadas dependencias (ni `pcode-models`): el contenido se lee de `payload[\"content\"]`",
+]
+
+[[tarea]]
+id = "F10.40b"
+nombre = "cli-sesiones-orden"
+titulo = "CLI: `pcode sesiones [listar | buscar <texto> | bifurcar <id>]`"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.33", "F10.40a"]
+toca = ["crates/pcode-cli/src/sesiones.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/sesiones.rs"]
+acepta = "cargo test -p pcode-cli --test sesiones orden"
+contexto = [
+  "crates/pcode-store/src/lib.rs (`Store::open`, `sessions(limit)`, `message_count(id)`, `search(text, limit) -> Vec<SearchHit { session, snippet }>`, `fork(id) -> Option<i64>`)",
+  "crates/pcode-cli/src/main.rs (enum `Cmd`, cómo se declara una orden con subórdenes — `Lanzador` — y el `match cli.command`)",
+  "crates/pcode-cli/tests/chat.rs (funciones `resp` y `pcode`, y el test `chat_con_prompt_inicial_y_sin_stdin`: así se crea una sesión con el proveedor falso)",
+]
+objetivo = '''
+1. Crea `sesiones.rs` con `SessionsArgs`, `SessionsCmd` y `pub fn sessions(a: SessionsArgs) -> anyhow::Result<i32>`
+   (firmas abajo). Abre `Store::open(&cwd.join(".pcode/pcode.db"))`.
+2. Sin suborden o con `listar`: las 50 últimas (`sessions(50)`). En texto, una línea por sesión:
+   `"#<id>  <n> mensajes  <modelo>  <título>"` (el título es `task`); si no hay ninguna,
+   `"No hay conversaciones guardadas en este proyecto."`. Con `--formato json`, una sola línea con una lista de
+   objetos `{"id", "titulo", "modelo", "mensajes", "creado_ms"}`.
+3. `buscar <texto>`: `search(texto, 20)`. En texto, por cada resultado dos líneas: `"#<id>  <título>"` y
+   `"    <fragmento>"`; sin resultados, `"Sin resultados."`. Con `--formato json`, lista de
+   `{"id", "titulo", "fragmento"}`.
+4. `bifurcar <id>`: `fork(id)`: con `Some(nuevo)` imprime
+   `"Sesión <id> bifurcada en la <nuevo>. Retómala con: pcode tui --sesion <nuevo>"` y devuelve 0; con `None`,
+   escribe en stderr `"no existe la sesión <id>"` y devuelve 2.
+5. `--formato` distinto de `texto` y `json` → `anyhow::bail!("formato desconocido «…»: usa texto o json")`.
+6. `main.rs`: `mod sesiones;`, variante `Sesiones(sesiones::SessionsArgs)` en `Cmd` con el doc
+   `/// Conversaciones guardadas de este proyecto: listar, buscar texto y bifurcar.` y el brazo
+   `Some(Cmd::Sesiones(a)) => std::process::exit(sesiones::sessions(a)?),`.
+7. Crea `tests/sesiones.rs` (copia los ayudantes `resp` y `pcode` de `tests/chat.rs`); todos los tests de
+   esta tarea empiezan por `orden_`.
+'''
+firmas = '''
+// crates/pcode-cli/src/sesiones.rs
+/// Argumentos de `pcode sesiones`.
+#[derive(Debug, clap::Args)]
+pub struct SessionsArgs {
+    #[command(subcommand)]
+    pub cmd: Option<SessionsCmd>,
+    /// `texto` (por defecto) o `json`.
+    #[arg(long = "formato", default_value = "texto", global = true)]
+    pub format: String,
+}
+
+/// Subórdenes de `pcode sesiones`.
+#[derive(Debug, clap::Subcommand)]
+pub enum SessionsCmd {
+    /// Lista las últimas conversaciones (es lo que hace `pcode sesiones` a secas).
+    Listar,
+    /// Busca un texto en los mensajes de las conversaciones guardadas.
+    Buscar { texto: String },
+    /// Crea una copia de una conversación para seguir por otro camino.
+    Bifurcar { id: i64 },
+}
+
+/// Ejecuta `pcode sesiones` y devuelve el código de salida.
+pub fn sessions(a: SessionsArgs) -> anyhow::Result<i32>;
+'''
+ejemplo = '''
+$ pcode chat añade el login       (mock: «hecho»)
+$ pcode chat arregla los tests    (mock: «listo»)
+$ pcode sesiones
+#2  2 mensajes  mock  arregla los tests
+#1  2 mensajes  mock  añade el login
+$ pcode sesiones buscar LOGIN
+#1  añade el login
+    añade el login
+$ pcode sesiones bifurcar 1
+Sesión 1 bifurcada en la 3. Retómala con: pcode tui --sesion 3
+$ pcode sesiones bifurcar 99      -> stderr «no existe la sesión 99», código 2
+(el número de mensajes y el nombre del modelo dependen del mock: en los tests comprueba solo `#2`, `#1` y los títulos)
+'''
+tests = [
+  "orden_listar_muestra_las_sesiones_recientes_primero: tras dos `pcode chat`, `pcode sesiones` contiene `arregla los tests` antes que `añade el login`, y las líneas empiezan por `#2` y `#1`",
+  "orden_listar_vacio_lo_dice: en un directorio vacío, stdout contiene `No hay conversaciones guardadas`",
+  "orden_listar_json_es_una_lista: `pcode sesiones --formato json` es JSON válido, una lista de 2 objetos con `id` y `titulo`",
+  "orden_buscar_encuentra_por_texto: `pcode sesiones buscar LOGIN` contiene `#1` y no contiene `#2`; con `zzz`, `Sin resultados.`",
+  "orden_bifurcar_crea_una_copia: `pcode sesiones bifurcar 1` contiene `bifurcada en la 3` y después `pcode sesiones` lista 3 sesiones, una con `⑂ añade el login`",
+  "orden_bifurcar_inexistente_sale_con_2: `bifurcar 99` sale con 2 y stderr contiene `no existe la sesión 99`",
+]
+no_hagas = [
+  "No llames al modelo ni cargues `pcode.toml` en esta orden",
+  "No muestres fechas (no hay biblioteca de fechas en el proyecto): `creado_ms` solo sale en el JSON",
+  "No toques `tests/chat.rs`",
+]
+
+[[tarea]]
+id = "F10.40c"
+nombre = "cli-retomar-sesion"
+titulo = "CLI: `pcode chat --sesion <id>` y `pcode tui --sesion <id>` retoman una conversación concreta"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.24", "F10.39", "F10.40b"]
+toca = ["crates/pcode-cli/src/chat.rs", "crates/pcode-cli/tests/sesiones.rs"]
+acepta = "cargo test -p pcode-cli --test sesiones retomar"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (struct `ChatArgs` con `resume` y `ChatArgs::default_args`; función `prepare`: el bloque `if a.resume && let Some((sid, mut msgs)) = load_last(&persist.store) …`; función `load_session(store, id) -> Option<Vec<Message>>`)",
+  "crates/pcode-cli/tests/chat.rs (test `chat_continuar_retoma_la_conversacion`: el modelo de test)",
+]
+objetivo = '''
+1. `chat.rs`, `ChatArgs`: añade el campo `session` (firma abajo) y `session: None` en `default_args`.
+2. `chat.rs`, `prepare`: antes del bloque de `a.resume`, si `a.session` es `Some(id)`:
+   `match load_session(&persist.store, id)`: con `None` →
+   `anyhow::bail!("no existe la sesión {id} en este proyecto (mira `pcode sesiones`)")`; con `Some(msgs)`,
+   haz lo mismo que el bloque de `--continuar` con `sid = id`: sustituye el primer mensaje por el prompt de
+   sistema actual si es de sistema, `persist.session = Some(id)`, `persist.saved = msgs.len()`,
+   `resumed = Some((id, msgs.len()))` y `history = msgs`. Para no duplicar, saca esas líneas a un cierre o a
+   una función privada que usen los dos caminos.
+3. Añade a `tests/sesiones.rs` los tests de la lista (empiezan por `retomar_`).
+'''
+firmas = '''
+// crates/pcode-cli/src/chat.rs, dentro de `pub struct ChatArgs`
+    /// Retoma la conversación con ese número (ver `pcode sesiones`).
+    #[arg(long = "sesion", conflicts_with = "resume")]
+    pub session: Option<i64>,
+'''
+ejemplo = '''
+$ pcode chat primero             (mock «uno»)   -> sesión 1
+$ pcode chat otra cosa           (mock «dos»)   -> sesión 2
+$ pcode chat --sesion 1 sigue    (mock «tres»)  -> stdout contiene «Retomando la sesión 1» y «tres»
+$ pcode chat --sesion 9 hola     -> código distinto de 0; stderr contiene «no existe la sesión 9»
+$ pcode chat --sesion 1 --continuar x -> error de clap (opciones incompatibles)
+'''
+tests = [
+  "retomar_por_numero_de_sesion: los tres primeros pasos del ejemplo; además `pcode sesiones` sigue listando 2 sesiones (no se crea una tercera)",
+  "retomar_sesion_inexistente_falla: `--sesion 9` sale con código distinto de 0 y stderr contiene `no existe la sesión 9`",
+  "retomar_es_incompatible_con_continuar: `--sesion 1 --continuar` sale con código distinto de 0",
+]
+no_hagas = [
+  "No cambies el comportamiento de `--continuar`",
+  "No añadas `--sesion` a `pcode run` ni a `pcode preguntar`",
+  "No borres los tests `orden_…` de `tests/sesiones.rs`",
+]
+
+[[tarea]]
+id = "F10.41"
+nombre = "cli-revisar"
+titulo = "CLI: `pcode revisar` (revisión de los cambios sin commit, de lo preparado o de una rama)"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.32"]
+toca = []
+acepta = "cargo test -p pcode-server assist:: && cargo test -p pcode-cli --test revisar"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F10.41a (prompt de revisión para lo preparado o para una rama) y F10.41b (orden
+`pcode revisar`).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F10.41a"
+nombre = "revisar-objetivo"
+titulo = "Revisión: prompt para los cambios preparados (staged) o respecto a una rama"
+fase = "F10"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.32"]
+toca = ["crates/pcode-server/src/assist.rs"]
+acepta = "cargo test -p pcode-server assist::"
+contexto = [
+  "crates/pcode-server/src/assist.rs (función `review_prompt(root)`: construye el prompt con el diff de `git diff HEAD`; y en los tests, el ayudante `repo()` y `prompt_revisar_lleva_diff_y_lista`)",
+  "crates/pcode-server/src/workspace.rs (función `git(root, args) -> WsResult<String>` y `is_git(root)`; `WsResult<T>` es `Result<T, String>`)",
+]
+objetivo = '''
+1. `assist.rs`: añade `ReviewTarget` y `review_prompt_for` (firmas abajo).
+2. `review_prompt_for(root, target)`: si `!is_git(root)` → `Err("el proyecto no es un repositorio git")`.
+   El diff depende de `target`:
+   - `Worktree`: como ahora (`git diff --no-color --no-ext-diff HEAD`, y si falla, sin `HEAD`). Vacío →
+     `Err("no hay cambios que revisar")`.
+   - `Staged`: `git diff --no-color --no-ext-diff --cached`. Vacío →
+     `Err("no hay cambios preparados (git add) que revisar")`.
+   - `Base(rama)`: primero valida el nombre: no vacío, no empieza por `-` y solo letras, cifras y `._/-`; si
+     no → `Err("nombre de rama no válido")`. Diff: `git diff --no-color --no-ext-diff <rama>...HEAD`. Vacío →
+     `Err(format!("no hay cambios respecto a {rama}"))`.
+   Con el diff, el resto es idéntico a lo que hoy hace `review_prompt` (mismo texto, `touched_symbols` y
+   `clip(&diff, MAX_DIFF)`).
+3. `review_prompt(root)` pasa a ser `review_prompt_for(root, &ReviewTarget::Worktree)`: mueve el cuerpo, no
+   lo dupliques.
+'''
+firmas = '''
+// crates/pcode-server/src/assist.rs
+/// Qué cambios se revisan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewTarget {
+    /// Todo lo que no está en un commit.
+    Worktree,
+    /// Solo lo preparado con `git add`.
+    Staged,
+    /// Los commits de la rama actual que no están en esa rama base.
+    Base(String),
+}
+
+/// Prompt para revisar los cambios de `target`.
+pub fn review_prompt_for(root: &Path, target: &ReviewTarget) -> WsResult<String>;
+'''
+ejemplo = '''
+repositorio con un commit; se cambia lib.rs sin `git add`:
+  review_prompt_for(r, &Worktree) -> Ok(prompt con el diff)
+  review_prompt_for(r, &Staged)   -> Err("no hay cambios preparados (git add) que revisar")
+tras `git add lib.rs`:
+  review_prompt_for(r, &Staged)   -> Ok(prompt que contiene "Mantenibilidad" y la línea cambiada)
+tras `git branch base`, y un commit nuevo con el cambio:
+  review_prompt_for(r, &Base("base".into())) -> Ok(prompt con el diff del commit)
+  review_prompt_for(r, &Base("--output=x".into())) -> Err("nombre de rama no válido")
+'''
+tests = [
+  "revisar_staged_solo_lo_preparado: sin `git add` da el `Err` del ejemplo; tras `git add`, `Ok` con `Mantenibilidad` y la línea nueva",
+  "revisar_respecto_a_una_rama: el caso `Base(\"base\")` del ejemplo contiene la línea del commit nuevo",
+  "revisar_rama_no_valida_es_error: `Base(\"--output=x\")` y `Base(\"\")` dan `nombre de rama no válido`",
+  "revisar_rama_sin_cambios_lo_dice: `Base(\"base\")` justo después de crear la rama da `no hay cambios respecto a base`",
+  "revisar_worktree_sigue_igual: `review_prompt(r)` y `review_prompt_for(r, &Worktree)` devuelven lo mismo",
+]
+no_hagas = [
+  "No cambies el texto del prompt ni el test `prompt_revisar_lleva_diff_y_lista`",
+  "No pases el nombre de la rama a git sin validarlo",
+  "No toques `server.rs`",
+]
+
+[[tarea]]
+id = "F10.41b"
+nombre = "cli-revisar-orden"
+titulo = "CLI: `pcode revisar [--staged | --base <rama>] [--formato texto|json]`"
+fase = "F10"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F10.40b", "F10.41a"]
+toca = ["crates/pcode-cli/src/revisar.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/tests/revisar.rs"]
+acepta = "cargo test -p pcode-cli --test revisar"
+contexto = [
+  "crates/pcode-cli/src/ask.rs (struct `AskArgs` y función `ask`: cómo se carga la configuración, se elige proveedor y modelo, se construye `ChatRequest` y se llama a `sel.provider.chat_stream(&req, &on_text)`, en texto y en JSON)",
+  "crates/pcode-server/src/assist.rs (`ReviewTarget { Worktree, Staged, Base(String) }` y `review_prompt_for(root, &target) -> Result<String, String>`)",
+  "crates/pcode-cli/tests/chat.rs (funciones `resp` y `pcode`, y el test `preguntar_lee_stdin_y_formato_json`)",
+  "crates/pcode-cli/src/main.rs (enum `Cmd` y el `match cli.command`)",
+]
+objetivo = '''
+1. Crea `revisar.rs` con `ReviewArgs` (firma abajo) y `pub async fn review(a: ReviewArgs) -> anyhow::Result<i32>`.
+2. `review`: el objetivo es `Staged` si `a.staged`; `Base(rama)` si `a.base` es `Some`; si no, `Worktree`.
+   Llama a `pcode_server::assist::review_prompt_for(&cwd, &objetivo)`. Con `Err(e)`: escribe `e` en stderr y
+   devuelve `Ok(2)` (sin llamar al modelo).
+3. Con el prompt: carga la configuración, el proveedor y el modelo igual que `ask`
+   (`Config::load_layered`, `build_provider`, `pick_model`) y envía un `ChatRequest` con dos mensajes:
+   `Message::system("Eres un revisor de código exigente y concreto. Responde en español.")` y
+   `Message::user(prompt)`; `tools: vec![]`, `max_tokens: Some(a.max_tokens)`.
+4. Salida, igual que `ask`: en `texto`, el texto en streaming y un salto de línea final; en `json`, una línea
+   `{"texto": …, "entrada": …, "salida": …}`. Devuelve `Ok(0)`.
+5. `main.rs`: `mod revisar;`, variante `Revisar(revisar::ReviewArgs)` en `Cmd` con el doc
+   `/// Revisa con el modelo los cambios sin commit (o lo preparado, o la rama) antes de publicarlos.` y el
+   brazo `Some(Cmd::Revisar(a)) => std::process::exit(revisar::review(a).await?),`.
+6. Crea `tests/revisar.rs` con los ayudantes `resp` y `pcode` de `tests/chat.rs` y uno `git(dir, args)` que
+   ejecute `git -C dir …` y compruebe que sale bien. Prepara el repositorio con `git init -q`,
+   `git config user.email t@t`, `git config user.name t`, un archivo, `git add -A` y `git commit -qm base`.
+'''
+firmas = '''
+// crates/pcode-cli/src/revisar.rs
+/// Argumentos de `pcode revisar`.
+#[derive(Debug, clap::Args)]
+pub struct ReviewArgs {
+    /// Revisa solo lo preparado con `git add`.
+    #[arg(long = "staged", conflicts_with = "base")]
+    pub staged: bool,
+    /// Revisa los commits de la rama actual que no están en esta rama base (p. ej. `main`).
+    #[arg(long = "base")]
+    pub base: Option<String>,
+    /// Modelo.
+    #[arg(long = "modelo")]
+    pub model: Option<String>,
+    /// Proveedor de `[proveedores]`.
+    #[arg(long = "proveedor")]
+    pub provider: Option<String>,
+    /// Configuración del proyecto.
+    #[arg(long = "config", default_value = "pcode.toml")]
+    pub config: std::path::PathBuf,
+    /// `texto` (en streaming) o `json` (`{"texto", "entrada", "salida"}`).
+    #[arg(long = "formato", default_value = "texto")]
+    pub format: String,
+    /// Tokens de salida máximos.
+    #[arg(long = "max-tokens", default_value_t = 4000)]
+    pub max_tokens: u32,
+}
+
+/// Ejecuta `pcode revisar` y devuelve el código de salida.
+pub async fn review(a: ReviewArgs) -> anyhow::Result<i32>;
+'''
+ejemplo = '''
+(repositorio con un commit y lib.rs cambiado sin `git add`; mock que responde «🟡 falta un test. No está listo.»)
+$ pcode revisar                   -> stdout contiene «falta un test», código 0
+$ pcode revisar --formato json    -> {"texto":"🟡 falta un test. No está listo.","entrada":3,"salida":2}
+$ pcode revisar --staged          -> stderr «no hay cambios preparados (git add) que revisar», código 2
+$ pcode revisar  (en una carpeta sin git) -> stderr «el proyecto no es un repositorio git», código 2
+'''
+tests = [
+  "revisar_los_cambios_sin_commit: con un cambio sin `git add`, `pcode revisar` sale con 0 y stdout contiene el texto del mock",
+  "revisar_formato_json: `--formato json` da una línea JSON con `texto`, `entrada` y `salida`",
+  "revisar_staged_sin_nada_preparado_sale_con_2: código 2 y stderr contiene `no hay cambios preparados`",
+  "revisar_sin_git_sale_con_2: en un directorio temporal sin repositorio, código 2 y stderr contiene `no es un repositorio git`",
+  "revisar_respecto_a_una_rama: tras `git branch base`, un cambio y un commit, `pcode revisar --base base` sale con 0",
+]
+no_hagas = [
+  "No uses tools ni el bucle del agente: es una sola llamada al modelo, como `pcode preguntar`",
+  "No dupliques el prompt de revisión: sale de `review_prompt_for`",
+  "No cambies `ask.rs`",
+]
