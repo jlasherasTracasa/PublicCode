@@ -5125,3 +5125,45 @@ existe `xvfb-run`; si no hay ninguno, imprime `sin pantalla: se salta` y sale co
 `PRESUPUESTO` con 120 MB. Test: con un `pcode` falso (script Python que duerme) la memoria sale > 0 y la clave existe.
 '''
 tests = ["test_medir_ide_con_binario_falso"]
+
+[[tarea]]
+id = "F9.28"
+nombre = "ide-pulido-visual"
+titulo = "IDE: pulido visual pendiente (command center, iconos con glifos que existen, bienvenida centrada)"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/theme.rs"]
+acepta = "cargo test -p pcode-ide && cargo build -p pcode-ide"
+contexto = ["crates/pcode-ide/src/app.rs (`ui_title`, `ui_activity`, `ui_welcome`)", "crates/pcode-ide/src/theme.rs (`file_icon`)"]
+objetivo = '''
+1. `ui_title`: el `MenuBar` se come todo el ancho y no se ven el «command center» ni los botones de la derecha. Guarda
+   `let full = ui.max_rect();` al empezar y coloca el botón del centro con `ui.put(Rect::from_center_size(full.center(),
+   vec2(420.0, 22.0)), boton)` y los tres conmutadores con `ui.put` en rectángulos de 26×22 pegados a `full.right()`.
+2. Glifos que NO existen en las fuentes (salen como cuadros): `🗐`, `ⓘ`, `⧉`, `⌕`. Cambia en `ui_activity` el
+   explorador a `❐` y la búsqueda a `⚲`; en `theme::file_icon` los `.md` a `¶`; en los avisos `ⓘ` por `●`.
+   Comprobado con PIL: existen ❐ ⚲ ⚙ ⎇ ✦ ◧ ◨ ⬓ ¶ ≡ ◆ ◈ ▶ ■ ➤ ✎ ↶ ↷ ⇆ ✗ ⚠ ● ○ ▸ ▾ › ❯.
+3. `ui_welcome`: en vez de `ui.columns(2, …)`, centra dos columnas de 260 px con `ui.horizontal` +
+   `ui.add_space((ancho - 540)/2)` y `ui.vertical(|ui| { ui.set_width(260.0); … })`, ambas alineadas a la izquierda.
+'''
+tests = ["paleta_filtra_comandos", "busqueda_agrupada_por_archivo", "migas_de_pan", "iconos_por_tipo"]
+
+[[tarea]]
+id = "F9.29"
+nombre = "modo-opencode"
+titulo = "Modo opencode: la TUI con el aspecto y los atajos de opencode, más ligera (`pcode` en la terminal)"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["crates/pcode-tui/", "crates/pcode-cli/src/chat.rs", "packaging/linux/pcode.desktop"]
+acepta = "cargo test -p pcode-tui"
+contexto = ["crates/pcode-tui/src/ (App::update, render)", "opencode 2.x instalado en este equipo para comparar"]
+objetivo = '''
+El usuario quiere abrir PublicCode «en modo opencode»: igual que opencode pero optimizado. La TUI ya existe (`pcode` /
+`pcode tui`, ratatui). Acercarla a opencode: cabecera con sesión y modelo; mensajes con su bloque de herramientas
+plegable; entrada abajo con borde y modo (Build/Plan con Tab); `/` abre la lista de órdenes; `Ctrl+X` como tecla líder
+(`n` nueva sesión, `l` sesiones, `m` modelo, `t` tema, `u`/`r` deshacer y rehacer); barra lateral opcional con archivos
+tocados y uso de contexto; tema por defecto parecido al de opencode. Medir: `opencode` ocupa ~190 MB y tarda 4,3 s en
+arrancar; el objetivo es < 20 MB y < 100 ms. Acción «Modo terminal (como opencode)» en el lanzador.
+'''
+tests = ["render_80x24_como_opencode", "tab_cambia_build_y_plan", "lider_ctrl_x_n_nueva_sesion", "barra_de_ordenes_con_barra"]

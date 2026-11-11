@@ -235,20 +235,21 @@ pub fn tokens(text: &str, lang: Lang) -> Vec<(Range<usize>, Kind)> {
     out
 }
 
-/// Color de cada tipo para el tema claro u oscuro.
+/// Color de cada tipo, como los temas Dark+ y Light+ de VS Code.
 pub fn color(kind: Kind, dark: bool) -> Color32 {
-    match (kind, dark) {
-        (Kind::Plain, true) => Color32::from_rgb(0xd4, 0xd4, 0xd4),
-        (Kind::Plain, false) => Color32::from_rgb(0x1f, 0x1f, 0x1f),
-        (Kind::Keyword, true) => Color32::from_rgb(0x6c, 0xb6, 0xff),
-        (Kind::Keyword, false) => Color32::from_rgb(0x0b, 0x57, 0xd0),
-        (Kind::Str, true) => Color32::from_rgb(0xce, 0x91, 0x78),
-        (Kind::Str, false) => Color32::from_rgb(0xa3, 0x15, 0x15),
-        (Kind::Comment, true) => Color32::from_rgb(0x8b, 0x9b, 0x8b),
-        (Kind::Comment, false) => Color32::from_rgb(0x4d, 0x6b, 0x4d),
-        (Kind::Number, true) => Color32::from_rgb(0xb5, 0xce, 0xa8),
-        (Kind::Number, false) => Color32::from_rgb(0x0f, 0x6e, 0x3a),
-    }
+    let rgb = |c: u32| Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8);
+    rgb(match (kind, dark) {
+        (Kind::Plain, true) => 0xd4d4d4,
+        (Kind::Plain, false) => 0x1f1f1f,
+        (Kind::Keyword, true) => 0x569cd6,
+        (Kind::Keyword, false) => 0x0000ff,
+        (Kind::Str, true) => 0xce9178,
+        (Kind::Str, false) => 0xa31515,
+        (Kind::Comment, true) => 0x6a9955,
+        (Kind::Comment, false) => 0x008000,
+        (Kind::Number, true) => 0xb5cea8,
+        (Kind::Number, false) => 0x098658,
+    })
 }
 
 /// Texto resaltado listo para el editor.

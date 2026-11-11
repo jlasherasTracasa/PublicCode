@@ -13,3 +13,4 @@ pub mod snippets;
 pub mod state;
 pub mod terminal;
 pub mod texts;
+pub mod theme;

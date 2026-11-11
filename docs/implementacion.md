@@ -363,4 +363,6 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F9.25-releases-periodicas](../tareas/F9.25-releases-periodicas.md) | Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas | coordinador | F9.01 | pendiente |
 | [F9.26-ide-sin-gpu](../tareas/F9.26-ide-sin-gpu.md) | IDE en equipos sin aceleración: aviso claro y modo software (llvmpipe) automático si OpenGL falla | haiku | F9.05 | pendiente |
 | [F9.27-medir-ide](../tareas/F9.27-medir-ide.md) | Medir el IDE nativo: arranque hasta la primera ventana y memoria en reposo, con Xvfb si no hay pantalla | haiku | F9.17 | pendiente |
+| [F9.28-ide-pulido-visual](../tareas/F9.28-ide-pulido-visual.md) | IDE: pulido visual pendiente (command center, iconos con glifos que existen, bienvenida centrada) | haiku | F9.05 | pendiente |
+| [F9.29-modo-opencode](../tareas/F9.29-modo-opencode.md) | Modo opencode: la TUI con el aspecto y los atajos de opencode, más ligera (`pcode` en la terminal) | coordinador | F9.05 | pendiente |
 <!-- tabla:fin -->
