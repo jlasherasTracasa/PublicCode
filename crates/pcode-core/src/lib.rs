@@ -4,6 +4,7 @@ pub mod ask;
 pub mod checkpoint;
 pub mod compress;
 pub mod memory;
+pub mod script;
 pub mod stop_hook;
 pub mod stuck;
 
