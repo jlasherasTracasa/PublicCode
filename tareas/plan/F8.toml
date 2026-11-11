@@ -136,16 +136,272 @@ id = "F8.09"
 nombre = "lsp-tool-agente"
 titulo = "El agente consulta el LSP: tools `diagnosticos`, `definicion` y `referencias`"
 fase = "F8"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F5.35"]
-toca = ["crates/pcode-tools/src/lsp_tools.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-tools/tests/lsp_tools.rs"]
-acepta = "cargo test -p pcode-tools --test lsp_tools"
-contexto = ["crates/pcode-lsp/src/lib.rs", "crates/pcode-tools/src/registry.rs"]
+toca = []
+acepta = "cargo test -p pcode-tools lsp_tools && cargo test -p pcode-cli --test chat lsp_tools"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-Tools de solo lectura que usan un `LspManager` compartido: el agente comprueba errores de compilación sin ejecutar
-`cargo build`, encuentra definiciones y usos exactos (mejor que `buscar`) y lo cita en sus respuestas.
+Tarea de cierre de las tres tools de solo lectura que consultan el servidor de lenguaje.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F8.09a, F8.09b y F8.09c.
+3. Escribe el informe con la salida de `acepta`.
 '''
-tests = ["diagnosticos_de_un_archivo", "definicion_en_otro_archivo", "sin_servidor_explica_que_instalar"]
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.09a"
+nombre = "lsp-tools-formato"
+titulo = "`lsp_tools.rs`: posición de un símbolo en una línea, textos de resultados y almacén de diagnósticos"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F5.35"]
+toca = ["crates/pcode-tools/src/lsp_tools.rs", "crates/pcode-tools/src/lib.rs"]
+toca_extra = ["crates/pcode-tools/Cargo.toml", "Cargo.lock"]
+acepta = "cargo test -p pcode-tools lsp_tools::tests::formato_"
+contexto = [
+  "crates/pcode-lsp/src/lib.rs (structs `Location` {path, line, character} y `Diagnostic` {line, character, severity, message, source}, con líneas y columnas desde 0 y columnas en unidades UTF-16; tipo `DiagnosticsSink`)",
+  "crates/pcode-tools/Cargo.toml (sección `[dependencies]`)",
+]
+objetivo = '''
+El modelo no sabe contar columnas: las tools recibirán una línea (desde 1) y el nombre del símbolo, y
+este módulo calcula la posición que pide el LSP.
+1. `crates/pcode-tools/Cargo.toml`, en `[dependencies]`: añade `pcode-lsp = { path = "../pcode-lsp" }`
+   (`pcode-lsp` no depende de `pcode-tools`: no hay ciclo). `Cargo.lock` cambia solo: inclúyelo en el commit.
+2. Crea `lsp_tools.rs` con lo de las firmas; en `lib.rs` añade `pub mod lsp_tools;` (después de
+   `pub mod edit;`).
+3. `find_position(text, line, symbol)`: `line` va desde 1. Errores (texto EXACTO):
+   línea fuera de rango → `la línea {line} no existe (el archivo tiene {n} líneas)`; el símbolo no está
+   en esa línea → `«{symbol}» no aparece en la línea {line}: {texto de la línea sin espacios en los extremos, recortado a 100 caracteres}`.
+   Si está: `Ok((line - 1, columna))`, con la columna de su primera aparición en unidades UTF-16:
+   `linea[..indice_en_bytes].encode_utf16().count() as u32`.
+4. `render_locations(root, locs)`: sin resultados, `sin resultados`. Si no, una línea por posición (como
+   mucho 50): `{path}:{line + 1}:{character + 1}  {texto}`, donde `texto` es esa línea del archivo
+   `root.join(path)` sin espacios en los extremos y recortada a 120 caracteres (si no se puede leer,
+   la línea acaba tras la columna). Si hay más de 50, una última línea `… y {n} más`.
+5. `render_diagnostics(path, diags)`: sin diagnósticos, `{path}: sin diagnósticos`. Si no, primera línea
+   `{path}: {e} errores, {a} avisos` (severidad 1 = error, 2 = aviso) y después, ordenados por
+   severidad y luego por línea (como mucho 50):
+   `{path}:{line + 1}:{character + 1} {sev} {primera línea del mensaje}{fuente}`, con `sev` = `error`,
+   `aviso`, `info` o `pista` (1, 2, 3, otro) y `fuente` = ` [{source}]` si `source` no está vacío.
+6. `DiagStore`: un `Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>` (de `std::sync`). `sink()` devuelve un
+   `pcode_lsp::DiagnosticsSink` (`Arc::new(move |path, diags| …)`) que guarda la última lista de cada
+   ruta; `take(path)` saca y devuelve la lista (`None` si no ha llegado nada); `clear(path)` la borra.
+'''
+firmas = '''
+// crates/pcode-tools/src/lsp_tools.rs
+use pcode_lsp::{Diagnostic, DiagnosticsSink, Location};
+use std::path::Path;
+
+/// Posición LSP (línea desde 0, columna UTF-16) de `symbol` en la línea `line` (desde 1) de `text`.
+pub fn find_position(text: &str, line: u32, symbol: &str) -> Result<(u32, u32), String>;
+/// Posiciones como texto `ruta:línea:columna  código`.
+pub fn render_locations(root: &Path, locs: &[Location]) -> String;
+/// Diagnósticos de un archivo como texto, los errores primero.
+pub fn render_diagnostics(path: &str, diags: &[Diagnostic]) -> String;
+
+/// Últimos diagnósticos publicados por los servidores, por ruta.
+#[derive(Clone, Default)]
+pub struct DiagStore(std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<Diagnostic>>>>);
+
+impl DiagStore {
+    /// Almacén vacío.
+    pub fn new() -> Self;
+    /// Sumidero para `LspManager::new` que guarda lo que llega.
+    pub fn sink(&self) -> DiagnosticsSink;
+    /// Saca los diagnósticos de una ruta, si han llegado.
+    pub fn take(&self, path: &str) -> Option<Vec<Diagnostic>>;
+    /// Olvida los diagnósticos de una ruta.
+    pub fn clear(&self, path: &str);
+}
+'''
+ejemplo = '''
+find_position("fn main() {\n    let año = doble(1);\n}\n", 2, "doble") -> Ok((1, 14))
+find_position("fn main() {}\n", 1, "doble") -> Err("«doble» no aparece en la línea 1: fn main() {}")
+find_position("fn main() {}\n", 9, "main")  -> Err("la línea 9 no existe (el archivo tiene 1 líneas)")
+render_locations(root, &[Location { path: "src/lib.rs".into(), line: 0, character: 7 }])   (src/lib.rs: "pub fn doble() {}")
+  -> "src/lib.rs:1:8  pub fn doble() {}"
+render_diagnostics("a.rs", &[aviso en (4, 0) "sin usar" de "rustc", error en (1, 4) "tipo incorrecto\nmás" sin fuente])
+  -> "a.rs: 1 errores, 1 avisos\na.rs:2:5 error tipo incorrecto\na.rs:5:1 aviso sin usar [rustc]"
+'''
+tests = [
+  "formato_posicion_en_utf16: los tres casos de find_position del ejemplo (la `ñ` cuenta una unidad)",
+  "formato_posiciones_con_el_codigo: el caso de render_locations en un tempdir; con un archivo que no existe la línea es `x.rs:1:1`; sin posiciones, `sin resultados`",
+  "formato_diagnosticos_errores_primero: el caso de render_diagnostics, carácter a carácter; sin diagnósticos, `a.rs: sin diagnósticos`",
+  "formato_almacen_guarda_lo_ultimo: llamar dos veces al sink con la misma ruta deja la segunda lista; take la devuelve una vez y después None; clear la borra",
+]
+no_hagas = [
+  "No lances ningún servidor de lenguaje en esta tarea",
+  "No cambies nada en `crates/pcode-lsp`",
+]
+notas = "Los nombres de los tests empiezan por `formato_` para que caigan en el filtro de `acepta`."
+
+[[tarea]]
+id = "F8.09b"
+nombre = "lsp-tools-agente"
+titulo = "Tools `diagnosticos`, `definicion` y `referencias` sobre un `LspManager` compartido"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.09a"]
+toca = ["crates/pcode-tools/src/lsp_tools.rs", "crates/pcode-tools/tests/lsp_tools.rs"]
+acepta = "cargo test -p pcode-tools --test lsp_tools"
+contexto = [
+  "crates/pcode-lsp/src/lib.rs (`LspManager::{new, with_spawner, client_for}`; `LspClient::{from_streams, sync, saved, definition, references}`; `rel_path`; `read_msg`; y en `mod tests` la función `fake`: un servidor LSP falso con `tokio::io::duplex`)",
+  "crates/pcode-tools/src/lsp_tools.rs (`find_position`, `render_locations`, `render_diagnostics`, `DiagStore`)",
+  "crates/pcode-tools/src/registry.rs (trait `Tool`, `ToolContext`, `ToolOutput`, `resolve_in_root`)",
+]
+objetivo = '''
+1. En `lsp_tools.rs` añade las tres tools y las dos funciones de las firmas. Las tres guardan
+   `Arc<pcode_lsp::LspManager>` y un `DiagStore`, y declaran `&[Effect::Read]`.
+2. Pasos comunes de `call`: lee `path` (`falta `path``); `full = resolve_in_root(&ctx.root, path)?`;
+   `rel = pcode_lsp::rel_path(&ctx.root, &full)`; lee el archivo (`no se pudo leer {path}: {e}`).
+3. `diagnosticos` (parámetros `path` y `espera_ms` entero opcional; `required: ["path"]`). Descripción:
+   «Errores y avisos del servidor de lenguaje para un archivo, sin compilar el proyecto.»
+   `client = manager.client_for(&rel).await` (si falla: `ToolOutput::error(format!("{e}; mientras tanto compila con `bash`"))`);
+   `store.clear(&rel)`; `client.sync(&rel, &texto).await`; `client.saved(&rel).await`; después espera a
+   que `store.take(&rel)` devuelva algo, mirando cada 50 ms, como mucho `espera_ms` (por defecto 5000,
+   máximo 30000). Si llega: `ToolOutput::ok(render_diagnostics(&rel, &d))`. Si no:
+   `ToolOutput::ok(format!("{rel}: el servidor aún no ha publicado diagnósticos; repite la llamada en unos segundos"))`.
+4. `definicion` y `referencias` (parámetros `path`, `line` entero desde 1 y `symbol`; los tres
+   obligatorios). Descripciones: «Dónde se define el símbolo `symbol` que aparece en la línea `line` de
+   `path` (exacto, mejor que buscar texto).» y «Todos los usos del símbolo `symbol` que aparece en la
+   línea `line` de `path`.» Pasos: `find_position(&texto, line, symbol)` (su error es el de la tool);
+   `client_for` como arriba; `client.sync(&rel, &texto).await`; después `client.definition(&rel, l, c)`
+   o `client.references(&rel, l, c)`; `Ok(locs)` → `ToolOutput::ok(render_locations(&ctx.root, &locs))`;
+   `Err(e)` → `ToolOutput::error(e)`.
+5. `lsp_tools(manager, store)` devuelve las tres en este orden: diagnosticos, definicion, referencias.
+   `lsp_tools_for(root, overrides)`: `let store = DiagStore::new();`
+   `let m = pcode_lsp::LspManager::new(root, overrides, store.sink());` y `lsp_tools(Arc::new(m), store)`.
+6. Crea `tests/lsp_tools.rs` con un servidor falso (ejemplo) y los tests de la lista. La raíz del test
+   es `tempdir().path().canonicalize()`.
+'''
+firmas = '''
+// crates/pcode-tools/src/lsp_tools.rs (añadir)
+/// Tool `diagnosticos`.
+pub struct Diagnostics { /* manager: Arc<pcode_lsp::LspManager>, store: DiagStore */ }
+/// Tool `definicion`.
+pub struct Definition { /* igual */ }
+/// Tool `referencias`.
+pub struct References { /* igual */ }
+
+/// Las tres tools sobre un gestor ya creado (su sumidero debe ser `store.sink()`).
+pub fn lsp_tools(manager: std::sync::Arc<pcode_lsp::LspManager>, store: DiagStore)
+    -> Vec<std::sync::Arc<dyn crate::Tool>>;
+/// Las tres tools para un proyecto; `overrides` es la orden por grupo (`[lsp.<grupo>]` de la configuración).
+pub fn lsp_tools_for(root: &Path, overrides: std::collections::HashMap<String, Vec<String>>)
+    -> Vec<std::sync::Arc<dyn crate::Tool>>;
+'''
+ejemplo = '''
+// tests/lsp_tools.rs: gestor con un servidor falso (no hace falta `initialize`).
+async fn write_msg(w: &mut (impl tokio::io::AsyncWrite + Unpin), v: &serde_json::Value) {
+    use tokio::io::AsyncWriteExt;
+    let b = v.to_string();
+    w.write_all(format!("Content-Length: {}\r\n\r\n{b}", b.len()).as_bytes()).await.unwrap();
+    w.flush().await.unwrap();
+}
+fn manager(root: &std::path::Path, store: &DiagStore) -> Arc<pcode_lsp::LspManager> {
+    Arc::new(pcode_lsp::LspManager::new(root, HashMap::new(), store.sink()).with_spawner(|root, _cmd, sink| {
+        Box::pin(async move {
+            let (a, b) = tokio::io::duplex(1 << 16);
+            let (cr, cw) = tokio::io::split(a);
+            let (sr, mut sw) = tokio::io::split(b);
+            let uri = pcode_lsp::path_to_uri(&root);
+            tokio::spawn(async move {
+                let mut r = tokio::io::BufReader::new(sr);
+                while let Some(v) = pcode_lsp::read_msg(&mut r).await {
+                    let loc = json!({"uri": format!("{uri}/src/lib.rs"), "range": {"start": {"line": 0, "character": 7}, "end": {"line": 0, "character": 12}}});
+                    let out = match v["method"].as_str().unwrap_or("") {
+                        "textDocument/didOpen" | "textDocument/didChange" => json!({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
+                            "params": {"uri": v["params"]["textDocument"]["uri"], "diagnostics": [{"range": {"start": {"line": 1, "character": 4}, "end": {"line": 1, "character": 9}}, "severity": 1, "message": "tipo incorrecto"}]}}),
+                        "textDocument/definition" => json!({"jsonrpc": "2.0", "id": v["id"], "result": [loc]}),
+                        "textDocument/references" => json!({"jsonrpc": "2.0", "id": v["id"], "result": [loc.clone(), loc]}),
+                        _ if v.get("id").is_some() => json!({"jsonrpc": "2.0", "id": v["id"], "result": null}),
+                        _ => continue,
+                    };
+                    write_msg(&mut sw, &out).await;
+                }
+            });
+            Ok(pcode_lsp::LspClient::from_streams(&root, cr, cw, sink))
+        })
+    }))
+}
+// Proyecto: src/lib.rs = "pub fn doble() {}\n"; src/main.rs = "fn main() {\n    doble();\n}\n"
+// definicion {"path":"src/main.rs","line":2,"symbol":"doble"} -> "src/lib.rs:1:8  pub fn doble() {}"
+// diagnosticos {"path":"src/main.rs"} -> "src/main.rs: 1 errores, 0 avisos\nsrc/main.rs:2:5 error tipo incorrecto"
+'''
+tests = [
+  "diagnosticos_de_un_archivo: con el servidor falso, diagnosticos de src/main.rs devuelve el texto del ejemplo",
+  "definicion_en_otro_archivo: definicion de doble en la línea 2 de src/main.rs devuelve `src/lib.rs:1:8  pub fn doble() {}`",
+  "referencias_lista_los_usos: referencias devuelve dos líneas que empiezan por `src/lib.rs:1:8`",
+  "simbolo_que_no_esta_en_la_linea_es_error: definicion con symbol `triple` devuelve is_error y el texto de find_position",
+  "sin_servidor_explica_que_instalar: con un spawner que devuelve Err(\"no se pudo lanzar rust-analyzer\"), diagnosticos devuelve is_error y el texto contiene `instala rust-analyzer`",
+  "archivo_sin_servidor_de_lenguaje: diagnosticos de `notas.txt` devuelve is_error con `sin servidor de lenguaje`",
+]
+no_hagas = [
+  "No cambies nada en `crates/pcode-lsp` (su `initialize` es privado: el servidor falso no lo necesita)",
+  "No esperes sin tiempo máximo: el sondeo de diagnósticos acaba como mucho en `espera_ms`",
+  "No registres las tools en `native_registry`: necesitan un gestor por proyecto (F8.09c)",
+]
+
+[[tarea]]
+id = "F8.09c"
+nombre = "lsp-tools-chat"
+titulo = "Registrar las tools del LSP en el agente del chat y de la TUI"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.09b"]
+toca = ["crates/pcode-cli/src/chat.rs", "crates/pcode-cli/tests/chat.rs"]
+acepta = "cargo test -p pcode-cli --test chat lsp_tools"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (función `prepare`: la línea `let mut tools = pcode_tools::native_registry();`; `cfg` es la configuración y `root` la raíz del proyecto)",
+  "crates/pcode-cli/src/main.rs (función `apply_lsp_config`: cómo se convierten las entradas `[lsp.<grupo>]` de `cfg.lsp` en el mapa grupo → orden)",
+  "crates/pcode-cli/tests/chat.rs (ayudantes `resp` y `pcode`, y el test `chat_dos_mensajes_por_stdin_con_tool_y_comandos` como modelo)",
+]
+objetivo = '''
+1. `chat.rs`, función `prepare`, justo después de `let mut tools = pcode_tools::native_registry();`:
+   a) `let lsp_overrides: std::collections::HashMap<String, Vec<String>> = cfg.lsp.iter().filter(|(_, l)| !l.command.is_empty()).map(|(k, l)| (k.clone(), l.command.clone())).collect();`
+   b) `for t in pcode_tools::lsp_tools::lsp_tools_for(&root, lsp_overrides) { tools.register(t).expect("nombre único"); }`
+   Los servidores de lenguaje no se lanzan aquí: arrancan la primera vez que el agente usa una de las
+   tools con un archivo de ese lenguaje. `prepare` la usan el chat y la TUI.
+2. `tests/chat.rs`: añade el test `lsp_tools_en_chat`: en un directorio temporal con `notas.txt`
+   (contenido `hola` y salto de línea), el guion del proveedor falso llama a `definicion` con
+   `{"path": "notas.txt", "line": 1, "symbol": "hola"}` y después responde `no hay servidor`; la
+   entrada es `define hola\n/salir\n`. Comprueba que la salida contiene `⏺ definicion` y
+   `sin servidor de lenguaje` (un `.txt` no tiene servidor; si la tool no estuviera registrada saldría
+   `tool desconocida`).
+'''
+sin_firmas = "no añade API: registro de tres tools ya hechas y un test de integración"
+ejemplo = '''
+pcode(
+    d.path(),
+    json!([
+        resp("", json!([{"id":"1","name":"definicion","arguments":{"path":"notas.txt","line":1,"symbol":"hola"}}])),
+        resp("no hay servidor", json!([])),
+    ]),
+)
+.arg("chat")
+.write_stdin("define hola\n/salir\n")
+.assert()
+.success()
+.stdout(predicate::str::contains("⏺ definicion"))
+.stdout(predicate::str::contains("sin servidor de lenguaje"));
+'''
+tests = [
+  "lsp_tools_en_chat: el agente del chat llama a definicion sobre un .txt y la salida muestra `sin servidor de lenguaje` (la tool está registrada)",
+]
+no_hagas = [
+  "No lances servidores de lenguaje reales en el test",
+  "No toques `crates/pcode-server`: Studio tiene su propio `LspManager`",
+  "No toques los tests que ya existen en `tests/chat.rs`",
+]
 
 [[tarea]]
 id = "F8.10"

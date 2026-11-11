@@ -3,96 +3,800 @@
 [[tarea]]
 id = "F4.01"
 nombre = "contexto-tool"
-titulo = "Tool `contexto` (fijar, soltar, resumir) y estado del proyecto que sobrevive a la compactación"
+titulo = "Tool `contexto` (fijar, soltar, listar) sobre resultados de tools con id corto `[rN]`"
 fase = "F4"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F1.21"]
-toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/context.rs", "crates/pcode-core/src/agent.rs"]
-acepta = "cargo test -p pcode-core context"
-contexto = ["docs/papers.md (sección 1: Context as a Tool, Memory as Action, SLUMP)", "crates/pcode-core/src/agent.rs"]
+toca = []
+acepta = "grep -q with_context_tool crates/pcode-cli/src/chat.rs && cargo test -p pcode-core context"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. La tool `contexto` la intercepta el bucle (no está en `pcode-tools`): `{"op": "fijar"|"soltar"|"nota"|"estado", "ids": [int]?, "texto": str?}`.
-   - Cada resultado de tool lleva un id corto visible (`[r12]`).
-   - `soltar`: sustituye los resultados indicados por `"[r12 soltado: <primera línea>]"`.
-   - `fijar`: marca resultados que la compactación no puede tocar.
-   - `nota`: añade una decisión o restricción al **estado del proyecto** (`.pcode/estado-proyecto.md`).
-   - `estado`: devuelve el estado del proyecto.
-2. El estado del proyecto se reinyecta como mensaje de sistema adicional tras cada compactación (F4.02).
+Tarea de cierre. Las notas del proyecto ya las cubre la tool `recordar` (F8.19); aquí solo se cierra el
+registro de resultados `[rN]` y la tool `contexto`.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.01a, F4.01b y F4.01c.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["Context as a Tool (Findings ACL 2026)", "Memory as Action (Findings ACL 2026)", "When the Specification Emerges / SLUMP (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.01a"
+nombre = "contexto-registro"
+titulo = "`ContextLedger`: ids `[rN]` para los resultados de tools, soltar y fijar (lógica pura)"
+fase = "F4"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.21"]
+toca = ["crates/pcode-core/src/context.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-core context::"
+contexto = [
+  "crates/pcode-models/src/types.rs (struct `Message` y `Message::tool_result`: los campos `role`, `content`)",
+  "crates/pcode-core/src/ask.rs (cómo es un módulo pequeño de pcode-core con sus tests al final)",
+]
+objetivo = '''
+El id de un resultado vive en el propio texto del mensaje (prefijo `[r7] `), así que no hay índices que
+se rompan al compactar. El registro solo guarda el último id dado y los ids fijados.
+1. Crea `context.rs` con `result_id` y `ContextLedger` (firmas abajo). En `lib.rs` añade `pub mod context;`
+   (orden alfabético, después de `pub mod compress;`) y `pub use context::ContextLedger;`.
+2. `result_id(content)`: `Some(N)` si el texto empieza por `[r`, una o más cifras y después `]` o un
+   espacio (vale para `[r7] hola` y para `[r7 soltado: hola]`); `None` en otro caso.
+3. `tag(content)`: suma 1 a `last` y devuelve `format!("[r{last}] {content}")`. El primero es `[r1]`.
+4. `sync(messages)`: `last` = el mayor entre `last` y los `result_id` de los mensajes con
+   `role == Role::Tool` (sirve al retomar una conversación guardada).
+5. `pin(ids)`: añade a `pinned` los ids entre 1 y `last` (los demás se ignoran) y devuelve cuántos son
+   nuevos. `is_pinned(id)`: si está en `pinned`. `message_pinned(m)`: `true` solo si `m.role == Role::Tool`
+   y su `result_id` está fijado.
+6. `drop_results(ids, messages)`: para cada mensaje con rol `Tool` cuyo contenido empieza EXACTAMENTE por
+   `[r{id}] ` con `id` en `ids` y no fijado, sustituye el contenido por `[r{id} soltado: {primera}]`, donde
+   `primera` es la primera línea del texto que sigue al prefijo, sin espacios en los extremos y recortada
+   a 80 caracteres (`chars().take(80)`, no bytes). Devuelve cuántos mensajes cambió. Los ya soltados no
+   empiezan por `[r{id}] `, así que no se tocan.
 '''
 firmas = '''
-pub struct ContextLedger { /* ids → índice de mensaje, fijados */ }
+// crates/pcode-core/src/context.rs
+use pcode_models::{Message, Role};
+
+/// Id de un resultado de tool etiquetado (`[r7] …` o `[r7 soltado: …]`).
+pub fn result_id(content: &str) -> Option<u32>;
+
+/// Registro de resultados de tools: último id dado y resultados fijados.
+#[derive(Debug, Clone, Default)]
+pub struct ContextLedger { last: u32, pinned: std::collections::BTreeSet<u32> }
+
 impl ContextLedger {
+    /// Registro vacío (el primer id será 1).
     pub fn new() -> Self;
-    pub fn register_result(&mut self, msg_index: usize) -> u32;
-    pub fn drop_results(&mut self, ids: &[u32], messages: &mut [pcode_models::Message]) -> usize;
-    pub fn pin(&mut self, ids: &[u32]);
-    pub fn is_pinned(&self, msg_index: usize) -> bool;
+    /// Pone `last` al día con un historial ya etiquetado.
+    pub fn sync(&mut self, messages: &[Message]);
+    /// Etiqueta un resultado nuevo: `[rN] contenido`.
+    pub fn tag(&mut self, content: &str) -> String;
+    /// Fija resultados; devuelve cuántos son nuevos.
+    pub fn pin(&mut self, ids: &[u32]) -> usize;
+    /// Si el id está fijado.
+    pub fn is_pinned(&self, id: u32) -> bool;
+    /// Si el mensaje es un resultado de tool fijado.
+    pub fn message_pinned(&self, m: &Message) -> bool;
+    /// Sustituye por un marcador los resultados indicados que no estén fijados.
+    pub fn drop_results(&self, ids: &[u32], messages: &mut [Message]) -> usize;
 }
-pub fn append_project_note(root: &std::path::Path, note: &str) -> std::io::Result<()>;
-pub fn read_project_state(root: &std::path::Path) -> std::io::Result<String>;
 '''
-tests = ["soltar_sustituye_por_marcador", "fijado_se_respeta", "nota_persiste_en_archivo", "agente_usa_contexto_con_mock"]
-papers = ["Context as a Tool (Findings ACL 2026)", "Memory as Action (Findings ACL 2026)", "When the Specification Emerges / SLUMP (Findings EMNLP 2026)"]
+ejemplo = '''
+let mut l = ContextLedger::new();
+let mut ms = vec![Message::tool_result("c1", l.tag("  linea uno\nlinea dos"))];
+// ms[0].content == "[r1]   linea uno\nlinea dos"
+l.drop_results(&[1], &mut ms) == 1
+// ms[0].content == "[r1 soltado: linea uno]"
+result_id("[r12] x") == Some(12);  result_id("[r12 soltado: x]") == Some(12);  result_id("r12") == None
+'''
+tests = [
+  "etiqueta_numera_desde_uno: dos llamadas a tag dan los prefijos [r1] y [r2]",
+  "id_de_resultado: los tres casos del ejemplo y la cadena vacía (None)",
+  "soltar_sustituye_por_marcador: el ejemplo completo, con la primera línea recortada a 80 caracteres si es larga",
+  "soltar_no_toca_fijados_ni_repite: con r1 fijado drop_results devuelve 0; soltar dos veces r2 devuelve 1 y luego 0",
+  "fijar_ignora_ids_desconocidos: tras dos tag, pin(&[2, 9]) devuelve 1 y solo is_pinned(2) es true",
+  "sincroniza_con_el_historial: sync con un mensaje Tool `[r5] x` hace que el siguiente tag sea [r6]",
+  "mensaje_fijado_solo_si_es_de_tool: un mensaje de usuario con texto `[r1] x` no cuenta como fijado",
+]
+no_hagas = [
+  "No toques `agent.rs`: el cableado es otra tarea (F4.01c)",
+  "No guardes índices de mensajes en el registro: el id va en el texto",
+  "No añadas dependencias",
+]
+papers = ["Context as a Tool (Findings ACL 2026)"]
+
+[[tarea]]
+id = "F4.01b"
+nombre = "contexto-tool-logica"
+titulo = "Tool `contexto`: especificación y `ContextLedger::handle` (soltar, fijar, lista)"
+fase = "F4"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.01a"]
+toca = ["crates/pcode-core/src/context.rs"]
+acepta = "cargo test -p pcode-core context::tests::tool_"
+contexto = [
+  "crates/pcode-core/src/context.rs (`ContextLedger`, `result_id`, `drop_results`, `pin`: lo que ya hay)",
+  "crates/pcode-core/src/memory.rs (función `remember_spec`: cómo se escribe un `ToolSpec` con `json!`)",
+]
+objetivo = '''
+1. En `context.rs` añade la constante `CONTEXT_TOOL`, la función `context_spec` y el método
+   `ContextLedger::handle` (firmas abajo). No cambies lo que ya hay en el archivo.
+2. `context_spec()`: nombre `contexto`; descripción EXACTA: «Gestiona tu contexto. Cada resultado de
+   tool empieza por un id como [r7]. op "soltar": sustituye por una línea los resultados de `ids` que ya
+   no necesitas. op "fijar": marca los resultados de `ids` para que la compactación no los resuma.
+   op "lista": qué resultados siguen en el contexto.»; parámetros
+   `{"type":"object","properties":{"op":{"type":"string","enum":["soltar","fijar","lista"]},"ids":{"type":"array","items":{"type":"integer"}}},"required":["op"]}`.
+3. `handle(args, messages)` devuelve el texto del resultado de la tool:
+   - `ids` = los enteros positivos de `args["ids"]` (si falta o no es una lista, vacío).
+   - `op == "soltar"`: si `ids` está vacío devuelve `faltan ids, p. ej. {"op":"soltar","ids":[3]}`; si no,
+     llama a `drop_results` y devuelve `soltados {n} de {m} (los fijados y los ya soltados no se tocan)`,
+     con `m = ids.len()`.
+   - `op == "fijar"`: si `ids` está vacío, el mismo mensaje con `fijar`; si no, llama a `pin` y devuelve
+     `fijados: r1, r4` con TODOS los fijados en orden ascendente (o `fijados: ninguno`).
+   - `op == "lista"`: una línea por mensaje con rol `Tool` que empiece por `[r{id}] ` (los soltados no
+     salen): `r{id}{marca} {n} caracteres: {primera}`, donde `marca` es ` (fijado)` o nada, `n` es
+     `content.chars().count()` y `primera` la primera línea tras el prefijo recortada a 60 caracteres.
+     Sin resultados: `no hay resultados de tools en el contexto`.
+   - Otro valor o sin `op`: `op no válida: usa "soltar", "fijar" o "lista"`.
+'''
+firmas = '''
+// crates/pcode-core/src/context.rs (añadir)
+/// Nombre de la tool con la que el agente gestiona su contexto.
+pub const CONTEXT_TOOL: &str = "contexto";
+
+/// Especificación de la tool `contexto`.
+pub fn context_spec() -> pcode_models::ToolSpec;
+
+impl ContextLedger {
+    /// Ejecuta una llamada a `contexto` sobre el historial y devuelve el texto del resultado.
+    pub fn handle(&mut self, args: &serde_json::Value, messages: &mut [Message]) -> String;
+}
+'''
+ejemplo = '''
+historial: Tool "[r1] uno", Tool "[r2] dos\nmás", Tool "[r3] tres"
+handle({"op":"fijar","ids":[1]})        -> "fijados: r1"
+handle({"op":"soltar","ids":[1,2]})     -> "soltados 1 de 2 (los fijados y los ya soltados no se tocan)"
+handle({"op":"lista"})                  -> "r1 (fijado) 8 caracteres: uno\nr3 9 caracteres: tres"
+handle({"op":"borrar"})                 -> "op no válida: usa \"soltar\", \"fijar\" o \"lista\""
+'''
+tests = [
+  "tool_spec_tiene_nombre_y_op_obligatoria: context_spec().name es contexto y required contiene op",
+  "tool_soltar_y_fijar_como_en_el_ejemplo: la secuencia del ejemplo da exactamente esos textos",
+  "tool_lista_omite_soltados_y_marca_fijados: tras soltar r2, lista devuelve solo r1 (fijado) y r3",
+  "tool_sin_ids_explica_el_formato: soltar sin ids devuelve el mensaje que empieza por `faltan ids`",
+  "tool_op_desconocida: op borrar y args vacíos devuelven el mensaje de op no válida",
+]
+no_hagas = [
+  "No toques `agent.rs` ni `lib.rs`",
+  "No añadas las operaciones `nota` ni `estado`: las notas ya las da la tool `recordar` de `memory.rs`",
+]
+notas = "Los nombres de los tests empiezan por `tool_` para que caigan en el filtro de `acepta`."
+papers = ["Context as a Tool (Findings ACL 2026)", "Memory as Action (Findings ACL 2026)"]
+
+[[tarea]]
+id = "F4.01c"
+nombre = "contexto-cableado"
+titulo = "Bucle del agente: etiquetar resultados con `[rN]` e interceptar la tool `contexto`"
+fase = "F4"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.01b"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "grep -q with_context_tool crates/pcode-cli/src/chat.rs && cargo test -p pcode-core contexto_"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `run_messages`: el bloque `if call.name == REMEMBER_TOOL && self.memory` es el modelo de tool interceptada; `with_memory` es el modelo de activación)",
+  "crates/pcode-core/src/context.rs (`ContextLedger::{sync, tag, handle}`, `CONTEXT_TOOL`, `context_spec`)",
+  "crates/pcode-cli/src/chat.rs (función `prepare`: la cadena `.with_checkpoints().with_questions(…).with_memory().with_verify_reminder()`)",
+]
+objetivo = '''
+1. `agent.rs`, struct `Agent`: campo nuevo `context: Option<crate::context::ContextLedger>`; en
+   `Agent::new` vale `None`. Añade `with_context_tool` (firma abajo) junto a `with_memory`.
+2. `run_messages`, antes del `loop`: `if let Some(l) = self.context.as_mut() { l.sync(&messages); }`.
+3. `run_messages`, donde se construye `specs`, después del bloque que añade `remember_spec()`:
+   si `self.context.is_some() && self.policy.tool_visible(CONTEXT_TOOL, &[])`, haz
+   `specs.push(crate::context::context_spec())`.
+4. `run_messages`, dentro de `for call in calls`, justo después del bloque
+   `if call.name == REMEMBER_TOOL && self.memory { … }`: si `call.name == CONTEXT_TOOL` y hay registro,
+   calcula `let content = l.handle(&call.arguments, &mut messages);` (con `l = self.context.as_mut()`),
+   después `self.audit(&call, "allow")`, emite `AgentEvent::ToolResult { name, is_error: false, content }`,
+   añade `Message::tool_result(call.id.clone(), content)` y `continue`. Este resultado NO se etiqueta.
+5. Al final del `for`, la última línea `messages.push(Message::tool_result(call.id.clone(), out.content));`
+   pasa a etiquetar: si hay registro, el contenido es `l.tag(&out.content)`; si no, `out.content`. El
+   `self.emit(AgentEvent::ToolResult { … })` de justo antes no cambia (la interfaz no ve la etiqueta).
+6. `chat.rs`, función `prepare`: añade `.with_context_tool()` después de `.with_memory()`.
+'''
+firmas = '''
+// crates/pcode-core/src/agent.rs
+impl Agent {
+    /// Etiqueta cada resultado de tool con un id (`[rN]`) y ofrece la tool `contexto` (F4.01).
+    pub fn with_context_tool(mut self) -> Self;
+}
+'''
+ejemplo = '''
+// Test en `mod tests` de agent.rs (usa los ayudantes `tool`, `text` y `agent` que ya existen):
+std::fs::write(d.path().join("a.txt"), "hola").unwrap();
+let script = vec![
+    tool("leer", json!({"path": "a.txt"})),
+    tool("contexto", json!({"op": "soltar", "ids": [1]})),
+    text("fin"),
+];
+let (a, p) = agent(&d, script, Capabilities::default(), None);
+let mut a = a.with_context_tool();
+let r = a.run("lee").await;
+// r.transcript: sistema, usuario, asistente, Tool "[r1 soltado: …]", asistente, Tool "soltados 1 de 1 …", asistente
+// p.requests()[0].tools contiene una spec con name == "contexto"
+'''
+tests = [
+  "contexto_etiqueta_y_suelta_con_mock: el ejemplo; el primer mensaje Tool del transcript empieza por `[r1 soltado:` y el segundo por `soltados 1 de 1`",
+  "contexto_se_anuncia_solo_si_se_activa: con with_context_tool la primera petición lleva la spec contexto; sin él no la lleva y el resultado de leer no empieza por `[r`",
+  "contexto_oculta_por_politica: con hidden_tools = [contexto] en Capabilities la spec no se anuncia",
+]
+no_hagas = [
+  "No cambies la firma de `run_messages`, `run_turn` ni `compact`",
+  "No etiquetes los resultados de `preguntar`, `recordar` ni `contexto`",
+  "No toques los tests que ya existen en `agent.rs`",
+]
+papers = ["Context as a Tool (Findings ACL 2026)"]
 
 [[tarea]]
 id = "F4.02"
 nombre = "compactacion-prefijo"
 titulo = "Compactación por segmentos con prefijo estable (no rompe la caché)"
 fase = "F4"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F4.01"]
-toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/compact.rs", "crates/pcode-core/src/agent.rs"]
+toca = []
 acepta = "cargo test -p pcode-core compact"
-contexto = ["docs/papers.md (TokenPilot, SWE-MEM, survey de compresión)", "crates/pcode-core/src/context.rs"]
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Prefijo estable = mensajes de sistema + índice de skills + definición de tools: **nunca** se modifica.
-2. Historial en segmentos (un segmento = un turno del asistente y sus resultados). Cuando el uso
-   estimado (4 caracteres por token) supera `umbral` × contexto, los segmentos más antiguos NO fijados
-   se sustituyen por UN mensaje resumen en la frontera, generado con el rol `compactador` (un
-   `Provider`). Los N segmentos más recientes se conservan siempre.
-3. Tras compactar: el estado del proyecto (F4.01) va justo después del resumen.
-4. El resumen debe conservar rutas de archivos, errores abiertos y restricciones: el prompt del
-   compactador lo exige y un test comprueba que las rutas mencionadas siguen estando.
+Tarea de cierre. `Agent::compact` ya existía (resumen con el modelo, sistema intacto); las subtareas la
+pasan a un módulo propio con segmentos, estimación de tokens y respeto de los resultados fijados.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.02a, F4.02b y F4.02c.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["TokenPilot (Findings EMNLP 2026)", "SWE-MEM (EMNLP 2026)", "Context Compression for LLM Agents: A Survey (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.02a"
+nombre = "compactacion-plan"
+titulo = "`compact.rs`: estimar tokens, segmentos y plan de compactación (lógica pura)"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.21"]
+toca = ["crates/pcode-core/src/compact.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-core compact::tests::plan_"
+contexto = [
+  "crates/pcode-models/src/types.rs (struct `Message`: `role`, `content`, `tool_calls`; enum `Role`)",
+  "crates/pcode-core/src/agent.rs (método `Agent::compact`: la regla actual, que esta tarea NO toca)",
+]
+objetivo = '''
+1. Crea `compact.rs` con las constantes y funciones de abajo. En `lib.rs` añade `pub mod compact;`
+   (después de `pub mod checkpoint;`). No hay E/S ni llamadas al modelo en esta tarea.
+2. `estimate_tokens`: suma, para cada mensaje, `content.chars().count()` y, por cada llamada de
+   `tool_calls`, `name.chars().count() + arguments.to_string().chars().count()`; devuelve el total
+   dividido entre 4 hacia arriba (`div_ceil(4)`).
+3. `prefix_len`: cuántos mensajes seguidos con `Role::System` hay al principio (es el prefijo estable:
+   nunca se modifica, para no invalidar la caché del proveedor).
+4. `segments(messages, prefix_len)`: rangos consecutivos que cubren `prefix_len..messages.len()`. Empieza
+   un segmento nuevo cada mensaje cuyo rol NO es `Tool`; los mensajes `Tool` se quedan en el segmento
+   abierto (si el primero tras el prefijo es `Tool`, abre segmento él). Así una llamada y sus resultados
+   nunca se separan.
+5. `plan(messages, prefix_len, keep_recent, pinned)`:
+   a) `segs = segments(…)`; si `segs.len() <= keep_recent`, `None`.
+   b) Los antiguos son todos menos los `keep_recent` últimos. Un segmento antiguo en el que algún mensaje
+      cumple `pinned(m)` se conserva entero; los índices de los demás van, en orden, a `summarize`.
+   c) Si `summarize.len() < MIN_SUMMARIZED`, `None`. Si no, `Some(CompactPlan { prefix_len, summarize })`.
 '''
 firmas = '''
-pub struct CompactCfg { pub context_tokens: u64, pub threshold: f32, pub keep_recent_segments: usize }
-pub fn estimate_tokens(messages: &[pcode_models::Message]) -> u64;
-pub fn segments(messages: &[pcode_models::Message], prefix_len: usize) -> Vec<std::ops::Range<usize>>;
-pub async fn compact(messages: &mut Vec<pcode_models::Message>, prefix_len: usize, ledger: &crate::context::ContextLedger,
-                     cfg: &CompactCfg, summarizer: &dyn pcode_models::Provider, model: &str) -> Result<bool, pcode_models::ModelError>;
+// crates/pcode-core/src/compact.rs
+use pcode_models::{Message, Role};
+
+/// Segmentos recientes que nunca se resumen.
+pub const KEEP_RECENT_SEGMENTS: usize = 3;
+/// Mensajes mínimos que tiene que haber para que merezca la pena resumir.
+pub const MIN_SUMMARIZED: usize = 3;
+
+/// Tokens aproximados de un historial (4 caracteres por token).
+pub fn estimate_tokens(messages: &[Message]) -> u64;
+/// Longitud del prefijo estable (mensajes de sistema iniciales).
+pub fn prefix_len(messages: &[Message]) -> usize;
+/// Segmentos del historial tras el prefijo (un turno y sus resultados de tools).
+pub fn segments(messages: &[Message], prefix_len: usize) -> Vec<std::ops::Range<usize>>;
+
+/// Qué mensajes se sustituyen por un resumen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactPlan { pub prefix_len: usize, pub summarize: Vec<usize> }
+
+/// Plan de compactación, o `None` si no hay bastante que resumir.
+pub fn plan(messages: &[Message], prefix_len: usize, keep_recent: usize,
+            pinned: &dyn Fn(&Message) -> bool) -> Option<CompactPlan>;
 '''
-tests = ["prefijo_intacto_byte_a_byte", "respeta_fijados", "conserva_recientes", "resumen_conserva_rutas (mock compactador)", "no_compacta_bajo_umbral"]
-papers = ["TokenPilot (Findings EMNLP 2026)", "SWE-MEM (EMNLP 2026)", "Context Compression for LLM Agents: A Survey (EMNLP 2026)"]
+ejemplo = '''
+roles:    [S, U, A, T, A, T, T, U, A]      (S sistema, U usuario, A asistente, T tool)
+prefix_len -> 1
+segments(.., 1) -> [1..2, 2..4, 4..7, 7..8, 8..9]
+plan(.., 1, 3, &|_| false)            -> Some(CompactPlan { prefix_len: 1, summarize: vec![1, 2, 3] })
+plan(.., 1, 3, &|m| es el mensaje 3)  -> None   (el segmento 2..4 se conserva; queda 1 mensaje < 3)
+estimate_tokens([usuario "abcde"])    -> 2
+'''
+tests = [
+  "plan_estima_tokens_con_llamadas: un mensaje `abcde` da 2; un asistente vacío con una llamada `leer` y argumentos {} da 2 (4 + 2 caracteres)",
+  "plan_prefijo_cuenta_sistemas_iniciales: [S, S, U, S] da 2 y un historial vacío da 0",
+  "plan_segmentos_no_separan_llamada_y_resultados: los roles del ejemplo dan esos cinco rangos",
+  "plan_resume_los_antiguos: el primer plan del ejemplo",
+  "plan_respeta_segmentos_fijados: con un historial de 6 segmentos y el resultado del segundo fijado, summarize no contiene ningún índice de ese segmento",
+  "plan_nada_si_hay_pocos_segmentos: con 3 segmentos o menos y keep_recent 3 devuelve None",
+]
+no_hagas = [
+  "No toques `agent.rs`: `Agent::compact` se cambia en F4.02c",
+  "No llames al modelo ni leas archivos en este módulo",
+]
+notas = "Los nombres de los tests empiezan por `plan_` para que caigan en el filtro de `acepta`."
+papers = ["TokenPilot (Findings EMNLP 2026)", "Context Compression for LLM Agents: A Survey (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.02b"
+nombre = "compactacion-resumen"
+titulo = "`compact.rs`: texto para el resumidor, rutas mencionadas y aplicar el resumen (lógica pura)"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.02a"]
+toca = ["crates/pcode-core/src/compact.rs"]
+acepta = "cargo test -p pcode-core compact::tests::resumen_"
+contexto = [
+  "crates/pcode-core/src/compact.rs (`CompactPlan` y `plan`: lo que ya hay)",
+  "crates/pcode-core/src/agent.rs (método `Agent::compact`: de ahí se copia el formato del texto y la regla de dónde va el resumen)",
+]
+objetivo = '''
+1. En `compact.rs` añade `SUMMARY_HEAD`, `transcript_text`, `mentioned_paths` y `apply` (firmas abajo).
+   No cambies lo que ya hay.
+2. `transcript_text(messages)`: por cada mensaje, `### {rol}\n{contenido}\n`, con rol `usuario`,
+   `asistente`, `resultado de tool` o `sistema`; el contenido se recorta a 1500 caracteres si el rol es
+   `Tool` y a 4000 si no (al recortar se añade `…`). Después, por cada llamada de `tool_calls`, una línea
+   `→ {name}({argumentos})\n` con los argumentos (`arguments.to_string()`) recortados a 300 caracteres.
+   Es el mismo formato que hoy construye `Agent::compact` con su cierre `clip`.
+3. `mentioned_paths(messages)`: los valores de texto del argumento `path` de todas las llamadas a tools,
+   sin repetir, en orden de aparición, como mucho 30.
+4. `apply(messages, plan, summary)`:
+   a) `head = format!("{SUMMARY_HEAD}\n{summary}")`. Calcula `mentioned_paths` de los mensajes de
+      `plan.summarize`; si alguna ruta NO aparece en `summary`, añade a `head` la línea
+      `\nArchivos mencionados: a, b` con las que faltan (así el resumen nunca pierde rutas).
+   b) Salida: los mensajes `0..plan.prefix_len` tal cual (clonados, sin tocar ni un byte); después el
+      resumen; después, en orden, los mensajes de índice `>= prefix_len` que no están en `plan.summarize`.
+   c) El resumen: si el primer mensaje conservado tras el prefijo tiene rol `User`, su contenido pasa a
+      ser `{head}\n\n---\n{contenido}`; si no (o si no queda ninguno), se inserta `Message::user(head)`.
+'''
+firmas = '''
+// crates/pcode-core/src/compact.rs (añadir)
+/// Cabecera del mensaje que lleva el resumen.
+pub const SUMMARY_HEAD: &str = "[Resumen de la conversación anterior]";
+
+/// Texto de los mensajes para pedirle el resumen al modelo.
+pub fn transcript_text(messages: &[&Message]) -> String;
+/// Rutas (`path`) de las llamadas a tools de estos mensajes, sin repetir.
+pub fn mentioned_paths(messages: &[&Message]) -> Vec<String>;
+/// Historial compactado: prefijo intacto, resumen y mensajes conservados.
+pub fn apply(messages: &[Message], plan: &CompactPlan, summary: &str) -> Vec<Message>;
+'''
+ejemplo = '''
+mensajes: 0 S "sis" · 1 U "haz x" · 2 A (llama leer {"path":"src/a.rs"}) · 3 T "contenido" · 4 A "sigo" · 5 U "y ahora y"
+plan:     CompactPlan { prefix_len: 1, summarize: vec![1, 2, 3] }
+apply(.., "RES") ->
+  0 S "sis"
+  1 U "[Resumen de la conversación anterior]\nRES\nArchivos mencionados: src/a.rs"
+  2 A "sigo"
+  3 U "y ahora y"
+Si el plan fuera summarize: vec![1, 2, 3, 4], el resumen se fundiría con el usuario:
+  1 U "[Resumen de la conversación anterior]\nRES\nArchivos mencionados: src/a.rs\n\n---\ny ahora y"
+transcript_text([&m1, &m2]) -> "### usuario\nhaz x\n### asistente\n\n→ leer({\"path\":\"src/a.rs\"})\n"
+'''
+tests = [
+  "resumen_texto_con_roles_y_llamadas: el último caso del ejemplo, carácter a carácter",
+  "resumen_texto_recorta_resultados_largos: un resultado de tool de 2000 caracteres queda en 1500 más `…`",
+  "resumen_rutas_sin_repetir: dos llamadas con el mismo path y una con otro dan dos rutas en orden",
+  "resumen_prefijo_intacto_byte_a_byte: los mensajes 0..prefix_len de la salida son iguales (==) a los de la entrada",
+  "resumen_conserva_rutas: el primer caso del ejemplo añade `Archivos mencionados: src/a.rs`; si el resumen ya contiene `src/a.rs` no se añade la línea",
+  "resumen_se_funde_con_el_usuario_siguiente: el segundo caso del ejemplo",
+]
+no_hagas = [
+  "No toques `agent.rs` ni `lib.rs`",
+  "No cambies `plan`, `segments` ni sus tests",
+]
+notas = "Los nombres de los tests empiezan por `resumen_` para que caigan en el filtro de `acepta`."
+papers = ["SWE-MEM (EMNLP 2026)", "Context Compression for LLM Agents: A Survey (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.02c"
+nombre = "compactacion-cableado"
+titulo = "`Agent::compact` usa `compact.rs`: segmentos, resultados fijados y disparo por tokens estimados"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.02b", "F4.01c"]
+toca = ["crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core compacta_"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `Agent::compact`, el `if limit > 0 && self.last_input_tokens > limit` de `run_messages` y el test `compacta_cuando_se_supera_el_limite_sin_romper_pares_de_tools`)",
+  "crates/pcode-core/src/compact.rs (`plan`, `prefix_len`, `transcript_text`, `apply`, `estimate_tokens`, `KEEP_RECENT_SEGMENTS`)",
+  "crates/pcode-core/src/context.rs (`ContextLedger::message_pinned`)",
+]
+objetivo = '''
+1. `agent.rs`, método `Agent::compact`: conserva la firma
+   `pub async fn compact(&mut self, messages: Vec<Message>) -> Vec<Message>` y sustituye el cuerpo:
+   a) `let ledger = self.context.clone();` y
+      `let pinned = |m: &Message| ledger.as_ref().is_some_and(|l| l.message_pinned(m));`
+   b) `let pl = crate::compact::prefix_len(&messages);` y
+      `let Some(plan) = crate::compact::plan(&messages, pl, crate::compact::KEEP_RECENT_SEGMENTS, &pinned) else { return messages; };`
+   c) `let old: Vec<&Message> = plan.summarize.iter().map(|&i| &messages[i]).collect();` y
+      `let text = crate::compact::transcript_text(&old);`
+   d) La petición al modelo es la de ahora (`COMPACT_PROMPT`, `Message::user(text)`, sin tools,
+      `max_tokens: Some(2000)`); si falla o el resumen está vacío, devuelve `messages` sin cambios, como hoy.
+   e) `let out = crate::compact::apply(&messages, &plan, &summary);`, `self.last_input_tokens = 0;`, emite
+      `AgentEvent::Info(format!("contexto compactado: {} mensajes resumidos", plan.summarize.len()))` y
+      devuelve `out`.
+   Borra el cierre `clip` y la constante `KEEP` si quedan sin uso. `COMPACT_PROMPT` no se toca.
+2. `run_messages`: la condición de compactar pasa a ser
+   `limit > 0 && self.last_input_tokens.max(crate::compact::estimate_tokens(&messages)) > limit`
+   (así también se compacta con proveedores que no informan del uso).
+3. El test que ya existe (`compacta_cuando_se_supera_el_limite_sin_romper_pares_de_tools`) debe seguir
+   pasando SIN tocarlo: con 3 segmentos recientes y un mínimo de 3 mensajes da el mismo resultado.
+4. Añade en `mod tests` los dos tests de la lista.
+'''
+sin_firmas = "no añade API: cambia el cuerpo de `Agent::compact` y una condición de `run_messages`"
+ejemplo = '''
+// compacta_respeta_resultados_fijados (ayudantes `tool`, `text`, `agent` de `mod tests`):
+std::fs::write(d.path().join("x"), "contenido").unwrap();
+let mut script = vec![];
+for (name, args) in [("leer", json!({"path": "x"})), ("contexto", json!({"op": "fijar", "ids": [1]})),
+                     ("leer", json!({"path": "x"})), ("leer", json!({"path": "x"})), ("leer", json!({"path": "x"}))] {
+    let mut t = tool(name, args);
+    t.usage.input_tokens = 1_000;
+    script.push(t);
+}
+script.push(text("RESUMEN"));
+script.push(text("hecho"));
+let (a, p) = agent(&d, script, Capabilities::default(), None);
+let mut a = a.with_context_tool();
+a.cfg.budget.max_context_tokens = 500;
+a.cfg.budget.max_steps = 10;
+let r = a.run("tarea larga").await;
+// La petición de resumen es la única con `tools` vacío; en la siguiente (`reqs[sum + 1].messages`):
+// hay un mensaje que contiene "[Resumen de la conversación anterior]" y otro Tool que empieza por "[r1] ".
+'''
+tests = [
+  "compacta_respeta_resultados_fijados: el ejemplo; tras compactar, el resultado [r1] fijado sigue entero y el de la llamada a contexto ya no está",
+  "compacta_por_tokens_estimados: sin usage (input_tokens 0), tarea de 4000 caracteres, max_context_tokens 500 y guion de cuatro llamadas a leer, RESUMEN y hecho: alguna petición va sin tools (se pidió el resumen) y el resultado es Done",
+  "compacta_cuando_se_supera_el_limite_sin_romper_pares_de_tools: (ya existe) sigue pasando sin cambios",
+]
+no_hagas = [
+  "No cambies la firma de `compact`: la llaman `crates/pcode-cli/src/chat.rs` y `crates/pcode-tui/src/run.rs`",
+  "No modifiques el test de compactación que ya existe ni `COMPACT_PROMPT`",
+  "No dupliques en `agent.rs` la lógica de `compact.rs`: llámala",
+]
+papers = ["TokenPilot (Findings EMNLP 2026)", "SWE-MEM (EMNLP 2026)"]
 
 [[tarea]]
 id = "F4.03"
 nombre = "memoria-facetas"
 titulo = "`pcode-memory`: memoria de archivos por facetas invalidada por hash"
 fase = "F4"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F1.19"]
-toca = ["crates/pcode-memory/Cargo.toml", "crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/facets.rs"]
-acepta = "cargo test -p pcode-memory facets"
-contexto = ["docs/papers.md (Prism)", "crates/pcode-store/src/lib.rs"]
+toca = []
+acepta = "cargo test -p pcode-memory facets && cargo test -p pcode-cli --test chat memoria_archivo"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Tabla SQLite `file_facets(path, sha256, api, invariants, pitfalls, updated_ms, source_task)`.
-2. `get(path, current_sha)`: devuelve las facetas solo si el hash coincide (si el archivo cambió,
-   la memoria está caducada y no se usa).
-3. `put`: guarda las facetas que escribe el agente (tool `memoria_archivo` en F4.05) o el destilador.
-4. `for_task(paths)`: texto compacto con las facetas válidas de esos archivos, para el contexto.
+Tarea de cierre del crate `pcode-memory` y de la tool `memoria_archivo`.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.03a, F4.03b, F4.03c y F4.03d.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["Prism (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.03a"
+nombre = "memoria-crate"
+titulo = "Crear el crate `pcode-memory` con `sha256_hex` y `sha256_file`"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.19"]
+toca = ["crates/pcode-memory/Cargo.toml", "crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/hash.rs"]
+toca_extra = ["Cargo.lock"]
+acepta = "cargo test -p pcode-memory hash::"
+contexto = [
+  "crates/pcode-store/Cargo.toml (cómo declara un crate sus dependencias con `.workspace = true`)",
+  "Cargo.toml (el workspace usa `members = [\"crates/*\"]`: el crate nuevo entra solo, no hay que tocarlo)",
+]
+objetivo = '''
+1. Crea `crates/pcode-memory/Cargo.toml` EXACTAMENTE con el contenido del ejemplo. Todas las
+   dependencias están ya en el workspace; se declaran ahora las que usarán las tareas siguientes para
+   que nadie más tenga que tocar este archivo.
+2. Crea `lib.rs` con la línea de documentación
+   `//! Memoria del agente: facetas de archivos, búsqueda en el código y episodios de tareas anteriores.`,
+   `pub mod hash;` y `pub use hash::{sha256_file, sha256_hex};`.
+3. Crea `hash.rs` con las dos funciones de las firmas. `sha256_hex` usa
+   `use sha2::{Digest, Sha256};` y `hex::encode(Sha256::digest(bytes))` (64 caracteres en minúsculas).
+   `sha256_file` lee el archivo entero con `std::fs::read` y llama a `sha256_hex`.
+4. `Cargo.lock` cambia solo al compilar: inclúyelo en el commit.
 '''
 firmas = '''
-#[derive(Debug, Clone, PartialEq)] pub struct Facets { pub api: String, pub invariants: String, pub pitfalls: String }
-pub struct FacetStore { /* conn */ }
-impl FacetStore {
-    pub fn open(path: &std::path::Path) -> rusqlite::Result<Self>;
-    pub fn get(&self, path: &str, sha256: &str) -> rusqlite::Result<Option<Facets>>;
-    pub fn put(&self, path: &str, sha256: &str, f: &Facets, source_task: &str) -> rusqlite::Result<()>;
-    pub fn for_task(&self, root: &std::path::Path, paths: &[String]) -> rusqlite::Result<String>;
-}
+// crates/pcode-memory/src/hash.rs
+/// SHA-256 de unos bytes, en hexadecimal.
+pub fn sha256_hex(bytes: &[u8]) -> String;
+/// SHA-256 del contenido de un archivo, en hexadecimal.
 pub fn sha256_file(path: &std::path::Path) -> std::io::Result<String>;
 '''
-tests = ["facetas_validas_con_mismo_hash", "facetas_caducan_si_cambia", "for_task_omite_caducadas"]
+ejemplo = '''
+# crates/pcode-memory/Cargo.toml
+[package]
+name = "pcode-memory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pcode-models = { path = "../pcode-models" }
+pcode-tools = { path = "../pcode-tools" }
+rusqlite.workspace = true
+sha2.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# valores conocidos
+sha256_hex(b"abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+'''
+tests = [
+  "hash_de_abc: sha256_hex de los bytes `abc` da el valor del ejemplo",
+  "hash_de_archivo_igual_que_el_de_sus_bytes: un archivo temporal con `abc` da el mismo valor",
+  "hash_de_archivo_que_no_existe_es_error: una ruta inexistente devuelve Err",
+]
+no_hagas = [
+  "No toques el `Cargo.toml` de la raíz",
+  "No añadas dependencias que no estén en el ejemplo",
+]
+papers = ["Prism (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.03b"
+nombre = "memoria-facetas-store"
+titulo = "`FacetStore`: facetas de un archivo en SQLite, válidas solo si el hash coincide"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.03a"]
+toca = ["crates/pcode-memory/src/facets.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory facets::"
+contexto = [
+  "crates/pcode-store/src/lib.rs (`Store::open` y `Store::open_in_memory`: cómo se abre SQLite y se crea el esquema con `execute_batch`)",
+  "crates/pcode-memory/src/hash.rs (`sha256_file`)",
+]
+objetivo = '''
+Una faceta es lo que el agente aprendió de un archivo (su API, sus invariantes y sus trampas). Si el
+archivo cambia, su hash cambia y la memoria deja de valer: nunca se usa memoria caducada.
+1. Crea `facets.rs` con `Facets`, `FacetStore` y `render_facets` (firmas abajo). En `lib.rs` añade
+   `pub mod facets;` y `pub use facets::{FacetStore, Facets, render_facets};`.
+2. Esquema (en `open` y `open_in_memory`, con `execute_batch`):
+   `CREATE TABLE IF NOT EXISTS file_facets (path TEXT PRIMARY KEY, sha256 TEXT NOT NULL, api TEXT NOT NULL, invariants TEXT NOT NULL, pitfalls TEXT NOT NULL, source_task TEXT NOT NULL);`
+   `open(path)` crea antes la carpeta padre con `std::fs::create_dir_all` (ignora su error).
+3. `put`: `INSERT INTO file_facets VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(path) DO UPDATE SET
+   sha256 = excluded.sha256, api = excluded.api, invariants = excluded.invariants,
+   pitfalls = excluded.pitfalls, source_task = excluded.source_task` (una fila por archivo).
+4. `get(path, sha256)`: `SELECT api, invariants, pitfalls FROM file_facets WHERE path = ?1 AND sha256 = ?2`
+   con `query_row(…).optional()` (necesita `use rusqlite::OptionalExtension;`). Si el hash no coincide,
+   `Ok(None)`.
+5. `render_facets(path, f)`: `## {path}\n` y una línea por faceta NO vacía, en este orden:
+   `- API: …\n`, `- Invariantes: …\n`, `- Trampas: …\n`. Cada valor en una sola línea
+   (`split_whitespace` y unir con un espacio).
+6. `for_task(root, paths)`: para cada ruta, en orden, calcula `sha256_file(&root.join(ruta))` (si falla,
+   la salta), llama a `get` y, si hay facetas, añade su `render_facets`. Deja de añadir cuando el texto
+   pasaría de 4000 caracteres. Sin facetas válidas devuelve la cadena vacía.
+'''
+firmas = '''
+// crates/pcode-memory/src/facets.rs
+/// Lo aprendido de un archivo.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Facets { pub api: String, pub invariants: String, pub pitfalls: String }
+
+/// Facetas por archivo, guardadas en SQLite.
+pub struct FacetStore { conn: rusqlite::Connection }
+
+impl FacetStore {
+    /// Abre (o crea) la base de datos.
+    pub fn open(path: &std::path::Path) -> rusqlite::Result<Self>;
+    /// Base de datos en memoria (tests).
+    pub fn open_in_memory() -> rusqlite::Result<Self>;
+    /// Facetas de `path` si se escribieron con ese mismo hash.
+    pub fn get(&self, path: &str, sha256: &str) -> rusqlite::Result<Option<Facets>>;
+    /// Guarda (o sustituye) las facetas de `path`.
+    pub fn put(&self, path: &str, sha256: &str, f: &Facets, source_task: &str) -> rusqlite::Result<()>;
+    /// Texto compacto con las facetas vigentes de estos archivos.
+    pub fn for_task(&self, root: &std::path::Path, paths: &[String]) -> rusqlite::Result<String>;
+}
+
+/// Facetas de un archivo como texto para el contexto.
+pub fn render_facets(path: &str, f: &Facets) -> String;
+'''
+ejemplo = '''
+render_facets("src/a.rs", &Facets { api: "fn a() -> u32".into(), invariants: String::new(), pitfalls: "no llamar\n dos veces".into() })
+  == "## src/a.rs\n- API: fn a() -> u32\n- Trampas: no llamar dos veces\n"
+s.put("src/a.rs", "h1", &f, "F9.01");
+s.get("src/a.rs", "h1") == Ok(Some(f));   s.get("src/a.rs", "h2") == Ok(None)
+'''
+tests = [
+  "facetas_validas_con_mismo_hash: put y get con el mismo hash devuelven las mismas facetas",
+  "facetas_caducan_si_cambia: get con otro hash devuelve None",
+  "put_sustituye_la_fila_del_archivo: dos put del mismo path dejan solo las segundas facetas",
+  "render_omite_facetas_vacias: el caso del ejemplo, carácter a carácter",
+  "for_task_omite_caducadas: dos archivos en un tempdir con facetas guardadas; se modifica uno y for_task solo devuelve el otro",
+  "for_task_sin_nada_es_vacio: rutas sin facetas o que no existen dan la cadena vacía",
+  "open_crea_la_carpeta: open sobre `<tempdir>/.pcode/memoria.db` crea el archivo",
+]
+no_hagas = [
+  "No uses el reloj ni añadas columnas de fecha",
+  "No dependas de `pcode-store`: este crate abre su propia base de datos",
+]
+papers = ["Prism (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.03c"
+nombre = "memoria-archivo-tool"
+titulo = "Tool `memoria_archivo`: el agente lee y guarda las facetas de un archivo"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.03b"]
+toca = ["crates/pcode-memory/src/tool.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory tool::"
+contexto = [
+  "crates/pcode-tools/src/outline.rs (`impl Tool for Outline`: tool de lectura que hace su trabajo en `spawn_blocking`)",
+  "crates/pcode-tools/src/registry.rs (trait `Tool`, `ToolContext`, `ToolOutput::{ok, error}`, `resolve_in_root`)",
+  "crates/pcode-memory/src/facets.rs (`FacetStore::{open, get, put}`, `Facets`, `render_facets`)",
+]
+objetivo = '''
+1. Crea `tool.rs` con `MEMORY_DB`, `facet_call` y `FacetTool` (firmas abajo). En `lib.rs` añade
+   `pub mod tool;` y `pub use tool::FacetTool;`.
+2. `FacetTool::spec()`: nombre `memoria_archivo`; descripción EXACTA: «Notas duraderas sobre un archivo
+   (su API, sus invariantes y sus trampas). op "leer" antes de editar un archivo que no conoces; op
+   "guardar" cuando hayas aprendido algo que ahorre releerlo. Las notas caducan solas cuando el archivo
+   cambia.»; parámetros: objeto con `op` (enum `leer`, `guardar`), `path`, `api`, `invariantes` y
+   `trampas` (todos `string`), `required: ["op", "path"]`.
+3. `FacetTool::effects()` devuelve `&[Effect::Read]`: la tool no cambia archivos del proyecto, solo su
+   base de datos en `.pcode/memoria.db`.
+4. `FacetTool::call` clona `ctx.root` y los argumentos, ejecuta `facet_call` dentro de
+   `tokio::task::spawn_blocking` y convierte `Ok(s)` en `ToolOutput::ok(s)` y `Err(e)` en
+   `ToolOutput::error(e)`.
+5. `facet_call(root, args)`:
+   a) Sin `op` o sin `path`: `Err("faltan `op` o `path`")`.
+   b) `full = pcode_tools::resolve_in_root(root, path)?`; `sha = sha256_file(&full)`; si falla:
+      `Err(format!("no se pudo leer {path}: {e}"))`.
+   c) Abre `FacetStore::open(&root.join(MEMORY_DB))`; los errores de SQLite se devuelven con
+      `map_err(|e| format!("memoria: {e}"))`.
+   d) `op == "leer"`: si `get` da facetas, `Ok(render_facets(path, &f))`; si no,
+      `Ok(format!("sin notas vigentes de {path} (no hay, o el archivo ha cambiado desde que se escribieron)"))`.
+   e) `op == "guardar"`: lee `api`, `invariantes` y `trampas` (si faltan, cadena vacía) quitando los
+      espacios de los extremos. Si las tres están vacías: `Err("da al menos una de `api`, `invariantes` o `trampas`")`.
+      Si alguna pasa de 600 caracteres: `Err("cada nota, como mucho 600 caracteres")`. Si no, `put` con
+      `source_task = "agente"` y `Ok(format!("notas de {path} guardadas (caducan cuando cambie el archivo)"))`.
+   f) Otra `op`: `Err("op no válida: usa \"leer\" o \"guardar\"")`.
+'''
+firmas = '''
+// crates/pcode-memory/src/tool.rs
+/// Base de datos de la memoria, relativa a la raíz del proyecto.
+pub const MEMORY_DB: &str = ".pcode/memoria.db";
+
+/// Lógica de la tool `memoria_archivo` (síncrona).
+pub fn facet_call(root: &std::path::Path, args: &serde_json::Value) -> Result<String, String>;
+
+/// Tool `memoria_archivo`.
+pub struct FacetTool;
+
+#[async_trait::async_trait]
+impl pcode_tools::Tool for FacetTool { /* spec, effects, call */ }
+'''
+ejemplo = '''
+facet_call(root, &json!({"op":"guardar","path":"a.rs","api":"fn a()"}))
+  -> Ok("notas de a.rs guardadas (caducan cuando cambie el archivo)")
+facet_call(root, &json!({"op":"leer","path":"a.rs"}))   -> Ok("## a.rs\n- API: fn a()\n")
+(se reescribe a.rs con otro contenido)
+facet_call(root, &json!({"op":"leer","path":"a.rs"}))
+  -> Ok("sin notas vigentes de a.rs (no hay, o el archivo ha cambiado desde que se escribieron)")
+'''
+tests = [
+  "guardar_y_leer_como_en_el_ejemplo: en un tempdir con a.rs, las dos primeras llamadas del ejemplo",
+  "leer_tras_cambiar_el_archivo_no_devuelve_notas: la tercera llamada del ejemplo",
+  "guardar_sin_notas_es_error: guardar sin api, invariantes ni trampas devuelve Err",
+  "guardar_nota_demasiado_larga_es_error: una api de 601 caracteres devuelve Err",
+  "ruta_fuera_de_la_raiz_es_error: path `../x` devuelve Err",
+  "tool_declara_solo_lectura_y_funciona: FacetTool.effects() es [Read] y call con op leer sobre un archivo existente no es error (test con tokio)",
+]
+no_hagas = [
+  "No registres la tool en ningún sitio: eso es F4.03d",
+  "No declares `Effect::Write`: activaría puntos de control y el recordatorio de verificar sin que cambie ningún archivo del proyecto",
+  "No guardes el contenido del archivo ni secretos: solo las tres notas",
+]
+papers = ["Prism (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.03d"
+nombre = "memoria-archivo-chat"
+titulo = "Registrar la tool `memoria_archivo` en el agente del chat y de la TUI"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.03c"]
+toca = ["crates/pcode-cli/src/chat.rs", "crates/pcode-cli/tests/chat.rs"]
+toca_extra = ["crates/pcode-cli/Cargo.toml", "Cargo.lock"]
+acepta = "cargo test -p pcode-cli --test chat memoria_archivo"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (función `prepare`: la línea `let mut tools = pcode_tools::native_registry();`)",
+  "crates/pcode-cli/tests/chat.rs (test `chat_dos_mensajes_por_stdin_con_tool_y_comandos` y los ayudantes `resp` y `pcode`: cómo se prueba una tool con el proveedor falso)",
+]
+objetivo = '''
+1. `crates/pcode-cli/Cargo.toml`, sección `[dependencies]`: añade
+   `pcode-memory = { path = "../pcode-memory" }` después de la línea de `pcode-lsp`.
+2. `chat.rs`, función `prepare`, justo después de `let mut tools = pcode_tools::native_registry();`:
+   `tools.register(std::sync::Arc::new(pcode_memory::FacetTool)).expect("nombre único");`
+   (`prepare` la usan el chat y la TUI, así que vale para los dos).
+3. `tests/chat.rs`: añade el test `memoria_archivo_en_chat` del ejemplo.
+4. `Cargo.lock` cambia solo al compilar: inclúyelo en el commit.
+'''
+sin_firmas = "no añade API: una línea de registro y un test de integración"
+ejemplo = '''
+#[test]
+fn memoria_archivo_en_chat() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("a.rs"), "fn a() {}").unwrap();
+    pcode(
+        d.path(),
+        json!([
+            resp("", json!([{"id":"1","name":"memoria_archivo","arguments":{"op":"guardar","path":"a.rs","api":"fn a()"}}])),
+            resp("anotado", json!([])),
+        ]),
+    )
+    .arg("chat")
+    .write_stdin("anota a.rs\n/salir\n")
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("⏺ memoria_archivo"))
+    .stdout(predicate::str::contains("notas de a.rs guardadas"));
+    assert!(d.path().join(".pcode/memoria.db").exists());
+}
+'''
+tests = [
+  "memoria_archivo_en_chat: el agente del chat llama a memoria_archivo con op guardar; la salida muestra el resultado y existe `.pcode/memoria.db`",
+]
+no_hagas = [
+  "No cambies `native_registry` de `pcode-tools`",
+  "No toques los tests que ya existen en `tests/chat.rs`",
+]
 papers = ["Prism (Findings EMNLP 2026)"]
 
 [[tarea]]
@@ -100,28 +804,266 @@ id = "F4.04"
 nombre = "tree-sitter"
 titulo = "Mapa del repo con tree-sitter y tool `editar_simbolo`"
 fase = "F4"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F1.10"]
-toca = ["crates/pcode-tools/Cargo.toml", "crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/symbols.rs"]
-acepta = "cargo test -p pcode-tools symbols"
-contexto = ["docs/papers.md (CODESTRUCT)", "crates/pcode-tools/src/edit.rs"]
+toca = []
+acepta = "cargo test -p pcode-tools symbol"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Dependencias nuevas permitidas: `tree-sitter`, `tree-sitter-rust` y `tree-sitter-python`.
-2. `symbols(path, source)`: lista de `Symbol {kind, name, qualified, start_line, end_line}` para fn,
-   struct, enum, trait, impl (con el tipo) y mod en Rust; def y class en Python.
-3. `repo_map(root, max_lines)`: por archivo, sus símbolos con la firma (primera línea), recortado a
-   `max_lines`.
-4. Tool `editar_simbolo` (`[Write]`): `{"path", "symbol": "Tipo::metodo"|"funcion", "new_source"}`
-   reemplaza el rango completo del símbolo. Si el nombre es ambiguo o no existe → error con la lista
-   de candidatos.
+Tarea de cierre. El mapa del repo ya lo da la tool `esquema` (F8.45); aquí se cierran los rangos de
+símbolos, la tool `editar_simbolo` y los rangos exactos con tree-sitter.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.04a, F4.04b y F4.04c.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["CODESTRUCT (ACL 2026)"]
+
+[[tarea]]
+id = "F4.04a"
+nombre = "simbolos-rango"
+titulo = "`symbols.rs`: rango de líneas y nombre cualificado de cada símbolo (sobre `outline`, sin tree-sitter)"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F1.10"]
+toca = ["crates/pcode-tools/src/symbols.rs", "crates/pcode-tools/src/lib.rs"]
+acepta = "cargo test -p pcode-tools symbols::"
+contexto = [
+  "crates/pcode-tools/src/outline.rs (`outline(text, lang)`, struct `Symbol` {name, kind, line, depth}, `language_of` y el test `esquema_rust`: qué símbolos salen)",
+]
+objetivo = '''
+1. Crea `symbols.rs` con `SymbolRange`, `symbol_ranges` y `find_symbol` (firmas abajo). En `lib.rs`
+   añade `pub mod symbols;` (después de `pub mod search;`).
+2. `symbol_ranges(text, lang)`: si `lang` es `""` o `"markdown"`, vector vacío. Si no, toma
+   `crate::outline::outline(text, lang)` y, para cada símbolo (en el mismo orden):
+   - `start_line = line`.
+   - `end_line`: sea `ind` la sangría de la línea de cabecera (espacios en blanco iniciales; un tabulador
+     cuenta 4). Recorre las líneas siguientes: las vacías se saltan; con sangría mayor que `ind`,
+     `end_line` = esa línea y sigue; con sangría IGUAL: si (sin la sangría) empieza por `}` es el final
+     (`end_line` = esa línea y para); si empieza por `)`, `]`, `{` o `where`, `end_line` = esa línea y
+     sigue; cualquier otra para sin incluirla; con sangría menor, para. Un símbolo de una línea acaba
+     en su cabecera.
+   - `qualified`: con `depth == 0`, el nombre. Si no, `{dueño}::{name}`, donde el dueño sale del símbolo
+     anterior más cercano con `depth` una unidad menor: si su `kind` es `impl`, el tipo del impl (lo que
+     va tras el último ` for `, cortado en el primer `<`, y de eso lo que sigue al último `::`); si no,
+     su nombre.
+3. `find_symbol(ranges, query, line)`: candidatos = los de `qualified == query`; si no hay ninguno, los
+   de `name == query`. Si `line` es `Some(n)`, quédate con los candidatos cuyo rango contiene `n`.
+   Uno → `Ok`. Ninguno → `Err("no existe el símbolo «{query}»; parecidos: a, b")` con hasta 10
+   `qualified` que contengan (sin distinguir mayúsculas) el último segmento de `query` (o `ninguno`).
+   Varios → `Err("«{query}» es ambiguo: X::f (línea 3), Y::f (línea 9); usa el nombre cualificado o `line`")`.
 '''
 firmas = '''
-#[derive(Debug, Clone, PartialEq)] pub struct Symbol { pub kind: String, pub name: String, pub qualified: String, pub start_line: usize, pub end_line: usize }
-pub fn symbols(path: &std::path::Path, source: &str) -> Vec<Symbol>;
-pub fn repo_map(root: &std::path::Path, max_lines: usize) -> String;
+// crates/pcode-tools/src/symbols.rs
+/// Un símbolo con su rango de líneas (desde 1, ambos extremos incluidos).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolRange {
+    pub name: String,
+    /// `Tipo::metodo`, `modulo::funcion` o el nombre si es de primer nivel.
+    pub qualified: String,
+    pub kind: String,
+    pub start_line: u32,
+    pub end_line: u32,
+}
+
+/// Símbolos de `text` con su rango, en orden de aparición.
+pub fn symbol_ranges(text: &str, lang: &str) -> Vec<SymbolRange>;
+
+/// El símbolo que se llama `query` (cualificado o no); error con candidatos si no existe o es ambiguo.
+pub fn find_symbol<'a>(ranges: &'a [SymbolRange], query: &str, line: Option<u32>) -> Result<&'a SymbolRange, String>;
+'''
+ejemplo = '''
+texto (rust), con el número de línea delante:
+ 1 pub struct Punto { x: i32 }
+ 2
+ 3 impl fmt::Display for Punto {
+ 4     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+ 5         Ok(())
+ 6     }
+ 7 }
+ 8
+ 9 pub fn nuevo(
+10     x: i32,
+11 ) -> Punto {
+12     Punto { x }
+13 }
+symbol_ranges -> (qualified, kind, start, end):
+ ("Punto", "struct", 1, 1) · ("fmt::Display for Punto", "impl", 3, 7) · ("Punto::fmt", "method", 4, 6) · ("nuevo", "fn", 9, 13)
+python: "class A:\n    def f(self):\n        return 1\n\ndef g():\n    pass\n"
+ -> ("A", "class", 1, 3) · ("A::f", "method", 2, 3) · ("g", "fn", 5, 6)
+'''
+tests = [
+  "rangos_rust_como_en_el_ejemplo: el texto Rust del ejemplo da esos cuatro símbolos con sus rangos",
+  "rangos_python_por_sangria: el texto Python del ejemplo da esos tres símbolos",
+  "metodo_cualificado_por_impl: el texto `impl<T> Caja<T> {` + salto + `    fn abre(&self) {}` + salto + `}` da el qualified Caja::abre",
+  "markdown_y_lenguaje_desconocido_sin_rangos: lang markdown y lang vacío dan vector vacío",
+  "buscar_por_nombre_y_cualificado: find_symbol con `fmt` y con `Punto::fmt` devuelve el mismo símbolo",
+  "buscar_ambiguo_lista_candidatos: dos impl con un método `nuevo` dan Err que nombra los dos; con line dentro de uno devuelve Ok",
+  "buscar_inexistente_sugiere_parecidos: `fmtt` no existe y `fm` da Err cuyo texto contiene Punto::fmt",
+]
+no_hagas = [
+  "No cambies `outline.rs`",
+  "No añadas tree-sitter ni ninguna dependencia: eso es F4.04c",
+]
+papers = ["CODESTRUCT (ACL 2026)"]
+
+[[tarea]]
+id = "F4.04b"
+nombre = "editar-simbolo"
+titulo = "Tool `editar_simbolo`: reemplazar una función, método o tipo entero por su nombre"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.04a"]
+toca = ["crates/pcode-tools/src/edit_symbol.rs", "crates/pcode-tools/src/lib.rs"]
+acepta = "cargo test -p pcode-tools edit_symbol::"
+contexto = [
+  "crates/pcode-tools/src/edit.rs (`impl Tool for EditFile`: cómo lee argumentos, resuelve la ruta con `resolve_in_root`, escribe y devuelve errores; y sus tests con `tempfile`)",
+  "crates/pcode-tools/src/symbols.rs (`symbol_ranges`, `find_symbol`, `SymbolRange`)",
+  "crates/pcode-tools/src/lib.rs (función `native_registry`: dónde se registran las tools nativas)",
+]
+objetivo = '''
+1. Crea `edit_symbol.rs` con `replace_symbol` y la tool `EditSymbol` (firmas abajo).
+2. `replace_symbol(text, lang, symbol, line, new_source)`:
+   a) Si `lang` es `""` o `"markdown"`: `Err("lenguaje sin símbolos: usa `editar`")`.
+   b) `ranges = symbol_ranges(text, lang)`; `r = find_symbol(&ranges, symbol, line)?`.
+   c) Salvaguarda: si `lang != "python"` y en las líneas `r.start_line..=r.end_line` el número de `{`
+      no es igual al de `}`: `Err("no se pudo delimitar «{symbol}» con seguridad; usa `editar`")`.
+   d) Resultado: las líneas anteriores a `start_line`, después `new_source` sin los saltos de línea
+      finales (`trim_end_matches('\n')`), después las líneas posteriores a `end_line`; todo unido con
+      `\n`, y con `\n` final si `text` acababa en `\n`. `new_source` se inserta tal cual: quien llama
+      pone la sangría. Los comentarios de documentación y atributos de encima del símbolo no forman
+      parte del rango y se conservan.
+   e) Devuelve `(texto nuevo, format!("{} (líneas {}-{} → {} líneas)", r.qualified, r.start_line, r.end_line, n))`
+      con `n` = líneas de `new_source`.
+3. `EditSymbol`: nombre `editar_simbolo`; descripción EXACTA: «Reemplaza entero un símbolo (función,
+   método, struct, clase…) por `new_source`. `symbol` es su nombre o `Tipo::metodo`; `line` (opcional)
+   desambigua. Más seguro que `editar` para cambiar una función completa: no hace falta copiar el texto
+   antiguo.»; parámetros: `path`, `symbol`, `new_source` (string) y `line` (integer);
+   `required: ["path", "symbol", "new_source"]`; efectos `&[Effect::Write]`.
+   `call`: valida los tres argumentos (`faltan `path`, `symbol` o `new_source``), resuelve la ruta con
+   `resolve_in_root`, lee el archivo (`no se pudo leer {p}: {e}`), llama a `replace_symbol` con
+   `crate::outline::language_of(p)`, escribe y devuelve `ToolOutput::ok(format!("editado {p}: {resumen}"))`.
+4. `lib.rs`: `pub mod edit_symbol;`, `pub use edit_symbol::EditSymbol;` y, en `native_registry`, añade
+   `std::sync::Arc::new(EditSymbol),` justo después de `std::sync::Arc::new(EditFile),`.
+'''
+firmas = '''
+// crates/pcode-tools/src/edit_symbol.rs
+/// Sustituye el símbolo `symbol` de `text` por `new_source`; devuelve el texto nuevo y un resumen.
+pub fn replace_symbol(text: &str, lang: &str, symbol: &str, line: Option<u32>, new_source: &str)
+    -> Result<(String, String), String>;
+
+/// Tool `editar_simbolo`.
 pub struct EditSymbol;
 '''
-tests = ["simbolos_rust", "simbolos_python", "metodo_cualificado_por_impl", "editar_simbolo_reemplaza", "editar_simbolo_ambiguo_lista_candidatos", "repo_map_recorta"]
+ejemplo = '''
+text = "/// Suma.\npub fn suma(a: u32, b: u32) -> u32 {\n    a + b\n}\n\npub fn resta() {}\n"
+replace_symbol(text, "rust", "suma", None, "pub fn suma(a: u32, b: u32) -> u32 {\n    a.wrapping_add(b)\n}\n")
+ -> Ok(("/// Suma.\npub fn suma(a: u32, b: u32) -> u32 {\n    a.wrapping_add(b)\n}\n\npub fn resta() {}\n",
+        "suma (líneas 2-4 → 3 líneas)"))
+tool: {"path":"src/a.rs","symbol":"suma","new_source":"…"} -> "editado src/a.rs: suma (líneas 2-4 → 3 líneas)"
+'''
+tests = [
+  "editar_simbolo_reemplaza: el caso del ejemplo, texto y resumen exactos",
+  "editar_simbolo_metodo_cualificado: con dos impl que tienen `nuevo`, `Caja::nuevo` cambia solo el de Caja",
+  "editar_simbolo_ambiguo_lista_candidatos: `nuevo` sin cualificar da Err que nombra los dos candidatos y el archivo no cambia",
+  "editar_simbolo_llaves_descuadradas_no_edita: en JavaScript (lang js), `function a() {` con un `if (x) {` dentro y una cadena de plantilla que tiene una línea `}` sin sangría da el Err de «no se pudo delimitar» (el rango por sangría se corta ahí y las llaves no cuadran)",
+  "editar_simbolo_python: reemplaza un método de una clase y conserva el resto",
+  "tool_editar_simbolo_escribe_el_archivo: call sobre un tempdir cambia el archivo y devuelve `editado a.rs: …`; con una ruta `../x` es error",
+  "tool_registrada_en_las_nativas: native_registry().get(\"editar_simbolo\") es Some",
+]
+no_hagas = [
+  "No cambies `edit.rs` ni la tool `editar`",
+  "No reformatees ni reindentes `new_source`",
+  "Si un test de otro crate enumera las tools nativas y falla, no lo toques: anótalo en Pendiente",
+]
+papers = ["CODESTRUCT (ACL 2026)"]
+
+[[tarea]]
+id = "F4.04c"
+nombre = "simbolos-tree-sitter"
+titulo = "Rangos exactos de símbolos con tree-sitter para Rust y Python"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.04b"]
+toca = ["crates/pcode-tools/src/symbols_ts.rs", "crates/pcode-tools/src/symbols.rs", "crates/pcode-tools/src/lib.rs"]
+toca_extra = ["crates/pcode-tools/Cargo.toml", "Cargo.lock"]
+acepta = "cargo test -p pcode-tools symbols"
+contexto = [
+  "crates/pcode-tools/src/symbols.rs (`SymbolRange`, `symbol_ranges` y sus tests: el resultado con tree-sitter debe ser el mismo en esos casos)",
+  "crates/pcode-tools/Cargo.toml (sección `[dependencies]`)",
+]
+objetivo = '''
+Los rangos por sangría fallan cuando dentro de una función hay texto sin sangría (cadenas multilínea).
+Con tree-sitter el rango es exacto.
+1. `crates/pcode-tools/Cargo.toml`: añade `tree-sitter = "0.24"`, `tree-sitter-rust = "0.23"` y
+   `tree-sitter-python = "0.23"` (permitidas por AGENTS.md §7 para esta tarea). Si no resuelven juntas,
+   usa las últimas compatibles entre sí y anótalo en Decisiones.
+2. Crea `symbols_ts.rs` con `symbol_ranges_ts` (firma abajo); `lib.rs`: `pub mod symbols_ts;`.
+   - Solo `lang == "rust"` y `lang == "python"`; otro lenguaje → `None`. Si el parser no se puede crear
+     o `tree.root_node().has_error()` → `None` (se usará el método por sangría).
+   - Recorre los hijos de la raíz en orden. Nodos Rust que son símbolos y su `kind` de salida:
+     `function_item` y `function_signature_item` → `fn`; `struct_item` y `union_item` → `struct`;
+     `enum_item` → `enum`; `trait_item` → `trait`; `type_item` → `type`; `mod_item` → `mod`;
+     `impl_item` → `impl`; `macro_definition` → `macro`; `const_item` y `static_item` → `const`.
+     Python: `function_definition` → `fn`; `class_definition` → `class`; un `decorated_definition` se
+     sustituye por su hijo del campo `definition`.
+   - Nombre: el texto del campo `name`. Para `impl_item`: `{trait} for {type}` si tiene campo `trait`, y
+     si no `{type}`, con los espacios en blanco colapsados.
+   - `start_line = node.start_position().row + 1`, `end_line = node.end_position().row + 1`.
+   - Entra SOLO en el cuerpo (campo `body`) de `impl_item`, `trait_item`, `mod_item` y
+     `class_definition`, con profundidad + 1. Un `fn` con profundidad > 0 sale con kind `method`.
+   - `qualified`: la misma regla que en `symbols.rs` (dueño = tipo del impl, o nombre del contenedor).
+3. `symbols.rs`, primera línea de `symbol_ranges`:
+   `if let Some(v) = crate::symbols_ts::symbol_ranges_ts(text, lang) { return v; }`.
+   Los tests que ya hay en `symbols.rs` deben seguir pasando sin cambiarlos.
+'''
+firmas = '''
+// crates/pcode-tools/src/symbols_ts.rs
+use crate::symbols::SymbolRange;
+
+/// Rangos exactos con tree-sitter; `None` si el lenguaje no está soportado o el texto no se puede analizar.
+pub fn symbol_ranges_ts(text: &str, lang: &str) -> Option<Vec<SymbolRange>>;
+'''
+ejemplo = '''
+// API de tree-sitter que hace falta:
+let mut parser = tree_sitter::Parser::new();
+parser.set_language(&tree_sitter_rust::LANGUAGE.into()).ok()?;      // o tree_sitter_python::LANGUAGE
+let tree = parser.parse(text, None)?;
+let root = tree.root_node();
+let mut cursor = root.walk();
+for child in root.named_children(&mut cursor) {
+    child.kind();                                   // "function_item", "impl_item"…
+    child.child_by_field_name("name");              // Option<Node>
+    child.child_by_field_name("body");              // Option<Node>: sus hijos son los miembros
+    child.utf8_text(text.as_bytes()).ok();          // texto del nodo
+    child.start_position().row;                     // fila desde 0
+}
+
+// Caso que solo acierta tree-sitter (la línea 3 es una llave sin sangría dentro de una cadena):
+"fn a() {\n    let s = r#\"\n}\nfn falso() {}\n\"#;\n}\nfn b() {}\n"
+ -> ("a", "fn", 1, 6) · ("b", "fn", 7, 7)        (no existe ningún símbolo `falso`)
+'''
+tests = [
+  "ts_rust_cadena_con_llave_sin_sangria: el caso del ejemplo da solo `a` (1-6) y `b` (7-7)",
+  "ts_rust_impl_y_metodos: `impl fmt::Display for Punto { fn fmt… }` da el impl con nombre `fmt::Display for Punto` y el método Punto::fmt con kind method",
+  "ts_python_clase_decorada: una clase con un método decorado con @staticmethod da A y A::f, y el rango de f empieza en la línea del `def`",
+  "ts_lenguaje_no_soportado_es_none: lang js y lang vacío devuelven None",
+  "ts_texto_con_errores_de_sintaxis_es_none: `fn a( {` devuelve None y symbol_ranges sigue devolviendo lo del método por sangría",
+]
+no_hagas = [
+  "No añadas más gramáticas que Rust y Python",
+  "No cambies los tests de `symbols.rs` ni de `edit_symbol.rs`: tienen que pasar igual",
+  "No uses tree-sitter en `outline.rs`",
+]
+notas = "Compilar las gramáticas necesita un compilador de C (lo usa `cc`); si el entorno no lo tiene, dilo en el informe y para."
 papers = ["CODESTRUCT (ACL 2026)"]
 
 [[tarea]]
@@ -129,63 +1071,650 @@ id = "F4.05"
 nombre = "busqueda-hibrida"
 titulo = "Búsqueda híbrida (BM25 + símbolos, RRF), compresión de código y subagente bibliotecario"
 fase = "F4"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F4.04", "F4.03"]
-toca = ["crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/search.rs", "crates/pcode-memory/src/compress_code.rs"]
-acepta = "cargo test -p pcode-memory search && cargo test -p pcode-memory compress_code"
-contexto = ["docs/papers.md (Librarian, CODEPROMPTZIP)", "crates/pcode-tools/src/symbols.rs"]
+toca = []
+acepta = "cargo test -p pcode-tools bm25:: && cargo test -p pcode-memory && cargo test -p pcode-cli --test chat buscar_codigo"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Índice BM25 propio (k1 = 1.2, b = 0.75) sobre fragmentos = símbolos (o ventanas de 60 líneas para
-   archivos sin símbolos); tokenizador de código (separa camelCase y snake_case).
-2. Coincidencia por nombre de símbolo como segunda lista; fusión con RRF (k = 60).
-3. `compress_code(fragment, query, budget_tokens)`: conserva firmas, el cuerpo de los símbolos que
-   casan con la consulta y los comentarios `///`; sustituye el resto de cuerpos por `{ … }`.
-4. El índice es incremental por hash de archivo: es la base del «bibliotecario» persistente que se
-   expone por MCP (`buscar_repo`).
+Tarea de cierre. El «bibliotecario» queda como la tool `buscar_codigo` del agente; exponerlo por MCP
+depende del servidor MCP (F2.16) y no entra aquí.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.05a, F4.05b, F4.05c, F4.05d, F4.05e y F4.05f.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["Long Live the Librarian! (EMNLP 2026)", "CODEPROMPTZIP (Findings ACL 2026)"]
+
+[[tarea]]
+id = "F4.05a"
+nombre = "bm25"
+titulo = "`bm25.rs`: tokenizador de código y ranking BM25 (lógica pura, en `pcode-tools`)"
+fase = "F4"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.11"]
+toca = ["crates/pcode-tools/src/bm25.rs", "crates/pcode-tools/src/lib.rs"]
+acepta = "cargo test -p pcode-tools bm25::"
+contexto = [
+  "crates/pcode-tools/src/which.rs (un módulo pequeño de pcode-tools con funciones puras y tests al final)",
+  "crates/pcode-tools/src/lib.rs (dónde se declaran los módulos)",
+]
+objetivo = '''
+Lo usan la búsqueda de tools (F4.10), la búsqueda en el código (F4.05) y la memoria episódica (F4.09).
+1. Crea `bm25.rs` con `tokenize` y `Bm25` (firmas abajo). En `lib.rs` añade `pub mod bm25;` (después
+   de `pub mod bash;`).
+2. `tokenize(text)`:
+   a) Parte el texto en trozos por cualquier carácter que no sea alfanumérico (`char::is_alphanumeric`):
+      espacios, `_`, `-`, `.`, `:`, paréntesis…
+   b) Cada trozo se parte en palabras por los cambios de caja: hay corte ANTES de una mayúscula si el
+      carácter anterior es minúscula o cifra, o si el anterior es mayúscula y el siguiente es minúscula
+      (`HTTPServer` → `HTTP`, `Server`).
+   c) Emite las palabras en minúsculas y, si el trozo dio más de una palabra, también el trozo entero en
+      minúsculas (después de sus palabras). Se descartan los tokens de menos de 2 caracteres.
+3. `Bm25::new(docs)`: tokeniza cada documento y guarda, por documento, la frecuencia de cada término y
+   su longitud en tokens; además cuántos documentos contienen cada término y la longitud media.
+4. `search(query, k)`: términos = tokens únicos de la consulta. Puntuación de un documento = suma, por
+   término, de `idf * tf * (K1 + 1) / (tf + K1 * (1 - B + B * dl / avgdl))`, con
+   `idf = ln(1 + (N - n + 0.5) / (n + 0.5))` (`N` documentos, `n` los que contienen el término, `tf` su
+   frecuencia en el documento, `dl` la longitud del documento). Devuelve los de puntuación > 0, de mayor
+   a menor (a igualdad, índice menor primero), como mucho `k`. Con `avgdl == 0` o sin documentos, vacío.
 '''
 firmas = '''
-pub struct Hit { pub path: String, pub symbol: Option<String>, pub start_line: usize, pub score: f32 }
-pub struct RepoIndex { /* bm25, símbolos, hashes */ }
+// crates/pcode-tools/src/bm25.rs
+/// Parámetros estándar de BM25.
+pub const K1: f32 = 1.2;
+pub const B: f32 = 0.75;
+
+/// Tokens de un texto con código: separa snake_case y camelCase, en minúsculas.
+pub fn tokenize(text: &str) -> Vec<String>;
+
+/// Índice BM25 en memoria sobre una lista de documentos.
+#[derive(Debug, Clone, Default)]
+pub struct Bm25 { /* frecuencias por documento, longitudes, documentos por término, longitud media */ }
+
+impl Bm25 {
+    /// Indexa los documentos (el índice de cada uno es su posición en `docs`).
+    pub fn new(docs: &[String]) -> Self;
+    /// Número de documentos.
+    pub fn len(&self) -> usize;
+    /// Si no hay documentos.
+    pub fn is_empty(&self) -> bool;
+    /// Los `k` documentos más relevantes: (índice, puntuación), de mayor a menor.
+    pub fn search(&self, query: &str, k: usize) -> Vec<(usize, f32)>;
+}
+'''
+ejemplo = '''
+tokenize("parseBlame_v2 fooBar.rs")  -> ["parse", "blame", "parseblame", "v2", "foo", "bar", "foobar", "rs"]
+tokenize("HTTPServer x")             -> ["http", "server", "httpserver"]
+let i = Bm25::new(&["alfa beta".into(), "beta gamma gamma delta".into()]);
+i.search("gamma", 5)  -> [(1, p)] con p > 0
+i.search("beta", 5)   -> [(0, p0), (1, p1)] con p0 > p1   (el documento corto puntúa más)
+i.search("zeta", 5)   -> []
+'''
+tests = [
+  "tokeniza_snake_y_camel: el primer caso del ejemplo, en ese orden exacto",
+  "tokeniza_siglas_y_descarta_cortos: el segundo caso del ejemplo (la `x` suelta se descarta)",
+  "bm25_encuentra_por_contenido: la consulta gamma devuelve solo el documento 1",
+  "bm25_documento_corto_puntua_mas: la consulta beta devuelve [0, 1] en ese orden",
+  "bm25_sin_coincidencias_o_vacio: la consulta zeta y un índice sin documentos devuelven vacío",
+  "bm25_respeta_k: con tres documentos que contienen el término y k = 2 devuelve dos",
+]
+no_hagas = [
+  "No añadas dependencias (ni stemming ni listas de palabras vacías)",
+  "No uses `f64` en la API pública: las puntuaciones son `f32`",
+]
+papers = ["Long Live the Librarian! (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.05b"
+nombre = "busqueda-fragmentos-rrf"
+titulo = "`search.rs`: fragmentos de un archivo por símbolos y fusión de listas con RRF (lógica pura)"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.03a", "F4.04a"]
+toca = ["crates/pcode-memory/src/search.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory search::"
+contexto = [
+  "crates/pcode-tools/src/symbols.rs (`symbol_ranges(text, lang) -> Vec<SymbolRange>` con `qualified`, `kind`, `start_line`, `end_line`)",
+  "crates/pcode-tools/src/outline.rs (`language_of(path)`: lenguaje según la extensión)",
+]
+objetivo = '''
+1. Crea `search.rs` con `Chunk`, `chunks` y `rrf` (firmas abajo). En `lib.rs` añade `pub mod search;`.
+2. `chunks(path, text)`:
+   a) `lang = pcode_tools::outline::language_of(path)`;
+      `ranges = pcode_tools::symbols::symbol_ranges(text, lang)`.
+   b) Descarta los contenedores (`kind` igual a `impl`, `mod`, `trait` o `class`): sus miembros ya son
+      fragmentos por sí mismos.
+   c) Por cada rango que queda, un `Chunk` con `symbol = Some(qualified)`, sus líneas inicial y final y
+      `text` = esas líneas del archivo unidas con `\n`.
+   d) Si no queda ninguno (lenguaje sin símbolos, Markdown, archivo de configuración…): ventanas de
+      `WINDOW_LINES` líneas (1-60, 61-120…), con `symbol = None`. Un texto vacío da vector vacío.
+3. `rrf(lists, k)`: fusión por rango recíproco. La puntuación de un id es la suma, por cada lista en la
+   que aparece, de `1.0 / (k + posición)` con la posición desde 1 (si un id se repite en una lista,
+   cuenta solo su primera aparición). Devuelve (id, puntuación) de mayor a menor; a igualdad, por id
+   en orden alfabético.
+'''
+firmas = '''
+// crates/pcode-memory/src/search.rs
+/// Líneas de cada ventana cuando un archivo no tiene símbolos.
+pub const WINDOW_LINES: usize = 60;
+
+/// Un fragmento indexable de un archivo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chunk {
+    pub path: String,
+    /// Nombre cualificado del símbolo, o `None` si es una ventana de líneas.
+    pub symbol: Option<String>,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub text: String,
+}
+
+/// Fragmentos de un archivo: un símbolo por fragmento, o ventanas de líneas.
+pub fn chunks(path: &str, text: &str) -> Vec<Chunk>;
+
+/// Fusión por rango recíproco de varias listas ordenadas de ids.
+pub fn rrf(lists: &[Vec<String>], k: f32) -> Vec<(String, f32)>;
+'''
+ejemplo = '''
+chunks("a.rs", "pub struct Caja;\n\nimpl Caja {\n    pub fn abre(&self) {}\n}\n")
+ -> [Chunk { symbol: Some("Caja"), start_line: 1, end_line: 1, text: "pub struct Caja;" },
+     Chunk { symbol: Some("Caja::abre"), start_line: 4, end_line: 4, text: "    pub fn abre(&self) {}" }]   (path "a.rs" en los dos)
+chunks("notas.txt", <130 líneas>) -> tres fragmentos sin símbolo: 1-60, 61-120, 121-130
+rrf(&[vec!["a".into(), "b".into()], vec!["b".into(), "c".into()]], 60.0)
+ -> [("b", 1.0/62.0 + 1.0/61.0), ("a", 1.0/61.0), ("c", 1.0/62.0)]
+'''
+tests = [
+  "fragmentos_por_simbolo_sin_contenedores: el primer caso del ejemplo (el impl no sale)",
+  "fragmentos_por_ventanas_si_no_hay_simbolos: 130 líneas de texto en `notas.txt` dan los rangos 1-60, 61-120 y 121-130",
+  "fragmentos_de_texto_vacio: la cadena vacía da vector vacío",
+  "rrf_fusiona: el caso del ejemplo, con el orden b, a, c y las puntuaciones con tolerancia 1e-6",
+  "rrf_ignora_repetidos_en_una_lista: la lista [a, a, b] puntúa `a` una sola vez",
+]
+no_hagas = [
+  "No leas archivos del disco en este módulo: `chunks` recibe el texto",
+  "No toques `crates/pcode-memory/Cargo.toml`: las dependencias ya están declaradas",
+]
+papers = ["Long Live the Librarian! (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.05c"
+nombre = "busqueda-indice"
+titulo = "`RepoIndex`: índice del repositorio incremental por hash, con búsqueda BM25 + símbolos"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.05a", "F4.05b"]
+toca = ["crates/pcode-memory/src/index.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory index::"
+contexto = [
+  "crates/pcode-memory/src/search.rs (`Chunk`, `chunks(path, text)` y `rrf(lists, k)`)",
+  "crates/pcode-tools/src/bm25.rs (`Bm25::new(&[String])`, `Bm25::search(query, k) -> Vec<(usize, f32)>`)",
+  "crates/pcode-tools/src/outline.rs (`project_files(root) -> Vec<String>`: archivos del proyecto, relativos a la raíz)",
+  "crates/pcode-memory/src/hash.rs (`sha256_hex`)",
+]
+objetivo = '''
+1. Crea `index.rs` con `Hit` y `RepoIndex` (firmas abajo). En `lib.rs` añade `pub mod index;` y
+   `pub use index::{Hit, RepoIndex};`.
+2. Estado de `RepoIndex`: `files: BTreeMap<String, (String, Vec<Chunk>)>` (ruta → hash y fragmentos),
+   `flat: Vec<Chunk>` (todos los fragmentos, en orden de ruta) y `bm25: pcode_tools::bm25::Bm25`.
+3. `refresh_files(root, files)`: para cada ruta lee `root.join(ruta)` con `std::fs::read`; se salta los
+   que no se pueden leer, los de más de 512 KB y los que no son UTF-8. Calcula `sha256_hex` de los
+   bytes: si coincide con el guardado, conserva sus fragmentos; si no, recalcula `chunks(ruta, texto)`.
+   Quita del índice las rutas que ya no están en `files`. Después reconstruye `flat` y
+   `bm25 = Bm25::new(…)` con un documento por fragmento: `"{path} {símbolo o vacío} {text}"`.
+   Devuelve cuántos archivos se recalcularon o se quitaron.
+4. `build(root)` = índice vacío + `refresh(root)`; `refresh(root)` =
+   `refresh_files(root, &pcode_tools::outline::project_files(root))`.
+5. `search(query, k)`:
+   a) Lista A: `bm25.search(query, 50)`, como ids de texto (`índice.to_string()`).
+   b) Lista B (por nombre): fragmentos con símbolo cuyo último segmento (tras el último `::`) en
+      minúsculas es IGUAL a la consulta en minúsculas y sin espacios en los extremos; después, los que
+      contienen alguna palabra de la consulta (separada por espacios, en minúsculas, de 3 caracteres o
+      más); sin repetir, en orden de índice dentro de cada grupo, como mucho 50.
+   c) `rrf(&[A, B], 60.0)`, los `k` primeros, convertidos en `Hit` con su puntuación.
+'''
+firmas = '''
+// crates/pcode-memory/src/index.rs
+/// Un resultado de la búsqueda en el código.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hit { pub path: String, pub symbol: Option<String>, pub start_line: u32, pub score: f32 }
+
+/// Índice en memoria de los fragmentos del repositorio.
+#[derive(Default)]
+pub struct RepoIndex { /* files, flat, bm25 */ }
+
 impl RepoIndex {
+    /// Indexa los archivos del proyecto.
     pub fn build(root: &std::path::Path) -> std::io::Result<RepoIndex>;
+    /// Reindexa solo lo que cambió; devuelve cuántos archivos se recalcularon o quitaron.
     pub fn refresh(&mut self, root: &std::path::Path) -> std::io::Result<usize>;
+    /// Igual que `refresh`, con la lista de archivos dada (rutas relativas a `root`).
+    pub fn refresh_files(&mut self, root: &std::path::Path, files: &[String]) -> std::io::Result<usize>;
+    /// Número de fragmentos indexados.
+    pub fn len(&self) -> usize;
+    /// Si no hay fragmentos.
+    pub fn is_empty(&self) -> bool;
+    /// Los `k` fragmentos más relevantes.
     pub fn search(&self, query: &str, k: usize) -> Vec<Hit>;
 }
-pub fn rrf(lists: &[Vec<String>], k: f32) -> Vec<(String, f32)>;
-pub fn compress_code(fragment: &str, query: &str, budget_tokens: usize) -> String;
 '''
-tests = ["bm25_encuentra_por_contenido", "simbolo_por_nombre_gana", "rrf_fusiona", "refresh_solo_cambiados", "compress_code_conserva_firmas_y_cuerpo_relevante"]
-papers = ["Long Live the Librarian! (EMNLP 2026)", "CODEPROMPTZIP (Findings ACL 2026)"]
+ejemplo = '''
+tempdir con  a.rs: "pub fn parse_blame() {}\n"
+             b.rs: "pub fn otra() {\n    // parse_blame parse_blame parse_blame\n    parse_blame();\n}\n"
+let mut i = RepoIndex::default();
+i.refresh_files(root, &["a.rs".into(), "b.rs".into()])  -> Ok(2)
+i.refresh_files(root, &["a.rs".into(), "b.rs".into()])  -> Ok(0)      (nada cambió)
+i.search("parse_blame", 5)[0]  -> Hit { path: "a.rs", symbol: Some("parse_blame"), start_line: 1, .. }
+   (a.rs está en las dos listas; b.rs solo en la de BM25)
+'''
+tests = [
+  "bm25_encuentra_por_contenido: buscar una palabra que solo está en el cuerpo de `otra` devuelve b.rs",
+  "simbolo_por_nombre_gana: el caso del ejemplo; el primer resultado es a.rs con el símbolo parse_blame",
+  "refresh_solo_cambiados: el segundo refresh devuelve 0; tras reescribir b.rs devuelve 1; tras quitar b.rs de la lista devuelve 1 y ya no sale en las búsquedas",
+  "salta_binarios_y_enormes: un archivo con bytes que no son UTF-8 no rompe el refresh ni entra en el índice",
+  "indice_vacio_no_encuentra_nada: RepoIndex::default().search devuelve vacío",
+]
+no_hagas = [
+  "No guardes el índice en disco: es en memoria y se reconstruye por hash",
+  "No uses `project_files` en los tests: usa `refresh_files` con un tempdir",
+]
+papers = ["Long Live the Librarian! (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.05d"
+nombre = "comprimir-codigo"
+titulo = "`compress_code`: conservar firmas y cuerpos relevantes, omitir el resto (lógica pura)"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.05a", "F4.05b"]
+toca = ["crates/pcode-memory/src/compress_code.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory compress_code::"
+contexto = [
+  "crates/pcode-tools/src/symbols.rs (`symbol_ranges(text, lang)`: `name`, `kind`, `start_line`, `end_line`)",
+  "crates/pcode-tools/src/bm25.rs (`tokenize(text)`)",
+]
+objetivo = '''
+1. Crea `compress_code.rs` con `compress_code` (firma abajo). En `lib.rs` añade `pub mod compress_code;`
+   y `pub use compress_code::compress_code;`.
+2. Si el fragmento ya cabe (`fragment.chars().count().div_ceil(4) <= budget_tokens`), devuélvelo igual.
+3. Si no: `ranges = pcode_tools::symbols::symbol_ranges(fragment, lang)`. Candidatos a comprimir: los
+   rangos de más de 2 líneas cuyo `kind` no es `impl`, `mod`, `trait` ni `class`.
+4. Un candidato es RELEVANTE si algún token de `pcode_tools::bm25::tokenize(query)` está en
+   `tokenize(name)`. Los relevantes se dejan enteros.
+5. De cada candidato no relevante se conserva la firma y se omite el cuerpo:
+   - La firma son las líneas desde `start_line` hasta la primera (como mucho 10 líneas después) que,
+     sin espacios finales, acaba en `{` (o en `:` si `lang == "python"`), incluida. Si no hay ninguna,
+     la firma es solo `start_line`.
+   - El cuerpo (de la línea siguiente a la firma hasta `end_line`) se sustituye por UNA línea:
+     `{sangría de start_line}    // … {n} líneas omitidas` (en Python: `{sangría}    ...  # {n} líneas omitidas`),
+     donde `n` cuenta las líneas quitadas. Si la última línea del rango, sin sangría, empieza por `}`,
+     se conserva (y no cuenta en `n`). Si no hay ninguna línea que quitar, no se toca.
+6. Todo lo que está fuera de los candidatos (comentarios `///`, `use`, atributos, contenedores) se
+   conserva tal cual. Conserva el `\n` final si lo había. No se recorta más aunque siga sin caber.
+'''
+firmas = '''
+// crates/pcode-memory/src/compress_code.rs
+/// Comprime un fragmento de código para el contexto: deja las firmas y los cuerpos de los símbolos
+/// relacionados con `query`, y sustituye los demás cuerpos por una línea.
+pub fn compress_code(fragment: &str, lang: &str, query: &str, budget_tokens: usize) -> String;
+'''
+ejemplo = '''
+fragment (rust):
+/// Suma.
+pub fn suma(a: u32, b: u32) -> u32 {
+    let c = a + b;
+    c
+}
+
+pub fn resta(a: u32, b: u32) -> u32 {
+    let c = a - b;
+    c
+}
+
+compress_code(fragment, "rust", "resta", 10) ->
+/// Suma.
+pub fn suma(a: u32, b: u32) -> u32 {
+    // … 2 líneas omitidas
+}
+
+pub fn resta(a: u32, b: u32) -> u32 {
+    let c = a - b;
+    c
+}
+'''
+tests = [
+  "compress_code_conserva_firmas_y_cuerpo_relevante: el caso del ejemplo, carácter a carácter",
+  "si_cabe_no_cambia: con un presupuesto de 1000 tokens devuelve el fragmento igual",
+  "firma_en_varias_lineas_se_conserva: una función con los parámetros en tres líneas conserva hasta la línea que acaba en `{`",
+  "python_usa_puntos_suspensivos: un `def` de cuatro líneas no relevante queda en su cabecera y `    ...  # 3 líneas omitidas`",
+  "funciones_de_una_o_dos_lineas_no_se_tocan: `fn a() {}` y una función de dos líneas quedan igual aunque no quepan",
+  "lenguaje_sin_simbolos_no_cambia: con lang vacío devuelve el fragmento igual",
+]
+no_hagas = [
+  "No llames al modelo: es una compresión determinista",
+  "No recortes comentarios de documentación ni líneas fuera de los símbolos",
+]
+papers = ["CODEPROMPTZIP (Findings ACL 2026)"]
+
+[[tarea]]
+id = "F4.05e"
+nombre = "buscar-codigo-tool"
+titulo = "Tool `buscar_codigo`: búsqueda aproximada en el código con `RepoIndex`"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.05c"]
+toca = ["crates/pcode-memory/src/search_tool.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory search_tool::"
+contexto = [
+  "crates/pcode-memory/src/index.rs (`RepoIndex::{build, refresh, search}` y `Hit`)",
+  "crates/pcode-tools/src/outline.rs (`impl Tool for Outline`: tool de lectura con `spawn_blocking`)",
+  "crates/pcode-tools/src/registry.rs (trait `Tool`, `ToolContext`, `ToolOutput`)",
+]
+objetivo = '''
+1. Crea `search_tool.rs` con `render_hits` y `CodeSearch` (firmas abajo). En `lib.rs` añade
+   `pub mod search_tool;` y `pub use search_tool::CodeSearch;`.
+2. `render_hits(query, hits)`: una línea por resultado, `{path}:{start_line}  {símbolo}`, con
+   `(fragmento)` si no tiene símbolo. Sin resultados: `sin resultados para «{query}»`.
+3. `CodeSearch` guarda `index: Arc<Mutex<Option<RepoIndex>>>` (`std::sync`), vacío al crearla: el índice
+   se construye en la primera llamada y se refresca en las siguientes.
+4. `spec()`: nombre `buscar_codigo`; descripción EXACTA: «Busca en el código por palabras aproximadas
+   (BM25 y nombres de símbolos) y devuelve archivo, línea y símbolo. Úsala cuando no sepas el nombre
+   exacto; para texto literal o regex usa `buscar`.»; parámetros `consulta` (string) y `k` (integer),
+   `required: ["consulta"]`. `effects()`: `&[Effect::Read]`.
+5. `call`: sin `consulta` o vacía → `ToolOutput::error("falta `consulta`")`. `k` = el argumento `k`
+   limitado a 1..=20 (por defecto 8). Dentro de `tokio::task::spawn_blocking` (con un clon del `Arc` y
+   de `ctx.root`): bloquea el mutex; si es `None`, `RepoIndex::build(&root)`; si no, `refresh(&root)`;
+   un error de E/S se devuelve como `ToolOutput::error(format!("no se pudo indexar: {e}"))`. Después
+   `ToolOutput::ok(render_hits(&consulta, &index.search(&consulta, k)))`.
+'''
+firmas = '''
+// crates/pcode-memory/src/search_tool.rs
+/// Resultados como texto para el modelo.
+pub fn render_hits(query: &str, hits: &[crate::index::Hit]) -> String;
+
+/// Tool `buscar_codigo`.
+#[derive(Default)]
+pub struct CodeSearch { index: std::sync::Arc<std::sync::Mutex<Option<crate::index::RepoIndex>>> }
+
+impl CodeSearch {
+    /// Tool con el índice sin construir.
+    pub fn new() -> Self;
+}
+
+#[async_trait::async_trait]
+impl pcode_tools::Tool for CodeSearch { /* spec, effects, call */ }
+'''
+ejemplo = '''
+render_hits("abre", &[Hit { path: "src/a.rs".into(), symbol: Some("Caja::abre".into()), start_line: 4, score: 0.03 },
+                      Hit { path: "notas.txt".into(), symbol: None, start_line: 61, score: 0.01 }])
+ -> "src/a.rs:4  Caja::abre\nnotas.txt:61  (fragmento)"
+render_hits("zzz", &[]) -> "sin resultados para «zzz»"
+'''
+tests = [
+  "render_con_y_sin_simbolo: los dos casos del ejemplo, carácter a carácter",
+  "tool_encuentra_un_simbolo: en un tempdir con a.rs (`pub fn saluda() {}`), call con consulta saluda devuelve un texto que contiene `a.rs:1`",
+  "tool_refresca_entre_llamadas: tras la primera llamada se crea b.rs con `pub fn despide() {}` y la segunda llamada con consulta despide lo encuentra",
+  "tool_sin_consulta_es_error: call con argumentos vacíos devuelve is_error",
+]
+no_hagas = [
+  "No registres la tool en ningún sitio: eso es F4.05f",
+  "No mantengas el mutex bloqueado fuera de `spawn_blocking`",
+]
+papers = ["Long Live the Librarian! (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.05f"
+nombre = "buscar-codigo-chat"
+titulo = "Registrar la tool `buscar_codigo` en el agente del chat y de la TUI"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.05e", "F4.03"]
+toca = ["crates/pcode-cli/src/chat.rs", "crates/pcode-cli/tests/chat.rs"]
+acepta = "cargo test -p pcode-cli --test chat buscar_codigo"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (función `prepare`: la línea que registra `pcode_memory::FacetTool` justo después de `native_registry()`)",
+  "crates/pcode-cli/tests/chat.rs (ayudantes `resp` y `pcode`, y el test `memoria_archivo_en_chat` como modelo)",
+]
+objetivo = '''
+`pcode-cli` ya depende de `pcode-memory` (lo añadió F4.03d): no hay que tocar ningún `Cargo.toml`.
+1. `chat.rs`, función `prepare`, justo después de la línea que registra `pcode_memory::FacetTool`:
+   `tools.register(std::sync::Arc::new(pcode_memory::CodeSearch::new())).expect("nombre único");`
+2. `tests/chat.rs`: añade el test `buscar_codigo_en_chat`: en un directorio temporal con `a.rs`
+   (`pub fn saluda() {}` y salto de línea), el guion del proveedor falso llama a `buscar_codigo` con
+   `{"consulta": "saluda"}` y después responde `encontrado`; la entrada es `busca saluda\n/salir\n`.
+   Comprueba que la salida contiene `⏺ buscar_codigo` y `a.rs:1`.
+'''
+sin_firmas = "no añade API: una línea de registro y un test de integración"
+ejemplo = '''
+pcode(
+    d.path(),
+    json!([
+        resp("", json!([{"id":"1","name":"buscar_codigo","arguments":{"consulta":"saluda"}}])),
+        resp("encontrado", json!([])),
+    ]),
+)
+.arg("chat")
+.write_stdin("busca saluda\n/salir\n")
+.assert()
+.success()
+.stdout(predicate::str::contains("⏺ buscar_codigo"))
+.stdout(predicate::str::contains("a.rs:1"));
+'''
+tests = [
+  "buscar_codigo_en_chat: el agente del chat llama a buscar_codigo y la salida muestra `a.rs:1`",
+]
+no_hagas = [
+  "No cambies `native_registry` de `pcode-tools`",
+  "No toques los tests que ya existen en `tests/chat.rs`",
+]
+papers = ["Long Live the Librarian! (EMNLP 2026)"]
 
 [[tarea]]
 id = "F4.06"
 nombre = "contexto-por-rol"
 titulo = "Contexto por rol para subagentes y tablero compartido acotado"
 fase = "F4"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F4.02", "F2.06"]
-toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/roles.rs"]
-acepta = "cargo test -p pcode-core roles"
-contexto = ["docs/papers.md (RCR-Router, Dynamic Context Allocation)", "crates/pcode-backends/src/types.rs"]
+depende = ["F2.06"]
+toca = []
+acepta = "cargo test -p pcode-core roles:: && cargo test -p pcode-core board::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Roles `Explorador` (solo lectura: tarea + mapa del repo + pregunta concreta), `Implementador`
-   (tarea + relevo + facetas de los archivos de `toca` + skills), `Revisor` (diff + rúbrica, sin el
-   historial del implementador) y `Critico` (plan propuesto + restricciones).
-2. `build_context(role, inputs)` devuelve los mensajes iniciales del subagente; **nunca** copia el
-   historial del padre.
-3. `Board`: tablero clave-valor acotado (máximo N entradas y M caracteres) que comparten los
-   subagentes paralelos de un flujo; se inyecta como un mensaje compacto al inicio de cada ronda.
+Tarea de cierre. Son dos módulos puros de `pcode-core`; quien lance subagentes (flujos, agentes
+propios) los usará para no copiar nunca el historial del padre.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.06a y F4.06b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["RCR-Router (Findings EMNLP 2026)", "Dynamic Context Allocation (EMNLP 2026)", "The Collaboration Tax (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.06a"
+nombre = "contexto-roles"
+titulo = "`roles.rs`: mensajes iniciales de un subagente según su rol y capacidades de cada rol"
+fase = "F4"
+hito = "1.7"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F2.06"]
+toca = ["crates/pcode-core/src/roles.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-core roles::"
+contexto = [
+  "crates/pcode-models/src/types.rs (`Message::system` y `Message::user`)",
+  "crates/pcode-policy/src/caps.rs (struct `Capabilities`, campo `deny_effects`; `Policy::child` y `Policy::tool_visible`)",
+  "crates/pcode-tools/src/registry.rs (enum `Effect`)",
+]
+objetivo = '''
+1. Crea `roles.rs` con `AgentRole`, `RoleInputs`, `build_context` y `role_capabilities` (firmas abajo).
+   En `lib.rs` añade `pub mod roles;` (después de `pub mod memory;`). El enum se llama `AgentRole` para
+   no chocar con `pcode_models::Role`.
+2. `build_context(role, i)` devuelve SIEMPRE dos mensajes: `Message::system(texto del rol)` y
+   `Message::user(secciones)`. Nunca recibe ni copia el historial de otro agente.
+3. Texto de sistema de cada rol (constantes privadas, texto EXACTO):
+   - Explorer: «Eres un explorador de código de solo lectura. Responde a la pregunta con rutas y líneas
+     concretas; no propongas cambios ni edites nada.»
+   - Implementer: «Eres el implementador de una tarea. Haz solo lo que pide la tarea, respeta las notas
+     de los archivos y comprueba el resultado antes de terminar.»
+   - Reviewer: «Eres un revisor independiente. Juzga el diff solo con la tarea y la rúbrica: no conoces
+     la conversación de quien lo escribió. Responde a cada punto de la rúbrica y da un veredicto.»
+   - Critic: «Eres un crítico de planes. Di qué restricción incumple el plan o qué caso deja sin cubrir;
+     no reescribas el plan entero.»
+4. Secciones del mensaje de usuario: cada una es `# {título}\n{contenido}\n`, separadas por una línea
+   en blanco, en este orden y SOLO las de su rol (las demás se ignoran aunque vengan rellenas):
+   - Explorer: `Tarea` (task), `Mapa del repositorio` (repo_map), `Pregunta` (question).
+   - Implementer: `Tarea`, `Relevo` (handoff), `Notas de los archivos` (facets), `Skills` (skills_index).
+   - Reviewer: `Tarea`, `Diff` (diff), `Rúbrica` (rubric).
+   - Critic: `Tarea`, `Plan propuesto` (plan), `Restricciones` (constraints).
+   Una sección cuyo dato es `None`, cadena vacía o lista vacía se omite. Las listas (`rubric`,
+   `constraints`) se escriben con una línea `- elemento` por elemento. El contenido se usa sin los
+   espacios de los extremos.
+5. `role_capabilities(role)`: para Explorer, Reviewer y Critic,
+   `Capabilities { deny_effects: vec![Effect::Write, Effect::Exec, Effect::Network, Effect::Irreversible], ..Default::default() }`;
+   para Implementer, `Capabilities::default()`. Se usa como capa hija: `policy.child(role_capabilities(r))`.
 '''
 firmas = '''
-#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum Role { Explorer, Implementer, Reviewer, Critic }
-pub struct RoleInputs { pub task: String, pub handoff: Option<String>, pub repo_map: Option<String>, pub facets: Option<String>,
-                        pub skills_index: Option<String>, pub diff: Option<String>, pub rubric: Vec<String>, pub plan: Option<String> }
-pub fn build_context(role: Role, i: &RoleInputs) -> Vec<pcode_models::Message>;
-pub struct Board { /* BTreeMap, límites */ }
-impl Board { pub fn new(max_entries: usize, max_chars: usize) -> Self; pub fn set(&mut self, k: &str, v: &str) -> bool; pub fn render(&self) -> String; }
+// crates/pcode-core/src/roles.rs
+use pcode_models::Message;
+use pcode_policy::Capabilities;
+
+/// Rol de un subagente.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentRole { Explorer, Implementer, Reviewer, Critic }
+
+/// Lo que puede entrar en el contexto inicial de un subagente (cada rol usa solo lo suyo).
+#[derive(Debug, Clone, Default)]
+pub struct RoleInputs {
+    pub task: String,
+    pub question: Option<String>,
+    pub handoff: Option<String>,
+    pub repo_map: Option<String>,
+    pub facets: Option<String>,
+    pub skills_index: Option<String>,
+    pub diff: Option<String>,
+    pub rubric: Vec<String>,
+    pub plan: Option<String>,
+    pub constraints: Vec<String>,
+}
+
+/// Mensajes iniciales (sistema y usuario) de un subagente con ese rol.
+pub fn build_context(role: AgentRole, i: &RoleInputs) -> Vec<Message>;
+
+/// Capa de política del rol: los roles que solo leen no pueden escribir, ejecutar ni usar la red.
+pub fn role_capabilities(role: AgentRole) -> Capabilities;
 '''
-tests = ["revisor_no_ve_historial", "explorador_sin_tools_de_escritura (comprobado por la política hija)", "tablero_respeta_limites", "implementador_incluye_relevo"]
-papers = ["RCR-Router (Findings EMNLP 2026)", "Dynamic Context Allocation (EMNLP 2026)", "The Collaboration Tax (EMNLP 2026)"]
+ejemplo = '''
+let i = RoleInputs { task: "Arregla el parser".into(), handoff: Some("secreto del implementador".into()),
+                     diff: Some("+ fn a() {}".into()), rubric: vec!["compila".into(), "tiene tests".into()],
+                     ..Default::default() };
+build_context(AgentRole::Reviewer, &i)[1].content ==
+  "# Tarea\nArregla el parser\n\n# Diff\n+ fn a() {}\n\n# Rúbrica\n- compila\n- tiene tests\n"
+build_context(AgentRole::Implementer, &i)[1].content ==
+  "# Tarea\nArregla el parser\n\n# Relevo\nsecreto del implementador\n"
+'''
+tests = [
+  "revisor_no_ve_historial: el primer caso del ejemplo; el texto no contiene `secreto del implementador`",
+  "implementador_incluye_relevo: el segundo caso del ejemplo, carácter a carácter",
+  "explorador_con_mapa_y_pregunta: con repo_map y question salen las secciones Tarea, Mapa del repositorio y Pregunta en ese orden",
+  "critico_lista_restricciones: constraints [a, b] da la sección Restricciones con dos líneas `- `",
+  "siempre_sistema_y_usuario: los cuatro roles devuelven dos mensajes, el primero de sistema y distinto en cada rol",
+  "explorador_sin_tools_de_escritura: Policy::new(Capabilities::default()).child(role_capabilities(Explorer)).tool_visible(\"escribir\", &[Effect::Write]) es false y con Implementer es true",
+]
+no_hagas = [
+  "No añadas un parámetro con el historial del padre: el aislamiento es el objetivo",
+  "No lances subagentes ni toques `agent.rs`",
+]
+papers = ["RCR-Router (Findings EMNLP 2026)", "Dynamic Context Allocation (EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.06b"
+nombre = "tablero-compartido"
+titulo = "`Board`: tablero clave-valor acotado que comparten los subagentes de un flujo"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.06"]
+toca = ["crates/pcode-core/src/board.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-core board::"
+contexto = [
+  "crates/pcode-models/src/types.rs (`Message::user`)",
+  "crates/pcode-core/src/ask.rs (un módulo pequeño de pcode-core con estado y tests al final)",
+]
+objetivo = '''
+Compartir todo entre agentes en paralelo sale caro («The Collaboration Tax»): el tablero está acotado
+en entradas y en caracteres, y cada ronda se inyecta como UN mensaje corto.
+1. Crea `board.rs` con `Board` (firmas abajo) sobre un `BTreeMap<String, String>`. En `lib.rs` añade
+   `pub mod board;` (después de `pub mod ask;`) y `pub use board::Board;`.
+2. `set(key, value)`: la clave y el valor se guardan en una línea (`split_whitespace` y unir con un
+   espacio). Con clave vacía devuelve `false`. Calcula cómo quedaría el tablero: si es una clave nueva y
+   ya hay `max_entries`, o si `render()` del resultado pasaría de `max_chars` caracteres, NO cambia nada
+   y devuelve `false`. Si cabe, guarda (sustituyendo el valor anterior de esa clave) y devuelve `true`.
+3. `remove(key)`: quita la clave; `true` si existía.
+4. `render()`: cadena vacía si no hay entradas; si no, `# Tablero compartido\n` y una línea
+   `- {clave}: {valor}\n` por entrada, en orden alfabético de clave.
+5. `message()`: `None` si está vacío; si no, `Some(Message::user(self.render()))`.
+'''
+firmas = '''
+// crates/pcode-core/src/board.rs
+/// Tablero compartido y acotado entre subagentes.
+#[derive(Debug, Clone)]
+pub struct Board { max_entries: usize, max_chars: usize, entries: std::collections::BTreeMap<String, String> }
+
+impl Board {
+    /// Tablero vacío con sus límites.
+    pub fn new(max_entries: usize, max_chars: usize) -> Self;
+    /// Guarda una entrada si cabe; `false` si no cabe (y no cambia nada).
+    pub fn set(&mut self, key: &str, value: &str) -> bool;
+    /// Quita una entrada.
+    pub fn remove(&mut self, key: &str) -> bool;
+    /// Número de entradas.
+    pub fn len(&self) -> usize;
+    /// Si está vacío.
+    pub fn is_empty(&self) -> bool;
+    /// Texto compacto del tablero.
+    pub fn render(&self) -> String;
+    /// El tablero como mensaje para el inicio de una ronda.
+    pub fn message(&self) -> Option<pcode_models::Message>;
+}
+'''
+ejemplo = '''
+let mut b = Board::new(2, 80);
+b.set("api", "usar  parse_blame\n de blame.rs") == true
+b.set("ci", "verde") == true
+b.render() == "# Tablero compartido\n- api: usar parse_blame de blame.rs\n- ci: verde\n"
+b.set("otra", "x") == false          // ya hay 2 entradas
+b.set("ci", "rojo") == true          // sustituir no cuenta como entrada nueva
+b.set("ci", &"x".repeat(100)) == false   // pasaría de 80 caracteres; `ci` sigue valiendo "rojo"
+'''
+tests = [
+  "tablero_respeta_limites: la secuencia del ejemplo, paso a paso",
+  "tablero_render_ordenado_y_en_una_linea: el render del ejemplo, carácter a carácter",
+  "tablero_vacio_sin_mensaje: un tablero nuevo da render vacío y message None",
+  "tablero_quita_entradas: remove devuelve true la primera vez y false la segunda, y libera sitio para otra clave",
+  "tablero_rechaza_clave_vacia: set con clave de solo espacios devuelve false",
+]
+no_hagas = [
+  "No uses `Mutex` ni `Arc` dentro de `Board`: quien lo comparte decide cómo",
+  "No toques `agent.rs`",
+]
+papers = ["The Collaboration Tax (EMNLP 2026)", "RCR-Router (Findings EMNLP 2026)"]
 
 [[tarea]]
 id = "F4.07"
@@ -247,61 +1776,367 @@ id = "F4.09"
 nombre = "memoria-episodica"
 titulo = "Memoria episódica verificada: experiencia de tareas anteriores solo si pasó `acepta`"
 fase = "F4"
+hito = "1.7"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F4.05", "F3.03"]
-toca = ["crates/pcode-memory/src/lib.rs", "crates/pcode-memory/src/episodic.rs"]
-acepta = "cargo test -p pcode-memory episodic"
-contexto = ["docs/papers.md (MemGovern, MemGuard, Experience-Following, Memory Transfer, Agent Memory Distillation)", "informes/ (ejemplos reales)"]
+depende = []
+toca = []
+acepta = "cargo test -p pcode-memory episodic::"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Episodio = {tarea, resumen del informe, archivos, verificado: bool, intentos, backend, lecciones}.
-   Se alimenta de `informes/*.md` y de los eventos del flujo (`AceptacionOk`/`Fallo`).
-2. `recall(task_text, k)`: BM25 sobre los episodios **verificados** únicamente; los fallidos solo se
-   devuelven en `recall_failures` (para el relevo, marcados como tales).
-3. Formato compacto para el contexto: 3 líneas por episodio como máximo.
-4. Las lecciones de un modelo fuerte se marcan con su procedencia (memoria de maestro → alumno).
+Tarea de cierre de la memoria episódica (episodios sacados de los informes de tareas).
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.09a y F4.09b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["MemGovern (Findings EMNLP 2026)", "MemGuard (EMNLP 2026)", "How Memory Management Impacts LLM Agents (ACL 2026)", "Agent Memory Distillation (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.09a"
+nombre = "episodio-de-informe"
+titulo = "`episodic.rs`: convertir un informe de tarea en un `Episode` y pintarlo compacto (lógica pura)"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.03a"]
+toca = ["crates/pcode-memory/src/episodic.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory episodic::tests::episodio_"
+contexto = [
+  "AGENTS.md (sección 10: la plantilla del informe, con `## Hecho`, `## Archivos`, `## Decisiones` y `## Pendiente`)",
+  "informes/F2.22-mcp-cliente.md (un informe real para usar como fixture en los tests)",
+]
+objetivo = '''
+1. Crea `episodic.rs` con `Episode`, `parse_report` y `render` (firmas abajo). En `lib.rs` añade
+   `pub mod episodic;`. Aquí no se lee el disco.
+2. `parse_report(file_stem, text, verified)`:
+   - `task`: el texto de la primera línea que empieza por `# ` (sin el `# `); si no hay, lo que va antes
+     del primer `-` de `file_stem` (`F2.22-mcp-cliente` → `F2.22`).
+   - Las secciones empiezan en una línea `## Título` y acaban en la siguiente `## `. De cada sección
+     interesan sus viñetas: líneas que empiezan por `- ` (sin el `- ` y sin espacios en los extremos).
+   - `summary`: las viñetas de `## Hecho` unidas con ` · `, recortadas a 300 caracteres.
+   - `files`: las viñetas de `## Archivos`, sin acentos graves alrededor.
+   - `lessons`: las viñetas de `## Decisiones`, salvo las que en minúsculas son `ninguna` o `ninguna.`.
+   - `pending`: las viñetas de `## Pendiente`, salvo `nada` o `nada.`.
+   - `source`: `coordinador` si el texto en minúsculas contiene `por el coordinador`; si no, `agente`.
+   - `verified`: el parámetro.
+3. `render(eps)`: por episodio, como mucho 3 líneas, y una línea en blanco entre episodios:
+   - `[{task} · {verificado|NO verificado} · {source}] {summary}`
+   - `  archivos: a, b, c` (como mucho 5; si hay más, añade `, …`); se omite si no hay.
+   - `  lecciones: l1 · l2` (como mucho 2); se omite si no hay.
+   Sin episodios, cadena vacía.
 '''
 firmas = '''
-#[derive(Debug, Clone)] pub struct Episode { pub task: String, pub summary: String, pub files: Vec<String>, pub verified: bool, pub attempts: u32, pub backend: String, pub lessons: Vec<String> }
-pub struct EpisodicMemory { /* episodios + índice */ }
+// crates/pcode-memory/src/episodic.rs
+/// Lo que quedó de una tarea anterior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Episode {
+    pub task: String,
+    pub summary: String,
+    pub files: Vec<String>,
+    pub lessons: Vec<String>,
+    pub pending: Vec<String>,
+    /// Si la tarea pasó su aceptación.
+    pub verified: bool,
+    /// Quién lo hizo: `coordinador` (modelo fuerte o persona) o `agente`.
+    pub source: String,
+}
+
+/// Episodio a partir del texto de un informe (`informes/<id>-<nombre>.md`).
+pub fn parse_report(file_stem: &str, text: &str, verified: bool) -> Episode;
+
+/// Episodios como texto compacto para el contexto (3 líneas por episodio como mucho).
+pub fn render(eps: &[&Episode]) -> String;
+'''
+ejemplo = '''
+text = "# F9.01\n## Hecho\n- Parser de blame.\n- Tests.\n## Archivos\n- `crates/x/src/blame.rs`\n## Salida de acepta\nok\n## Decisiones\n- El sha se corta a 8.\n## Pendiente\n- nada\n"
+parse_report("F9.01-blame", text, true) == Episode {
+  task: "F9.01", summary: "Parser de blame. · Tests.", files: ["crates/x/src/blame.rs"],
+  lessons: ["El sha se corta a 8."], pending: [], verified: true, source: "agente" }
+render(&[&e]) == "[F9.01 · verificado · agente] Parser de blame. · Tests.\n  archivos: crates/x/src/blame.rs\n  lecciones: El sha se corta a 8.\n"
+'''
+tests = [
+  "episodio_del_ejemplo: parse_report del texto del ejemplo da exactamente ese Episode",
+  "episodio_sin_titulo_usa_el_nombre_del_archivo: un texto sin línea `# ` y file_stem F2.22-mcp-cliente da task F2.22",
+  "episodio_del_coordinador: un informe con la frase `Implementado por el coordinador` da source coordinador",
+  "episodio_ignora_ninguna_y_nada: Decisiones con `- ninguna` y Pendiente con `- nada` dan listas vacías",
+  "episodio_render_compacto: el render del ejemplo, carácter a carácter; con verified false dice `NO verificado`",
+  "episodio_render_limita_archivos_y_lecciones: con 7 archivos salen 5 y `, …`; con 3 lecciones salen 2",
+]
+no_hagas = [
+  "No leas `informes/` en esta tarea: `parse_report` recibe el texto",
+  "No copies la sección `## Salida de acepta` al episodio",
+]
+notas = "Los nombres de los tests empiezan por `episodio_` para que caigan en el filtro de `acepta`."
+papers = ["MemGovern (Findings EMNLP 2026)", "Agent Memory Distillation (Findings EMNLP 2026)"]
+
+[[tarea]]
+id = "F4.09b"
+nombre = "memoria-episodica-recall"
+titulo = "`EpisodicMemory`: cargar los informes y recordar solo episodios verificados (BM25)"
+fase = "F4"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.09a", "F4.05a"]
+toca = ["crates/pcode-memory/src/episodic.rs", "crates/pcode-memory/src/lib.rs"]
+acepta = "cargo test -p pcode-memory episodic::tests::memoria_"
+contexto = [
+  "crates/pcode-memory/src/episodic.rs (`Episode` y `parse_report(file_stem, text, verified)`: lo que ya hay)",
+  "crates/pcode-tools/src/bm25.rs (`Bm25::new(&[String])` y `Bm25::search(query, k) -> Vec<(usize, f32)>`)",
+]
+objetivo = '''
+La experiencia de una tarea que no pasó su aceptación no se usa como ejemplo a seguir (seguir malas
+experiencias empeora al agente): los episodios no verificados solo salen en `recall_failures`, para
+avisar de lo que ya se intentó.
+1. En `episodic.rs` añade `EpisodicMemory` (firmas abajo). En `lib.rs` añade
+   `pub use episodic::{Episode, EpisodicMemory};`. No cambies `parse_report` ni `render`.
+2. `from_episodes(eps)`: guarda los episodios y construye DOS índices `pcode_tools::bm25::Bm25`: uno con
+   los verificados y otro con los no verificados. El documento de un episodio es
+   `"{task} {summary} {files unidos con espacio} {lessons unidas con espacio}"`. Guarda también, para
+   cada índice, la posición de cada documento en la lista de episodios.
+3. `load_reports(dir, verified)`: lee los archivos `*.md` de `dir` (sin subcarpetas), en orden
+   alfabético de nombre; para cada uno, `parse_report(nombre sin extensión, texto, verified.contains(&task))`,
+   donde `task` es lo que va antes del primer `-` del nombre. Los archivos que no se pueden leer como
+   texto se saltan. Si `dir` no existe, devuelve el error de E/S.
+4. `recall(task_text, k)`: los `k` episodios VERIFICADOS más relevantes según BM25, de mayor a menor.
+   `recall_failures(task_text, k)`: lo mismo sobre los NO verificados.
+5. `len()` e `is_empty()` cuentan todos los episodios.
+'''
+firmas = '''
+// crates/pcode-memory/src/episodic.rs (añadir)
+/// Episodios de tareas anteriores con búsqueda por texto.
+pub struct EpisodicMemory { /* episodios, índice de verificados, índice de fallidos */ }
+
 impl EpisodicMemory {
+    /// Memoria a partir de episodios ya construidos.
+    pub fn from_episodes(eps: Vec<Episode>) -> Self;
+    /// Carga los informes de una carpeta; `verified` son los ids de tarea que pasaron su aceptación.
     pub fn load_reports(dir: &std::path::Path, verified: &std::collections::HashSet<String>) -> std::io::Result<Self>;
+    /// Número de episodios.
+    pub fn len(&self) -> usize;
+    /// Si no hay episodios.
+    pub fn is_empty(&self) -> bool;
+    /// Episodios verificados más parecidos a la tarea.
     pub fn recall(&self, task_text: &str, k: usize) -> Vec<&Episode>;
+    /// Episodios NO verificados más parecidos (para avisar de lo ya intentado).
     pub fn recall_failures(&self, task_text: &str, k: usize) -> Vec<&Episode>;
-    pub fn render(eps: &[&Episode]) -> String;
 }
 '''
-tests = ["recall_solo_verificados", "fallidos_aparte", "render_compacto", "carga_informes_reales (fixture con 3 informes)"]
-papers = ["MemGovern (Findings EMNLP 2026)", "MemGuard (EMNLP 2026)", "How Memory Management Impacts LLM Agents (ACL 2026)", "Agent Memory Distillation (Findings EMNLP 2026)"]
+ejemplo = '''
+tempdir con tres informes: F9.01-blame.md (habla de "blame"), F9.02-diff.md (habla de "diff"),
+F9.03-blame-ui.md (habla de "blame" y no pasó la aceptación).
+let ok: HashSet<String> = ["F9.01".to_string(), "F9.02".to_string()].into();
+let m = EpisodicMemory::load_reports(dir, &ok)?;      // m.len() == 3
+m.recall("parsear git blame", 5)          -> [episodio F9.01]            (F9.03 no sale: no está verificado)
+m.recall_failures("parsear git blame", 5) -> [episodio F9.03]
+m.recall("algo sin relación zzz", 5)      -> []
+'''
+tests = [
+  "memoria_recall_solo_verificados: el caso del ejemplo; recall de blame devuelve solo F9.01",
+  "memoria_fallidos_aparte: recall_failures de blame devuelve solo F9.03",
+  "memoria_carga_informes_reales: load_reports sobre un tempdir con los tres informes da len 3 y los episodios en orden alfabético de archivo",
+  "memoria_carpeta_inexistente_es_error: load_reports sobre una ruta que no existe devuelve Err",
+  "memoria_sin_coincidencias_es_vacio: una consulta sin palabras en común devuelve vector vacío",
+]
+no_hagas = [
+  "No leas los eventos del flujo ni `pcode-store`: quién está verificado lo dice el parámetro `verified`",
+  "No mezcles verificados y fallidos en un mismo resultado",
+]
+notas = "Los nombres de los tests empiezan por `memoria_` para que caigan en el filtro de `acepta`."
+papers = ["MemGovern (Findings EMNLP 2026)", "MemGuard (EMNLP 2026)", "How Memory Management Impacts LLM Agents (ACL 2026)"]
 
 [[tarea]]
 id = "F4.10"
 nombre = "busqueda-tools"
 titulo = "Búsqueda y deduplicación de tools: anunciar solo las relevantes"
 fase = "F4"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
-depende = ["F2.16"]
-toca = ["crates/pcode-tools/src/lib.rs", "crates/pcode-tools/src/catalog.rs", "crates/pcode-core/src/agent.rs"]
-acepta = "cargo test -p pcode-tools catalog && cargo test -p pcode-core"
-contexto = ["docs/papers.md (ToolScope, ProMCP, Scaling Enterprise Cloud Agents)", "crates/pcode-tools/src/registry.rs"]
+depende = ["F2.22"]
+toca = []
+acepta = "grep -q with_tool_search crates/pcode-cli/src/chat.rs && cargo test -p pcode-tools catalog:: && cargo test -p pcode-core buscar_tools"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-1. Con más de `max_visible` tools (por defecto 20), se anuncian las nativas más una tool
-   `buscar_tools {consulta}` que devuelve las k más relevantes (BM25 sobre nombre y descripción);
-   las devueltas pasan a ser visibles en los turnos siguientes. La búsqueda va en el bucle principal,
-   no en un subagente.
-2. Deduplicación: tools de distintos servidores MCP con el mismo nombre o la misma descripción
-   normalizada se fusionan en una, con prioridad para la de menor privilegio.
+Tarea de cierre. No depende del servidor MCP (F2.16): las tools de MCP llegan por el cliente
+(`crates/pcode-tools/src/mcp.rs`, F2.22), que ya está hecho.
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.10a y F4.10b.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["ToolScope (ACL 2026)", "ProMCP (Findings ACL 2026)", "Scaling Enterprise Cloud Agents to Thousands of APIs (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F4.10a"
+nombre = "catalogo-tools"
+titulo = "`catalog.rs`: deduplicar tools de MCP, anunciar solo las visibles y tool `buscar_tools` (lógica pura)"
+fase = "F4"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.05a", "F2.22"]
+toca = ["crates/pcode-tools/src/catalog.rs", "crates/pcode-tools/src/lib.rs"]
+acepta = "cargo test -p pcode-tools catalog::"
+contexto = [
+  "crates/pcode-tools/src/mcp.rs (`impl Tool for McpTool`, método `spec`: la descripción de una tool de MCP empieza siempre por `[MCP <servidor>] `)",
+  "crates/pcode-tools/src/registry.rs (`ToolRegistry::specs_filtered`: devuelve las specs de menor a mayor privilegio; `schema_tokens`: por qué importa anunciar menos)",
+  "crates/pcode-tools/src/bm25.rs (`Bm25::new(&[String])` y `Bm25::search(query, k) -> Vec<(usize, f32)>`)",
+]
+objetivo = '''
+Cada tool anunciada cuesta tokens en CADA petición. Con muchas tools de MCP se anuncian solo las
+nativas más `buscar_tools`; lo que el agente encuentra con ella queda visible desde ese momento.
+1. Crea `catalog.rs` con lo de las firmas. En `lib.rs` añade `pub mod catalog;` (después de
+   `pub mod bm25;`). Todo trabaja sobre `Vec<ToolSpec>` (lo que devuelve `specs_filtered`); no hay E/S.
+2. `is_deferrable(spec)`: `spec.description.starts_with("[MCP ")` (las nativas nunca se ocultan).
+3. `dedupe(specs)`: clave de una tool aplazable = (descripción normalizada, `parameters.to_string()`).
+   La descripción normalizada es la descripción sin el prefijo `[MCP …] ` (hasta el primer `] `
+   incluido), en minúsculas y con los espacios colapsados. Si dos aplazables tienen la misma clave y la
+   descripción normalizada no está vacía, se queda SOLO la primera (como la entrada viene de menor a
+   mayor privilegio, gana la de menor privilegio). Las no aplazables no se tocan. Se conserva el orden.
+4. `search_spec()`: nombre `buscar_tools`; descripción EXACTA: «Hay más tools de las que ves. Describe
+   lo que necesitas (p. ej. "crear una incidencia") y te devuelvo las que sirven; quedan disponibles a
+   partir de la siguiente respuesta.»; parámetros `{"type":"object","properties":{"consulta":{"type":"string"}},"required":["consulta"]}`.
+5. `ToolCatalog::visible(specs)`: si `specs.len() <= max_visible`, devuelve `specs` igual (sin
+   `buscar_tools`). Si no: las no aplazables, más las aplazables cuyo nombre está en `unlocked`, en su
+   orden, y al final `search_spec()`.
+6. `ToolCatalog::search(specs, query, k)`: candidatas = las aplazables de `specs`. Índice
+   `Bm25::new` con un documento por candidata: `"{name} {description}"`. Toma los `k.clamp(1, 10)`
+   mejores, añade sus nombres a `unlocked` y devuelve `Tools disponibles a partir de ahora:\n` más una
+   línea `- {name}: {descripción recortada a 200 caracteres}` por cada una. Si la consulta está vacía:
+   `falta `consulta``. Si nada coincide: `ninguna tool coincide con «{query}»`.
 '''
 firmas = '''
-pub struct ToolCatalog { /* registro + índice */ }
+// crates/pcode-tools/src/catalog.rs
+use pcode_models::ToolSpec;
+
+/// Nombre de la tool de búsqueda de tools.
+pub const SEARCH_TOOL: &str = "buscar_tools";
+/// A partir de cuántas tools se dejan de anunciar todas.
+pub const DEFAULT_MAX_VISIBLE: usize = 20;
+
+/// Si la tool se puede dejar sin anunciar (las de MCP).
+pub fn is_deferrable(spec: &ToolSpec) -> bool;
+/// Quita las tools de MCP repetidas (misma descripción y mismos parámetros en otro servidor).
+pub fn dedupe(specs: Vec<ToolSpec>) -> Vec<ToolSpec>;
+/// Especificación de `buscar_tools`.
+pub fn search_spec() -> ToolSpec;
+
+/// Qué tools se anuncian al modelo en cada petición.
+#[derive(Debug, Clone)]
+pub struct ToolCatalog { max_visible: usize, unlocked: std::collections::BTreeSet<String> }
+
 impl ToolCatalog {
-    pub fn new(reg: ToolRegistry, max_visible: usize) -> Self;
-    pub fn visible_specs(&self, unlocked: &std::collections::BTreeSet<String>, allow: impl Fn(&str, &[Effect]) -> bool) -> Vec<pcode_models::ToolSpec>;
-    pub fn search(&self, query: &str, k: usize) -> Vec<String>;
+    /// Catálogo sin tools desbloqueadas.
+    pub fn new(max_visible: usize) -> Self;
+    /// Las specs que se anuncian ahora.
+    pub fn visible(&self, specs: Vec<ToolSpec>) -> Vec<ToolSpec>;
+    /// Busca entre las tools sin anunciar, desbloquea las mejores y devuelve el texto del resultado.
+    pub fn search(&mut self, specs: &[ToolSpec], query: &str, k: usize) -> String;
 }
-pub fn dedupe(specs: Vec<(pcode_models::ToolSpec, Vec<Effect>)>) -> Vec<(pcode_models::ToolSpec, Vec<Effect>)>;
 '''
-tests = ["pocas_tools_todas_visibles", "muchas_tools_solo_nativas_y_buscar", "buscar_desbloquea", "dedupe_prefiere_menor_privilegio"]
-papers = ["ToolScope (ACL 2026)", "ProMCP (Findings ACL 2026)", "Scaling Enterprise Cloud Agents to Thousands of APIs (EMNLP 2026 Industry)"]
+ejemplo = '''
+specs = [leer (nativa), bash (nativa),
+         gh_crear_incidencia  "[MCP gh] Crea una incidencia en el repositorio",
+         gl_crear_incidencia  "[MCP gl] Crea una  incidencia en el repositorio"   (mismos parámetros),
+         clima_hoy            "[MCP clima] Tiempo de hoy en una ciudad"]
+dedupe(specs)                 -> leer, bash, gh_crear_incidencia, clima_hoy
+let mut c = ToolCatalog::new(3);
+c.visible(dedupe(specs))      -> leer, bash, buscar_tools
+c.search(&dedupe(specs), "tiempo ciudad", 5)
+   -> "Tools disponibles a partir de ahora:\n- clima_hoy: [MCP clima] Tiempo de hoy en una ciudad"
+c.visible(dedupe(specs))      -> leer, bash, clima_hoy, buscar_tools
+ToolCatalog::new(20).visible(specs) -> las cinco, sin buscar_tools
+'''
+tests = [
+  "pocas_tools_todas_visibles: con max_visible 20 y cinco specs, visible las devuelve todas y sin buscar_tools",
+  "muchas_tools_solo_nativas_y_buscar: con max_visible 3, visible devuelve leer, bash y buscar_tools",
+  "buscar_desbloquea: la secuencia del ejemplo; tras search, visible incluye clima_hoy",
+  "buscar_sin_coincidencias_no_desbloquea: la consulta `zzz` devuelve el texto de ninguna tool coincide y visible no cambia",
+  "dedupe_prefiere_la_primera: el caso del ejemplo quita gl_crear_incidencia y conserva el orden",
+  "dedupe_no_toca_nativas_ni_parametros_distintos: dos nativas con la misma descripción se conservan, y dos de MCP con la misma descripción y parámetros distintos también",
+]
+no_hagas = [
+  "No toques `registry.rs` ni `mcp.rs`",
+  "No ocultes nunca una tool nativa (descripción que no empieza por `[MCP `)",
+]
+papers = ["ToolScope (ACL 2026)", "ProMCP (Findings ACL 2026)"]
+
+[[tarea]]
+id = "F4.10b"
+nombre = "busqueda-tools-cableado"
+titulo = "Bucle del agente: anunciar las tools por el catálogo e interceptar `buscar_tools`"
+fase = "F4"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.10a", "F4.01c"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "grep -q with_tool_search crates/pcode-cli/src/chat.rs && cargo test -p pcode-core buscar_tools"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `run_messages`: la línea `let mut specs = self.tools.specs_filtered(…)` y el bloque `if call.name == CONTEXT_TOOL` como modelo de tool interceptada; `with_context_tool` como modelo de activación)",
+  "crates/pcode-tools/src/catalog.rs (`ToolCatalog::{new, visible, search}`, `dedupe`, `SEARCH_TOOL`, `DEFAULT_MAX_VISIBLE`)",
+  "crates/pcode-cli/src/chat.rs (función `prepare`: la cadena de `.with_…()` tras `Agent::new`)",
+]
+objetivo = '''
+1. `agent.rs`, struct `Agent`: campo nuevo `catalog: Option<pcode_tools::catalog::ToolCatalog>` (`None`
+   en `Agent::new`) y el método `with_tool_search` (firma abajo), junto a `with_context_tool`.
+2. `run_messages`, justo después de `let mut specs = self.tools.specs_filtered(…);` y ANTES de añadir
+   `preguntar`, `recordar` y `contexto`:
+   `if let Some(c) = &self.catalog { specs = c.visible(pcode_tools::catalog::dedupe(specs)); }`
+3. `run_messages`, dentro de `for call in calls`, junto a las otras tools interceptadas (después del
+   bloque de `CONTEXT_TOOL`): si `call.name == SEARCH_TOOL` y hay catálogo:
+   a) vuelve a calcular la lista completa:
+      `let all = pcode_tools::catalog::dedupe(self.tools.specs_filtered(|n, e| self.policy.tool_visible(n, e) && !(ro && writes(e))));`
+      (`ro` es `self.read_only`; calcula `all` antes de pedir `self.catalog.as_mut()`);
+   b) `let q = call.arguments.get("consulta").and_then(|v| v.as_str()).unwrap_or("");`
+   c) `let content = catalog.search(&all, q, 5);`
+   d) `self.audit(&call, "allow")`, emite `AgentEvent::ToolResult { name, is_error: false, content }`,
+      añade `Message::tool_result(call.id.clone(), content)` (sin etiqueta `[rN]`) y `continue`.
+4. Una tool sin anunciar se puede llamar igual (el registro la sigue teniendo): no cambies `run_call`.
+5. `chat.rs`, función `prepare`: añade `.with_tool_search(pcode_tools::catalog::DEFAULT_MAX_VISIBLE)`
+   después de `.with_context_tool()`.
+'''
+firmas = '''
+// crates/pcode-core/src/agent.rs
+impl Agent {
+    /// Con más de `max_visible` tools, anuncia solo las nativas y `buscar_tools` (F4.10).
+    pub fn with_tool_search(mut self, max_visible: usize) -> Self;
+}
+'''
+ejemplo = '''
+// En `mod tests` de agent.rs: una tool falsa que parece de MCP.
+struct Falsa;
+#[async_trait::async_trait]
+impl pcode_tools::Tool for Falsa {
+    fn spec(&self) -> pcode_models::ToolSpec {
+        pcode_models::ToolSpec { name: "clima_hoy".into(), description: "[MCP clima] Tiempo de hoy en una ciudad".into(),
+                                 parameters: json!({"type": "object"}) }
+    }
+    fn effects(&self) -> &'static [Effect] { &[Effect::Read] }
+    async fn call(&self, _: serde_json::Value, _: &ToolContext) -> ToolOutput { ToolOutput::ok("sol") }
+}
+let script = vec![tool("buscar_tools", json!({"consulta": "tiempo ciudad"})), text("fin")];
+let (mut a, p) = agent(&d, script, Capabilities::default(), None);
+a.tools.register(Arc::new(Falsa)).unwrap();
+let mut a = a.with_tool_search(3);
+a.run("qué tiempo hace").await;
+// p.requests()[0].tools: contiene "buscar_tools" y "leer", NO contiene "clima_hoy"
+// p.requests()[1].tools: contiene "clima_hoy"
+'''
+tests = [
+  "buscar_tools_desbloquea_en_la_siguiente_peticion: el ejemplo; la primera petición no anuncia clima_hoy y la segunda sí",
+  "buscar_tools_no_aparece_con_pocas_tools: con with_tool_search(50) la primera petición no lleva buscar_tools y sí clima_hoy",
+  "buscar_tools_sin_activar_no_cambia_nada: sin with_tool_search la primera petición lleva clima_hoy y no buscar_tools",
+]
+no_hagas = [
+  "No cambies `run_call` ni la firma de `specs_filtered`",
+  "No toques los tests que ya existen en `agent.rs`",
+  "No apliques el catálogo a `preguntar`, `recordar` ni `contexto`: se añaden después, como ahora",
+]
+papers = ["ToolScope (ACL 2026)", "Scaling Enterprise Cloud Agents to Thousands of APIs (EMNLP 2026 Industry)"]
 
 [[tarea]]
 id = "F4.11"
@@ -335,20 +2170,226 @@ id = "F4.12"
 nombre = "guion"
 titulo = "Tool `guion`: secuencia determinista de órdenes en una sola llamada"
 fase = "F4"
+hito = "1.3"
+talla = "S"
 ejecutor = "haiku"
 depende = ["F1.17"]
-toca = ["crates/pcode-core/src/lib.rs", "crates/pcode-core/src/script.rs", "crates/pcode-core/src/agent.rs"]
-acepta = "cargo test -p pcode-core script"
-contexto = ["docs/papers.md (Deploying Programmatic Tool Calling)", "crates/pcode-tools/src/bash.rs"]
+toca = []
+acepta = "grep -q with_script_tool crates/pcode-cli/src/chat.rs && cargo test -p pcode-core script:: && cargo test -p pcode-core guion_"
+contexto = ["los informes de sus subtareas"]
 objetivo = '''
-`guion {pasos: [str], parar_en_error: bool = true}`: ejecuta cada orden con la tool `bash`, pasando
-CADA una por la política (`check_command`), y devuelve un resumen por paso (código y salida
-comprimida). Una denegación para el guion. Ejemplo típico: `["cargo fmt --all",
-"cargo clippy --workspace --all-targets -- -D warnings", "cargo test -p x"]`.
+Tarea de cierre de la tool `guion` (varias órdenes de shell en una llamada, cada una por la política).
+1. Ejecuta `acepta`.
+2. Comprueba que existe el informe de F4.12a, F4.12b y F4.12c.
+3. Escribe el informe con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+papers = ["Deploying Programmatic Tool Calling (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F4.12a"
+nombre = "guion-formato"
+titulo = "`script.rs`: especificación de `guion`, leer los pasos y pintar el resultado (lógica pura)"
+fase = "F4"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.17"]
+toca = ["crates/pcode-core/src/script.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-core script::tests::formato_"
+contexto = [
+  "crates/pcode-core/src/memory.rs (función `remember_spec`: cómo se escribe un `ToolSpec` con `json!`)",
+  "crates/pcode-tools/src/bash.rs (`impl Tool for Bash`, método `call`: la salida de `bash` empieza por la línea `exit=<código>`)",
+]
+objetivo = '''
+1. Crea `script.rs` con lo de las firmas. En `lib.rs` añade `pub mod script;` (después de
+   `pub mod memory;`). En esta tarea no se ejecuta nada.
+2. `script_spec()`: nombre `guion`; descripción EXACTA: «Ejecuta varias órdenes de shell seguidas en
+   una sola llamada y devuelve el resultado de cada una. Úsala para secuencias fijas (formatear, lint,
+   tests). Por defecto se para en la primera que falla.»; parámetros
+   `{"type":"object","properties":{"pasos":{"type":"array","items":{"type":"string"}},"parar_en_error":{"type":"boolean"}},"required":["pasos"]}`.
+3. `parse_steps(args)`: `pasos` tiene que ser una lista de textos; se quitan los espacios de los
+   extremos y los vacíos. Errores (texto EXACTO): sin `pasos` o sin ningún paso válido →
+   `falta `pasos` (lista de órdenes)`; más de `MAX_STEPS` → `demasiados pasos (máximo 20)`.
+   `parar_en_error` vale `true` si falta.
+4. `exit_code(output)`: si la primera línea es `exit=<entero>`, ese entero; si no, `-1`.
+5. `render(results, total)`: por cada resultado, una cabecera y debajo su `output` (si no está vacío):
+   - correcto (`code == 0` y sin `denied`): `[{i}/{total}] ✓ {command}`
+   - fallido: `[{i}/{total}] ✗ {command} (código {code})`
+   - denegado: `[{i}/{total}] ⛔ {command}: {motivo}`
+   (`i` desde 1). Si `results.len() < total`, una línea `no ejecutados: {n} pasos`. Última línea
+   siempre: `guion: {ok} de {total} pasos correctos`. Las partes se unen con `\n`.
 '''
 firmas = '''
+// crates/pcode-core/src/script.rs
+/// Nombre de la tool.
+pub const SCRIPT_TOOL: &str = "guion";
+/// Pasos máximos de un guion.
+pub const MAX_STEPS: usize = 20;
+
+/// Resultado de un paso del guion.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StepResult { pub command: String, pub code: i32, pub output: String, pub denied: Option<String> }
-pub async fn run_script(steps: &[String], stop_on_error: bool, policy: &pcode_policy::Policy, ctx: &pcode_tools::ToolContext) -> Vec<StepResult>;
+
+/// Especificación de la tool `guion`.
+pub fn script_spec() -> pcode_models::ToolSpec;
+/// Pasos y `parar_en_error` de los argumentos de una llamada.
+pub fn parse_steps(args: &serde_json::Value) -> Result<(Vec<String>, bool), String>;
+/// Código de salida que informa la tool `bash` en su primera línea (`exit=N`), o -1.
+pub fn exit_code(output: &str) -> i32;
+/// Resumen del guion para el modelo.
+pub fn render(results: &[StepResult], total: usize) -> String;
 '''
-tests = ["guion_ejecuta_en_orden", "guion_para_en_error", "guion_sigue_si_no_parar", "guion_politica_deniega_un_paso"]
+ejemplo = '''
+parse_steps(&json!({"pasos": [" cargo fmt --all ", "", "cargo test"]})) -> Ok((vec!["cargo fmt --all", "cargo test"], true))
+exit_code("exit=101\n--- stdout ---\n") -> 101;   exit_code("tiempo agotado tras 5 s") -> -1
+render(&[StepResult { command: "cargo fmt --all".into(), code: 0, output: String::new(), denied: None },
+         StepResult { command: "cargo test".into(), code: 101, output: "test a ... FAILED".into(), denied: None }], 3) ->
+"[1/3] ✓ cargo fmt --all\n[2/3] ✗ cargo test (código 101)\ntest a ... FAILED\nno ejecutados: 1 pasos\nguion: 1 de 3 pasos correctos"
+'''
+tests = [
+  "formato_spec_con_pasos_obligatorios: script_spec().name es guion y required contiene pasos",
+  "formato_lee_pasos_y_descarta_vacios: el primer caso del ejemplo; con parar_en_error false devuelve false",
+  "formato_errores_de_pasos: sin pasos, con pasos que no es una lista y con 21 pasos devuelve los dos mensajes exactos",
+  "formato_codigo_de_salida: los dos casos del ejemplo y la cadena vacía (-1)",
+  "formato_render_del_ejemplo: el render del ejemplo, carácter a carácter",
+  "formato_render_denegado: un paso con denied Some(\"orden denegada: git push\") sale con ⛔ y no cuenta como correcto",
+]
+no_hagas = [
+  "No ejecutes órdenes en esta tarea: eso es F4.12b",
+  "No toques `agent.rs`",
+]
+notas = "Los nombres de los tests empiezan por `formato_` para que caigan en el filtro de `acepta`."
+papers = ["Deploying Programmatic Tool Calling (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F4.12b"
+nombre = "guion-ejecutar"
+titulo = "`run_script`: ejecutar los pasos con `bash`, cada uno comprobado por la política"
+fase = "F4"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F4.12a"]
+toca = ["crates/pcode-core/src/script.rs"]
+acepta = "cargo test -p pcode-core script::tests::ejecuta_"
+contexto = [
+  "crates/pcode-core/src/script.rs (`StepResult` y `exit_code`: lo que ya hay)",
+  "crates/pcode-policy/src/caps.rs (`Policy::check_command(&self, cmd: &str) -> Decision` y enum `Decision { Allow, Ask(String), Deny(String) }`; `Capabilities::deny_commands`)",
+  "crates/pcode-tools/src/bash.rs (`impl Tool for Bash`: `Bash.call(json!({\"command\": …}), ctx)` y el formato de su salida)",
+  "crates/pcode-core/src/compress.rs (`compress_tool_output(command, text) -> String`)",
+]
+objetivo = '''
+1. En `script.rs` añade `run_script` (firma abajo). No cambies lo que ya hay. Hace falta
+   `use pcode_tools::Tool;` para poder llamar a `Bash.call`.
+2. Para cada paso, en orden:
+   a) `policy.check_command(paso)`:
+      - `Decision::Deny(why)`: añade `StepResult { command, code: -1, output: String::new(), denied: Some(why) }`
+        y TERMINA el guion (una denegación siempre lo para, aunque `stop_on_error` sea `false`).
+      - `Decision::Ask(why)`: igual, con `denied: Some(format!("requiere aprobación ({why}): ejecútala sola con `bash`"))`.
+        Dentro de un guion no se piden aprobaciones.
+      - `Decision::Allow`: sigue.
+   b) `let out = pcode_tools::Bash.call(serde_json::json!({"command": paso}), ctx).await;`
+   c) `code = exit_code(&out.content)`;
+      `output = crate::compress::compress_tool_output(paso, &out.content)`.
+   d) Añade el `StepResult` (con `denied: None`). Si `code != 0 && stop_on_error`, termina.
+3. Devuelve los resultados de los pasos que se llegaron a tratar. El tiempo máximo de cada paso es el
+   de `ctx.timeout` (lo aplica `Bash`): no hay esperas sin cota.
+'''
+firmas = '''
+// crates/pcode-core/src/script.rs (añadir)
+/// Ejecuta los pasos en orden con la tool `bash`; cada uno pasa antes por la política.
+pub async fn run_script(steps: &[String], stop_on_error: bool, policy: &pcode_policy::Policy,
+                        ctx: &pcode_tools::ToolContext) -> Vec<StepResult>;
+'''
+ejemplo = '''
+let ctx = ToolContext { root: d.path().to_path_buf(), timeout: std::time::Duration::from_secs(10) };
+let libre = Policy::new(Capabilities::default());
+run_script(&["echo uno".into(), "echo dos".into()], true, &libre, &ctx).await
+  -> 2 resultados con code 0; el output del primero contiene "uno"
+run_script(&["exit 3".into(), "echo no".into()], true, &libre, &ctx).await   -> 1 resultado, code 3
+run_script(&["exit 3".into(), "echo si".into()], false, &libre, &ctx).await  -> 2 resultados, codes 3 y 0
+let sin_push = Policy::new(Capabilities { deny_commands: vec!["git push*".into()], ..Default::default() });
+run_script(&["echo a".into(), "git push origin x".into(), "echo b".into()], false, &sin_push, &ctx).await
+  -> 2 resultados; el segundo tiene denied Some(..) y code -1; "echo b" no se ejecuta
+'''
+tests = [
+  "ejecuta_en_orden: el primer caso del ejemplo",
+  "ejecuta_y_para_en_error: el segundo caso del ejemplo",
+  "ejecuta_y_sigue_si_no_parar: el tercer caso del ejemplo",
+  "ejecuta_politica_deniega_un_paso: el cuarto caso del ejemplo; la denegación para el guion aunque stop_on_error sea false",
+  "ejecuta_pide_aprobacion_como_denegado: con ask_commands [\"git push*\"] el paso sale con denied que contiene `requiere aprobación`",
+]
+no_hagas = [
+  "No lances procesos por tu cuenta: usa la tool `Bash` (ya trata shell, tiempo máximo y Windows)",
+  "No toques `agent.rs`: el cableado es F4.12c",
+]
+notas = "Los nombres de los tests empiezan por `ejecuta_` para que caigan en el filtro de `acepta`. Son tests con `#[tokio::test]` y un `tempfile::tempdir()` como raíz."
+papers = ["Deploying Programmatic Tool Calling (EMNLP 2026 Industry)"]
+
+[[tarea]]
+id = "F4.12c"
+nombre = "guion-cableado"
+titulo = "Bucle del agente: ofrecer e interceptar la tool `guion`"
+fase = "F4"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F4.12b", "F4.10b"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "grep -q with_script_tool crates/pcode-cli/src/chat.rs && cargo test -p pcode-core guion_"
+contexto = [
+  "crates/pcode-core/src/agent.rs (método `run_messages`: el bloque `if call.name == CONTEXT_TOOL` como modelo de tool interceptada, la variable `ran_check`, el método `can_exec` y el método `audit`)",
+  "crates/pcode-core/src/script.rs (`SCRIPT_TOOL`, `script_spec`, `parse_steps`, `run_script`, `render`, `StepResult`)",
+  "crates/pcode-cli/src/chat.rs (función `prepare`: la cadena de `.with_…()` tras `Agent::new`)",
+]
+objetivo = '''
+La intercepta el bucle (no está en el registro) porque cada paso tiene que pasar por la política.
+1. `agent.rs`, struct `Agent`: campo nuevo `script: bool` (`false` en `Agent::new`) y el método
+   `with_script_tool` (firma abajo), junto a `with_tool_search`.
+2. `run_messages`, donde se construye `specs`, después del bloque que añade `context_spec()`: si
+   `self.script && self.can_exec() && self.policy.tool_visible(SCRIPT_TOOL, &[Effect::Exec])`, haz
+   `specs.push(crate::script::script_spec())`. (`can_exec` ya es `false` en modo plan.)
+3. `run_messages`, dentro de `for call in calls`, junto a las otras tools interceptadas: si
+   `call.name == SCRIPT_TOOL && self.script`:
+   a) Si `self.read_only`: contenido `modo plan: solo lectura (vuelve al modo normal para aplicarlo)`.
+   b) Si `self.policy.check_effects(&[Effect::Exec])` es `Decision::Deny(why)`: contenido
+      `denegado por la política: {why}`.
+   c) Si `parse_steps(&call.arguments)` da `Err(e)`: contenido `e`.
+   d) Si no: `let results = crate::script::run_script(&steps, stop, &self.policy, &self.ctx).await;`,
+      pon `ran_check = true`, y por cada resultado audita el paso como una llamada a `bash`:
+      `self.audit(&ToolCall { id: call.id.clone(), name: "bash".into(), arguments: serde_json::json!({"command": r.command}) }, if r.denied.is_some() { "deny" } else { "allow" })`.
+      Contenido: `crate::script::render(&results, steps.len())`.
+   e) En todos los casos: emite `AgentEvent::ToolResult { name: call.name.clone(), is_error: false, content: content.clone() }`,
+      añade el resultado etiquetado igual que los de las tools normales (si `self.context` existe,
+      `l.tag(&content)`; si no, `content`) con `Message::tool_result(call.id.clone(), …)`, y `continue`.
+4. `chat.rs`, función `prepare`: añade `.with_script_tool()` al final de la cadena de `.with_…()`.
+'''
+firmas = '''
+// crates/pcode-core/src/agent.rs
+impl Agent {
+    /// Ofrece la tool `guion`: varias órdenes en una llamada, cada una por la política (F4.12).
+    pub fn with_script_tool(mut self) -> Self;
+}
+'''
+ejemplo = '''
+// En `mod tests` de agent.rs (ayudantes `tool`, `text`, `agent`):
+let script = vec![tool("guion", json!({"pasos": ["echo uno", "echo dos"]})), text("fin")];
+let (a, p) = agent(&d, script, Capabilities::default(), None);
+let mut a = a.with_script_tool();
+let r = a.run("comprueba").await;
+// p.requests()[0].tools contiene una spec con name == "guion"
+// el mensaje Tool del transcript contiene "[1/2] ✓ echo uno" y "guion: 2 de 2 pasos correctos"
+'''
+tests = [
+  "guion_ejecuta_y_resume_con_mock: el ejemplo; el resultado contiene las dos cabeceras con ✓ y la línea final",
+  "guion_politica_deniega_un_paso: con deny_commands [\"git push*\"] y pasos [echo a, git push origin x], el resultado contiene ⛔ y `guion: 1 de 2 pasos correctos`",
+  "guion_no_se_ofrece_en_modo_plan: tras set_read_only(true) la primera petición no lleva la spec guion",
+  "guion_sin_activar_no_se_anuncia: sin with_script_tool la primera petición no lleva la spec guion",
+]
+no_hagas = [
+  "No registres `guion` en `native_registry`: una tool del registro no ve la política",
+  "No pidas aprobación desde el guion: los pasos con `Ask` salen como denegados",
+  "No toques los tests que ya existen en `agent.rs`",
+]
 papers = ["Deploying Programmatic Tool Calling (EMNLP 2026 Industry)"]
