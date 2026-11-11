@@ -296,6 +296,9 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+/// Salto pendiente al abrir un archivo: ruta, línea (desde 1) y posición LSP (línea, columna).
+type PendingGoto = (String, Option<u32>, Option<(u32, u32)>);
+
 /// El IDE.
 pub struct Ide {
     client: Arc<Client>,
@@ -335,7 +338,7 @@ pub struct Ide {
     find: Option<(String, String, bool, bool)>,
     goto: Option<String>,
     pending_cursor: Option<usize>,
-    pending_goto: Option<(String, Option<u32>, Option<(u32, u32)>)>,
+    pending_goto: Option<PendingGoto>,
     cursor: (u32, u32),
     cursor_char: usize,
     hover: Option<String>,
@@ -1084,7 +1087,7 @@ impl Ide {
             (Side::Git, "⎇", t.git),
         ] {
             let active = self.show_side && self.side == side;
-            let badge = (side == Side::Git && !self.git.is_empty()).then(|| self.git.len());
+            let badge = (side == Side::Git && !self.git.is_empty()).then_some(self.git.len());
             if activity_button(ui, p, glyph, active, badge)
                 .on_hover_text(tip)
                 .clicked()

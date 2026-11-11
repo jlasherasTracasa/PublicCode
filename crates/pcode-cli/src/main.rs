@@ -222,16 +222,25 @@ async fn main() -> anyhow::Result<()> {
             apply_lsp_config(&st);
             let l = tokio::net::TcpListener::bind(("127.0.0.1", puerto)).await?;
             let url = format!("http://{}/?t={token}", l.local_addr()?);
-            let Some(mut ide) = spawn_ide(&url) else {
+            let Some(ide) = spawn_ide(&url, false) else {
                 eprintln!(
                     "No se encontró pcode-ide (instálalo junto a pcode). Mientras, usa: pcode studio"
                 );
                 std::process::exit(2);
             };
-            // El demonio vive lo que viva la ventana del IDE.
+            // El demonio vive lo que viva la ventana del IDE. Si no hay OpenGL, se queda sirviendo
+            // Studio en el navegador hasta Ctrl+C.
+            let ventana = async {
+                let en_navegador = tokio::task::spawn_blocking(move || supervise_ide(ide, &url))
+                    .await
+                    .unwrap_or(false);
+                if en_navegador {
+                    std::future::pending::<()>().await;
+                }
+            };
             tokio::select! {
                 r = pcode_server::serve_listener(st, l) => r?,
-                _ = tokio::task::spawn_blocking(move || ide.wait()) => {}
+                _ = ventana => {}
             }
             Ok(())
         }
@@ -407,12 +416,17 @@ fn ide_path() -> Option<std::path::PathBuf> {
 }
 
 /// Lanza el IDE nativo contra `url` (None si no está instalado).
-fn spawn_ide(url: &str) -> Option<std::process::Child> {
-    let mut child = std::process::Command::new(ide_path()?)
-        .args(["--url", url, "--hasta-eof"])
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .ok()?;
+///
+/// Con `software` se fuerza el render por software (`LIBGL_ALWAYS_SOFTWARE=1`, llvmpipe), para
+/// equipos sin aceleración o con el controlador roto.
+fn spawn_ide(url: &str, software: bool) -> Option<std::process::Child> {
+    let mut cmd = std::process::Command::new(ide_path()?);
+    cmd.args(["--url", url, "--hasta-eof"])
+        .stdin(std::process::Stdio::piped());
+    if software {
+        cmd.env("LIBGL_ALWAYS_SOFTWARE", "1");
+    }
+    let mut child = cmd.spawn().ok()?;
     // El extremo de escritura vive lo que viva este proceso: si muere (incluso con SIGKILL), el
     // sistema lo cierra y el IDE ve el final de su entrada y termina.
     if let Some(w) = child.stdin.take() {
@@ -421,9 +435,46 @@ fn spawn_ide(url: &str) -> Option<std::process::Child> {
     Some(child)
 }
 
+/// Código con el que `pcode-ide` sale si no pudo abrir la ventana con OpenGL.
+const IDE_NO_GL: i32 = 3;
+
+/// ¿Se relanza el IDE con render por software? Solo una vez, y solo si salió con [`IDE_NO_GL`]
+/// enseguida (un fallo tardío no es de arranque: sería reabrir una ventana que el usuario usaba).
+fn should_retry_software(code: Option<i32>, elapsed: std::time::Duration, tried: bool) -> bool {
+    !tried && code == Some(IDE_NO_GL) && elapsed < std::time::Duration::from_secs(5)
+}
+
+/// Espera a que el IDE termine. Si no pudo abrir la ventana, lo relanza una vez por software y,
+/// si tampoco, abre Studio en el navegador. Devuelve `true` si acabó en el navegador.
+fn supervise_ide(mut ide: std::process::Child, url: &str) -> bool {
+    let mut tried = false;
+    loop {
+        let t0 = std::time::Instant::now();
+        let code = ide.wait().ok().and_then(|s| s.code());
+        if should_retry_software(code, t0.elapsed(), tried) {
+            tried = true;
+            eprintln!("Sin aceleración OpenGL: se reintenta con render por software.");
+            match spawn_ide(url, true) {
+                Some(c) => {
+                    ide = c;
+                    continue;
+                }
+                None => return false,
+            }
+        }
+        if tried && code == Some(IDE_NO_GL) {
+            eprintln!("Sin OpenGL: se abre Studio en el navegador");
+            eprintln!("{url}");
+            open_browser(url);
+            return true;
+        }
+        return false;
+    }
+}
+
 /// Abre el IDE nativo; si no está, el navegador.
 fn open_ide(url: &str) {
-    if spawn_ide(url).is_none() {
+    if spawn_ide(url, false).is_none() {
         eprintln!("No se encontró pcode-ide: se abre el navegador.");
         open_browser(url);
     }
@@ -444,5 +495,29 @@ fn open_browser(url: &str) {
     };
     if r.is_err() {
         eprintln!("No se pudo abrir el navegador: abre la dirección a mano.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn reintento_software_solo_una_vez_y_si_fallo_rapido() {
+        let pronto = Duration::from_secs(1);
+        assert!(should_retry_software(Some(IDE_NO_GL), pronto, false));
+        // Ya se probó por software: no se insiste.
+        assert!(!should_retry_software(Some(IDE_NO_GL), pronto, true));
+        // Otro código de salida (cierre normal, uso incorrecto, señal) no es falta de OpenGL.
+        assert!(!should_retry_software(Some(0), pronto, false));
+        assert!(!should_retry_software(Some(2), pronto, false));
+        assert!(!should_retry_software(None, pronto, false));
+        // Un fallo tardío no es de arranque.
+        assert!(!should_retry_software(
+            Some(IDE_NO_GL),
+            Duration::from_secs(5),
+            false
+        ));
     }
 }

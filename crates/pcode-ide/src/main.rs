@@ -1,7 +1,7 @@
 //! Binario `pcode-ide`: `pcode-ide --url http://127.0.0.1:PUERTO/?t=TOKEN`.
 use pcode_ide::{app::Ide, rpc};
 
-fn main() -> eframe::Result {
+fn main() {
     let url = std::env::args()
         .skip_while(|a| a != "--url")
         .nth(1)
@@ -31,9 +31,14 @@ fn main() -> eframe::Result {
             .with_title(t.window_title),
         ..Default::default()
     };
-    eframe::run_native(
+    let r = eframe::run_native(
         t.window_title,
         opts,
         Box::new(move |cc| Ok(Box::new(Ide::new(rpc::Client::new(ep), &cc.egui_ctx, t)))),
-    )
+    );
+    if let Err(e) = r {
+        // `pcode ide` reconoce este código y reintenta con render por software.
+        eprintln!("No se pudo abrir la ventana con OpenGL: {e}");
+        std::process::exit(3);
+    }
 }
