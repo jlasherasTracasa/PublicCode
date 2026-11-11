@@ -53,6 +53,18 @@ cp "$src" "$dest/.pcode.nuevo"
 chmod 755 "$dest/.pcode.nuevo"
 mv -f "$dest/.pcode.nuevo" "$dest/pcode"
 
+# El IDE nativo (si viene en el paquete) y su entrada en el menú de aplicaciones.
+ide=""
+if [ -f "$(dirname "$src")/pcode-ide" ]; then
+  cp "$(dirname "$src")/pcode-ide" "$dest/.pcode-ide.nuevo"
+  chmod 755 "$dest/.pcode-ide.nuevo"
+  mv -f "$dest/.pcode-ide.nuevo" "$dest/pcode-ide"
+  ide=1
+fi
+if "$dest/pcode" lanzador instalar >/dev/null 2>&1; then
+  echo "PublicCode está en el menú de aplicaciones"
+fi
+
 case ":$PATH:" in
   *":$dest:"*) ;;
   *)
@@ -67,4 +79,5 @@ case ":$PATH:" in
     ;;
 esac
 "$dest/pcode" --version
+[ -n "$ide" ] && echo "IDE nativo: pcode ide"
 echo "Siguiente: define ANTHROPIC_API_KEY (o GEMINI_API_KEY u OPENAI_API_KEY) y ejecuta: pcode doctor"

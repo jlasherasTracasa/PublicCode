@@ -39,7 +39,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Compilar
         shell: bash
-        run: cargo build --release --locked -p pcode-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p pcode-cli -p pcode-ide --target ${{ matrix.target }}
       - name: Prueba de humo
         shell: bash
         run: target/${{ matrix.target }}/release/${{ matrix.exe }} --version
@@ -49,14 +49,14 @@ jobs:
         run: |
           $name = "pcode-$env:TAG-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $name | Out-Null
-          Copy-Item target/${{ matrix.target }}/release/pcode.exe, README.md, install.ps1 -Destination $name
+          Copy-Item target/${{ matrix.target }}/release/pcode.exe, target/${{ matrix.target }}/release/pcode-ide.exe, README.md, install.ps1 -Destination $name
           Compress-Archive -Path $name -DestinationPath "$name.zip"
       - name: Empaquetar (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           name="pcode-$TAG-${{ matrix.target }}"
-          mkdir "$name" && cp target/${{ matrix.target }}/release/pcode README.md install.sh "$name/"
+          mkdir "$name" && cp target/${{ matrix.target }}/release/pcode target/${{ matrix.target }}/release/pcode-ide README.md install.sh "$name/"
           tar czf "$name.tar.gz" "$name"
       - uses: actions/upload-artifact@v4
         with:

@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Name=PublicCode
+GenericName=Editor de código con agentes
+GenericName[en]=Code editor with agents
+Comment=IDE ligero con agentes: editor, git, terminal y agente sin navegador
+Comment[en]=Lightweight agentic IDE: editor, git, terminal and agent without a browser
+Exec=pcode ide %F
+Icon=pcode
+Terminal=false
+Categories=Development;IDE;TextEditor;Utility;
+MimeType=inode/directory;text/plain;
+Keywords=code;editor;ide;agent;ai;pcode;
+StartupWMClass=pcode-ide
+Actions=studio;tui;
+
+[Desktop Action studio]
+Name=Abrir en el navegador (Studio)
+Exec=pcode studio
+
+[Desktop Action tui]
+Name=Terminal (TUI)
+Exec=x-terminal-emulator -e pcode

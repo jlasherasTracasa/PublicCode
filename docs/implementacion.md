@@ -93,6 +93,7 @@ nativas, proveedores, backends y exportadores de skills.
 | F5 | uso diario desde terminal (TUI), escritorio (Linux y Windows), web, móvil e IDE | paquetes de escritorio instalables en Linux y Windows; la misma sesión se abre en la TUI y en el escritorio; aprobación resuelta desde el móvil |
 | F6 | skills aprendidas sin regresiones | regresión nocturna verde 7 días |
 | F7 | release firmada y red teaming superado | checklist de F7.03 |
+| F9 | uso diario en un equipo de 2 núcleos y 4 GB: IDE nativo, LSP acotado y trabajo remoto por SSH | `rendimiento.py medir` y `medir-ide` dentro del presupuesto (demonio < 60 MB, IDE < 120 MB); `pcode remoto --instalar` contra un servidor real; release con `pcode-ide` |
 
 ## Cómo cambiar el plan
 
@@ -357,4 +358,9 @@ El estado se calcula solo: una tarea está `hecha` si existe su `informes/<id>.m
 | [F9.20-ide-fragmentos-y-temas](../tareas/F9.20-ide-fragmentos-y-temas.md) | IDE: usar los fragmentos (snippets) y temas de las extensiones instaladas | haiku | F9.19, F9.15 | pendiente |
 | [F9.21-depurador-python](../tareas/F9.21-depurador-python.md) | Depurador en el IDE: DAP con debugpy (puntos de ruptura, pasos, variables) a través del demonio | coordinador | F9.05 | pendiente |
 | [F9.22-ide-wayland-y-accesibilidad](../tareas/F9.22-ide-wayland-y-accesibilidad.md) | IDE: Wayland nativo (carga dinámica) y lector de pantalla (AccessKit) como funciones opcionales | coordinador | F9.05 | pendiente |
+| [F9.23-lanzador](../tareas/F9.23-lanzador.md) | PublicCode en el menú de aplicaciones como VS Code: `pcode lanzador instalar|quitar` con icono y acciones | coordinador | F9.05 | pendiente |
+| [F9.24-ide-proyectos-recientes](../tareas/F9.24-ide-proyectos-recientes.md) | `pcode ide [ruta]`: abrir carpeta, recordar el último proyecto y lista de recientes | haiku | F9.23 | pendiente |
+| [F9.25-releases-periodicas](../tareas/F9.25-releases-periodicas.md) | Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas | coordinador | F9.01 | pendiente |
+| [F9.26-ide-sin-gpu](../tareas/F9.26-ide-sin-gpu.md) | IDE en equipos sin aceleración: aviso claro y modo software (llvmpipe) automático si OpenGL falla | haiku | F9.05 | pendiente |
+| [F9.27-medir-ide](../tareas/F9.27-medir-ide.md) | Medir el IDE nativo: arranque hasta la primera ventana y memoria en reposo, con Xvfb si no hay pantalla | haiku | F9.17 | pendiente |
 <!-- tabla:fin -->

@@ -64,6 +64,17 @@ try {
     Rename-Item $target -NewName "pcode.antiguo.exe" -ErrorAction SilentlyContinue
   }
   Copy-Item $exe.FullName -Destination $target -Force
+  # El IDE nativo, si viene en el paquete.
+  $ide = Join-Path $exe.DirectoryName "pcode-ide.exe"
+  if (Test-Path $ide) {
+    $ideTarget = Join-Path $dest "pcode-ide.exe"
+    if (Test-Path $ideTarget) {
+      Remove-Item (Join-Path $dest "pcode-ide.antiguo.exe") -Force -ErrorAction SilentlyContinue
+      Rename-Item $ideTarget -NewName "pcode-ide.antiguo.exe" -ErrorAction SilentlyContinue
+    }
+    Copy-Item $ide -Destination $ideTarget -Force
+    Write-Host "IDE nativo: pcode ide"
+  }
 } finally {
   Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -55,6 +55,26 @@ pub struct Texts {
     pub problems: &'static str,
     /// Atajos.
     pub shortcuts: &'static str,
+    /// Texto de la interfaz.
+    pub find: &'static str,
+    /// Texto de la interfaz.
+    pub replace: &'static str,
+    /// Texto de la interfaz.
+    pub replace_all: &'static str,
+    /// Texto de la interfaz.
+    pub match_case: &'static str,
+    /// Texto de la interfaz.
+    pub go_to_line: &'static str,
+    /// Texto de la interfaz.
+    pub terminal: &'static str,
+    /// Texto de la interfaz.
+    pub stop: &'static str,
+    /// Texto de la interfaz.
+    pub run: &'static str,
+    /// Texto de la interfaz.
+    pub redo: &'static str,
+    /// Texto de la interfaz.
+    pub of: &'static str,
 }
 
 /// Español.
@@ -85,6 +105,16 @@ pub const ES: Texts = Texts {
     quit_unsaved: "Hay cambios sin guardar: Ctrl+S para guardar o Ctrl+Q otra vez para salir",
     problems: "Problemas",
     shortcuts: "Ctrl+P abrir · Ctrl+S guardar · Ctrl+W cerrar · Ctrl+Mayús+F buscar · Ctrl+I agente",
+    find: "Buscar",
+    replace: "Reemplazar por",
+    replace_all: "Reemplazar todo",
+    match_case: "Aa",
+    go_to_line: "Ir a la línea",
+    terminal: "Terminal",
+    stop: "Detener",
+    run: "Ejecutar",
+    redo: "↷ Rehacer",
+    of: "de",
 };
 
 /// Inglés.
@@ -115,6 +145,16 @@ pub const EN: Texts = Texts {
     quit_unsaved: "Unsaved changes: Ctrl+S to save or Ctrl+Q again to quit",
     problems: "Problems",
     shortcuts: "Ctrl+P open · Ctrl+S save · Ctrl+W close · Ctrl+Shift+F search · Ctrl+I agent",
+    find: "Find",
+    replace: "Replace with",
+    replace_all: "Replace all",
+    match_case: "Aa",
+    go_to_line: "Go to line",
+    terminal: "Terminal",
+    stop: "Stop",
+    run: "Run",
+    redo: "↷ Redo",
+    of: "of",
 };
 
 /// Textos para un valor de `LANG` (`es_ES.UTF-8` → español; lo demás que empiece por `en`, inglés).

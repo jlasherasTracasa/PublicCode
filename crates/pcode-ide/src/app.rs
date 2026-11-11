@@ -1,8 +1,13 @@
 //! Interfaz del IDE. Las peticiones van en hilos y vuelven por un canal; se repinta solo cuando
 //! llega algo (sin sondeo en reposo).
+use crate::agent::{Stream, TurnCard};
+use crate::find::{find_all, replace_all};
 use crate::highlight::layout_job;
+use crate::problems::Problems;
 use crate::rpc::Client;
-use crate::state::{Entry, Tabs, Tree, own_rss_mb, quick_open};
+use crate::settings::IdeSettings;
+use crate::state::{Entry, Tabs, Tree, gutter, line_to_byte, own_rss_mb, quick_open};
+use crate::terminal::Terminal;
 use crate::texts::Texts;
 use eframe::egui;
 use serde_json::{Value, json};
@@ -48,6 +53,16 @@ pub struct Ide {
     note: String,
     connected: bool,
     dark: bool,
+    settings: IdeSettings,
+    problems: Problems,
+    term: Terminal,
+    term_cmd: String,
+    show_term: bool,
+    stream: Stream,
+    cards: Vec<TurnCard>,
+    find: Option<(String, String, bool)>,
+    goto: Option<String>,
+    pending_cursor: Option<usize>,
 }
 
 impl Ide {
@@ -55,6 +70,7 @@ impl Ide {
     pub fn new(client: Client, ctx: &egui::Context, t: &'static Texts) -> Ide {
         let (tx, rx) = mpsc::channel();
         let client = Arc::new(client);
+        let settings = IdeSettings::load();
         let ide = Ide {
             client: client.clone(),
             tx: tx.clone(),
@@ -73,9 +89,23 @@ impl Ide {
             prompt: String::new(),
             note: String::new(),
             connected: true,
-            dark: true,
+            dark: settings.dark,
+            settings,
+            problems: Problems::default(),
+            term: Terminal::default(),
+            term_cmd: String::new(),
+            show_term: false,
+            stream: Stream::default(),
+            cards: vec![],
+            find: None,
+            goto: None,
+            pending_cursor: None,
         };
-        ctx.set_visuals(egui::Visuals::dark());
+        ctx.set_visuals(if ide.dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        });
         ide.list_dir("");
         ide.spawn(|c| match c.call("fs.files", json!({})) {
             Ok(v) => Msg::Files(
@@ -185,12 +215,39 @@ impl Ide {
         }
     }
 
+    fn run_terminal(&mut self) {
+        let cmd = std::mem::take(&mut self.term_cmd);
+        if cmd.trim().is_empty() {
+            return;
+        }
+        match self.client.call("terminal.run", json!({"command": cmd})) {
+            Ok(v) => self
+                .term
+                .start(v.as_u64().or(v["id"].as_u64()).unwrap_or(0), &cmd),
+            Err(e) => self.note = e,
+        }
+    }
+
+    fn fire(&self, method: &'static str) {
+        self.spawn(move |c| match c.call(method, json!({})) {
+            Ok(_) => Msg::Note(String::new()),
+            Err(e) => Msg::Note(e),
+        });
+    }
+
     fn on_event(&mut self, ev: Value) {
         if ev.is_null() {
             self.connected = false;
             return;
         }
         self.connected = true;
+        if self.problems.apply(&ev) || self.term.apply(&ev) || self.stream.apply(&ev) {
+            return;
+        }
+        if let Some(c) = TurnCard::from_event(&ev) {
+            self.cards.push(c);
+            return;
+        }
         match ev["tipo"].as_str() {
             Some("filesChanged") => {
                 for d in self.tree.invalidate() {
@@ -274,6 +331,24 @@ impl eframe::App for Ide {
         if ctrl(egui::Key::P) {
             self.open_box = Some(String::new());
         }
+        if ctrl(egui::Key::F) || ctrl(egui::Key::H) {
+            self.find
+                .get_or_insert_with(|| (String::new(), String::new(), false));
+        }
+        if ctrl(egui::Key::G) {
+            self.goto.get_or_insert_with(String::new);
+        }
+        if ctrl(egui::Key::Backtick) {
+            self.show_term = !self.show_term;
+        }
+        if ctrl(egui::Key::Plus) || ctrl(egui::Key::Equals) {
+            self.settings.font_size = (self.settings.font_size + 1.0).min(32.0);
+            self.settings.save();
+        }
+        if ctrl(egui::Key::Minus) {
+            self.settings.font_size = (self.settings.font_size - 1.0).max(8.0);
+            self.settings.save();
+        }
         if ctrl(egui::Key::W) {
             let i = self.tabs.active;
             self.tabs.close(i);
@@ -290,6 +365,8 @@ impl eframe::App for Ide {
                 if let Some(mb) = own_rss_mb() {
                     ui.label(format!("{mb:.0} MB {}", t.memory));
                 }
+                let (e, w) = self.problems.counts();
+                ui.label(format!("✗ {e} ⚠ {w}"));
                 ui.label(&self.note);
             });
         });
@@ -357,6 +434,26 @@ impl eframe::App for Ide {
                         for l in &self.chat {
                             ui.add(egui::Label::new(l).wrap());
                         }
+                        if let Some(sid) = self.session
+                            && let Some(partial) = self.stream.text.get(&sid)
+                        {
+                            ui.add(egui::Label::new(format!("✦ {partial}▌")).wrap());
+                        }
+                        let mut undo = None;
+                        for c in &self.cards {
+                            ui.add(egui::Label::new(c.summary()).wrap());
+                            ui.horizontal(|ui| {
+                                if ui.small_button(t.undo_turn).clicked() {
+                                    undo = Some("checkpoint.undo");
+                                }
+                                if ui.small_button(t.redo).clicked() {
+                                    undo = Some("checkpoint.redo");
+                                }
+                            });
+                        }
+                        if let Some(m) = undo {
+                            self.fire(m);
+                        }
                     });
                 ui.add(
                     egui::TextEdit::multiline(&mut self.prompt)
@@ -387,6 +484,56 @@ impl eframe::App for Ide {
                 }
             });
             let dark = self.dark;
+            if let Some((q, r, case)) = self.find.as_mut() {
+                let mut close = false;
+                let mut do_replace = false;
+                ui.horizontal(|ui| {
+                    ui.label(t.find);
+                    ui.text_edit_singleline(q);
+                    ui.label(t.replace);
+                    ui.text_edit_singleline(r);
+                    ui.toggle_value(case, t.match_case);
+                    if ui.button(t.replace_all).clicked() {
+                        do_replace = true;
+                    }
+                    if ui.button("×").clicked() || ctx.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        close = true;
+                    }
+                });
+                if let Some(tab) = self.tabs.current_mut() {
+                    let n = find_all(&tab.text, q, *case).len();
+                    ui.weak(format!("{n} {}", t.results));
+                    if do_replace {
+                        tab.text = replace_all(&tab.text, q, r, *case).0;
+                    }
+                }
+                if close {
+                    self.find = None;
+                }
+            }
+            if let Some(g) = self.goto.as_mut() {
+                let mut done = None;
+                ui.horizontal(|ui| {
+                    ui.label(t.go_to_line);
+                    let r = ui.text_edit_singleline(g);
+                    r.request_focus();
+                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        done = Some(g.trim().parse::<usize>().ok());
+                    } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        done = Some(None);
+                    }
+                });
+                if let Some(n) = done {
+                    self.goto = None;
+                    if let (Some(n), Some(tab)) = (n, self.tabs.current()) {
+                        let byte = line_to_byte(&tab.text, n);
+                        self.pending_cursor = Some(tab.text[..byte].chars().count());
+                    }
+                }
+            }
+            let size = self.settings.font_size;
+            let pending = self.pending_cursor.take();
             match self.tabs.current_mut() {
                 None => {
                     ui.weak(t.no_file);
@@ -394,24 +541,71 @@ impl eframe::App for Ide {
                 }
                 Some(tab) => {
                     let lang = tab.lang;
-                    let font = egui::TextStyle::Monospace.resolve(ui.style());
+                    let font = egui::FontId::monospace(size);
                     let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, w: f32| {
                         let mut job = layout_job(buf.as_str(), lang, dark, font.clone());
                         job.wrap.max_width = w;
                         ui.fonts_mut(|f| f.layout_job(job))
                     };
+                    let numbers = gutter(&tab.text);
                     egui::ScrollArea::both().show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut tab.text)
-                                .code_editor()
+                        ui.horizontal_top(|ui| {
+                            ui.label(
+                                egui::RichText::new(numbers)
+                                    .font(egui::FontId::monospace(size))
+                                    .color(ui.visuals().weak_text_color()),
+                            );
+                            let mut out = egui::TextEdit::multiline(&mut tab.text)
+                                .font(egui::FontId::monospace(size))
                                 .desired_width(f32::INFINITY)
                                 .desired_rows(40)
-                                .layouter(&mut layouter),
-                        );
+                                .layouter(&mut layouter)
+                                .show(ui);
+                            if let Some(i) = pending {
+                                let c = egui::text::CCursor::new(i);
+                                out.state
+                                    .cursor
+                                    .set_char_range(Some(egui::text::CCursorRange::one(c)));
+                                out.state.store(ui.ctx(), out.response.id);
+                                out.response.request_focus();
+                            }
+                        });
                     });
                 }
             }
         });
+        if self.show_term {
+            egui::Panel::bottom("terminal")
+                .default_size(180.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.strong(t.terminal);
+                        let r = ui.text_edit_singleline(&mut self.term_cmd);
+                        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            self.run_terminal();
+                        }
+                        if ui.button(t.run).clicked() {
+                            self.run_terminal();
+                        }
+                        if let Some(id) = self.term.running
+                            && ui.button(t.stop).clicked()
+                        {
+                            let c = self.client.clone();
+                            std::thread::spawn(move || {
+                                let _ = c.call("terminal.kill", json!({"id": id}));
+                            });
+                        }
+                    });
+                    egui::ScrollArea::vertical()
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(self.term.text()).monospace())
+                                    .wrap(),
+                            );
+                        });
+                });
+        }
         if let Some(mut q) = self.open_box.take() {
             let mut keep = true;
             let mut picked = None;

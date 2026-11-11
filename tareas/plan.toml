@@ -5007,3 +5007,121 @@ La base solo compila X11 (también va en Wayland por XWayland) para gastar poco 
 las activa; el perfil `ligero` no.
 '''
 tests = ["(sin tests unitarios): la aceptación compila con las features"]
+
+[[tarea]]
+id = "F9.23"
+nombre = "lanzador"
+titulo = "PublicCode en el menú de aplicaciones como VS Code: `pcode lanzador instalar|quitar` con icono y acciones"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.05"]
+toca = ["packaging/linux/pcode.desktop", "packaging/linux/pcode.svg", "crates/pcode-cli/src/launcher.rs", "crates/pcode-cli/src/main.rs", "install.sh"]
+acepta = "cargo test -p pcode-cli launcher::"
+contexto = ["packaging/linux/pcode.desktop"]
+objetivo = '''
+La entrada `.desktop` y el icono van dentro del binario (`include_str!`): una sola fuente. `pcode lanzador instalar`
+escribe `~/.local/share/applications/pcode.desktop` (con la ruta absoluta de este `pcode` en `Exec`) y
+`~/.local/share/icons/hicolor/scalable/apps/pcode.svg`; `quitar` los borra. Respeta `XDG_DATA_HOME`. En Windows y macOS
+dice que no aplica y sale con 0. `install.sh` lo llama. Acciones: abrir en el navegador (Studio) y TUI.
+'''
+firmas = '''
+// crates/pcode-cli/src/launcher.rs
+pub const DESKTOP: &str = include_str!("../../../packaging/linux/pcode.desktop");
+pub const ICON: &str = include_str!("../../../packaging/linux/pcode.svg");
+pub fn data_dir(xdg_data_home: Option<&str>, home: &str) -> std::path::PathBuf;
+pub fn desktop_entry(pcode_bin: &str) -> String;   // cambia `Exec=pcode` por la ruta absoluta entre comillas
+pub fn install(data: &std::path::Path, pcode_bin: &str) -> std::io::Result<Vec<std::path::PathBuf>>;
+pub fn uninstall(data: &std::path::Path) -> std::io::Result<usize>;
+'''
+tests = ["entrada_con_ruta_absoluta", "instala_y_quita_en_xdg_data_home"]
+
+[[tarea]]
+id = "F9.24"
+nombre = "ide-proyectos-recientes"
+titulo = "`pcode ide [ruta]`: abrir carpeta, recordar el último proyecto y lista de recientes"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.23"]
+toca = ["crates/pcode-cli/src/recent.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli recent::"
+contexto = ["crates/pcode-cli/src/main.rs (brazo `Some(Cmd::Ide { .. })`)", "crates/pcode-config/src/lib.rs (`user_config_path`)"]
+objetivo = '''
+Desde el menú de aplicaciones `pcode ide` arranca en `$HOME`, que no es un proyecto (y recorrerlo gasta). Pasos:
+1. `recent.rs`: el archivo `recientes.txt` junto a la configuración global guarda una ruta absoluta por línea, la más
+   reciente primero, sin repetir, como mucho `MAX_RECENT` (10). `push` la mueve arriba; `load` ignora líneas vacías y
+   rutas que ya no existen.
+2. `Cmd::Ide` gana `ruta: Option<PathBuf>` (posicional). Si se da: `std::env::set_current_dir(ruta)` y `push`. Si no y
+   el directorio actual es `$HOME`: el primero de `load()` (si hay) y si no, `$HOME`. Si no: el actual y `push`.
+'''
+firmas = '''
+// crates/pcode-cli/src/recent.rs
+pub const MAX_RECENT: usize = 10;
+pub fn parse(text: &str) -> Vec<std::path::PathBuf>;
+pub fn push(list: &[std::path::PathBuf], p: &std::path::Path) -> Vec<std::path::PathBuf>;
+pub fn render(list: &[std::path::PathBuf]) -> String;
+pub fn load() -> Vec<std::path::PathBuf>;            // filtra las que no existen
+pub fn save(list: &[std::path::PathBuf]) -> std::io::Result<()>;
+'''
+tests = ["recientes_sin_repetir_y_el_ultimo_primero", "recientes_como_mucho_diez", "recientes_ignora_lineas_vacias"]
+
+[[tarea]]
+id = "F9.25"
+nombre = "releases-periodicas"
+titulo = "Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas"
+fase = "F9"
+ejecutor = "coordinador"
+depende = ["F9.01"]
+toca = ["Cargo.toml", "CHANGELOG.md", "tools/release.sh"]
+acepta = "sh -n tools/release.sh && tools/release.sh --comprobar"
+contexto = [".github/workflows/release.yml (se dispara con etiquetas v*)", "CHANGELOG.md"]
+objetivo = '''
+Cadencia: una release menor cuando cierra un bloque de F9 (base · IDE completo · extensiones y depurador) y un parche
+cuando se corrige algo visible. `tools/release.sh X.Y.Z` comprueba que el árbol está limpio, que `cargo test
+--workspace` pasa y que `CHANGELOG.md` tiene `## X.Y.Z`; cambia `version` en `[workspace.package]`, hace commit
+`release: vX.Y.Z`, crea la etiqueta anotada y la empuja (`git push origin HEAD vX.Y.Z`). `--comprobar` solo valida que
+la versión del Cargo.toml tiene su sección en el CHANGELOG. La release la publica el workflow.
+'''
+tests = ["(sin tests unitarios): la aceptación valida el script y el CHANGELOG"]
+
+[[tarea]]
+id = "F9.26"
+nombre = "ide-sin-gpu"
+titulo = "IDE en equipos sin aceleración: aviso claro y modo software (llvmpipe) automático si OpenGL falla"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.05"]
+toca = ["crates/pcode-ide/src/main.rs", "crates/pcode-cli/src/main.rs"]
+acepta = "cargo test -p pcode-cli reintento_software && cargo build -p pcode-ide"
+contexto = ["crates/pcode-cli/src/main.rs (`spawn_ide`)"]
+objetivo = '''
+1. `pcode-ide`: si `eframe::run_native` devuelve error, imprime `No se pudo abrir la ventana con OpenGL: <error>` y sale
+   con 3.
+2. `pcode` (`spawn_ide` y el brazo `Cmd::Ide`): si el IDE sale con 3 en menos de 5 s, lo relanza una vez con
+   `LIBGL_ALWAYS_SOFTWARE=1`; si vuelve a fallar, abre Studio en el navegador con el aviso
+   `Sin OpenGL: se abre Studio en el navegador`.
+3. La decisión es una función pura `should_retry_software(code: Option<i32>, elapsed: Duration, tried: bool) -> bool`
+   en `main.rs`, con su test.
+'''
+firmas = '''
+// crates/pcode-cli/src/main.rs
+fn should_retry_software(code: Option<i32>, elapsed: std::time::Duration, tried: bool) -> bool;
+'''
+tests = ["reintento_software_solo_una_vez_y_si_fallo_rapido"]
+
+[[tarea]]
+id = "F9.27"
+nombre = "medir-ide"
+titulo = "Medir el IDE nativo: arranque hasta la primera ventana y memoria en reposo, con Xvfb si no hay pantalla"
+fase = "F9"
+ejecutor = "haiku"
+depende = ["F9.17"]
+toca = ["tools/bench/rendimiento.py", "tools/bench/test_rendimiento.py"]
+acepta = "python3 -m unittest tools/bench/test_rendimiento.py -v"
+contexto = ["tools/bench/rendimiento.py (`medir_studio`, `memoria_arbol_mb`)"]
+objetivo = '''
+Nueva subórden `medir-ide --pcode BIN --proyecto DIR`: lanza `pcode ide` (con `xvfb-run -a` si no hay `DISPLAY` y
+existe `xvfb-run`; si no hay ninguno, imprime `sin pantalla: se salta` y sale con 0), espera 5 s, mide
+`memoria_arbol_mb` del proceso (demonio + IDE juntos) y lo termina. Añade `ide_reposo_mb` al JSON y al
+`PRESUPUESTO` con 120 MB. Test: con un `pcode` falso (script Python que duerme) la memoria sale > 0 y la clave existe.
+'''
+tests = ["test_medir_ide_con_binario_falso"]
