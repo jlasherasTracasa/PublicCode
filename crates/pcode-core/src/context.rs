@@ -1,7 +1,8 @@
 //! Registro de resultados de tools: cada resultado lleva su id `[rN]` en el propio texto, así que
 //! compactar o soltar el historial no rompe los índices. El registro solo guarda el último id dado y
 //! los ids fijados.
-use pcode_models::{Message, Role};
+use pcode_models::{Message, Role, ToolSpec};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 /// Longitud máxima de la primera línea que se conserva al soltar un resultado.
@@ -100,9 +101,175 @@ impl ContextLedger {
     }
 }
 
+/// Nombre de la tool con la que el agente gestiona su contexto.
+pub const CONTEXT_TOOL: &str = "contexto";
+
+/// Especificación de la tool `contexto`.
+pub fn context_spec() -> ToolSpec {
+    ToolSpec {
+        name: CONTEXT_TOOL.into(),
+        description: "Gestiona tu contexto. Cada resultado de tool empieza por un id como [r7]. \
+            op \"soltar\": sustituye por una línea los resultados de `ids` que ya no necesitas. \
+            op \"fijar\": marca los resultados de `ids` para que la compactación no los resuma. \
+            op \"lista\": qué resultados siguen en el contexto."
+            .into(),
+        parameters: json!({"type":"object","properties":{"op":{"type":"string","enum":["soltar","fijar","lista"]},"ids":{"type":"array","items":{"type":"integer"}}},"required":["op"]}),
+    }
+}
+
+/// Mensaje cuando una operación necesita ids y no los trae.
+fn falta_ids(op: &str) -> String {
+    format!("faltan ids, p. ej. {{\"op\":\"{op}\",\"ids\":[3]}}")
+}
+
+impl ContextLedger {
+    /// Ejecuta una llamada a `contexto` sobre el historial y devuelve el texto del resultado.
+    pub fn handle(&mut self, args: &Value, messages: &mut [Message]) -> String {
+        let ids: Vec<u32> = args
+            .get("ids")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_u64)
+                    .filter(|&n| n > 0)
+                    .filter_map(|n| u32::try_from(n).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        match args.get("op").and_then(Value::as_str) {
+            Some("soltar") => {
+                if ids.is_empty() {
+                    return falta_ids("soltar");
+                }
+                let n = self.drop_results(&ids, messages);
+                format!(
+                    "soltados {n} de {} (los fijados y los ya soltados no se tocan)",
+                    ids.len()
+                )
+            }
+            Some("fijar") => {
+                if ids.is_empty() {
+                    return falta_ids("fijar");
+                }
+                self.pin(&ids);
+                let fijados: Vec<String> = self.pinned.iter().map(|id| format!("r{id}")).collect();
+                if fijados.is_empty() {
+                    "fijados: ninguno".into()
+                } else {
+                    format!("fijados: {}", fijados.join(", "))
+                }
+            }
+            Some("lista") => self.lista(messages),
+            _ => "op no válida: usa \"soltar\", \"fijar\" o \"lista\"".into(),
+        }
+    }
+
+    /// Una línea por resultado de tool que sigue en el contexto (los soltados no salen).
+    fn lista(&self, messages: &[Message]) -> String {
+        let lineas: Vec<String> = messages
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .filter_map(|m| {
+                let id = result_id(&m.content)?;
+                let prefijo = format!("[r{id}] ");
+                let resto = m.content.strip_prefix(prefijo.as_str())?;
+                let marca = if self.pinned.contains(&id) {
+                    " (fijado)"
+                } else {
+                    ""
+                };
+                let n = m.content.chars().count();
+                let primera: String = resto
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .chars()
+                    .take(60)
+                    .collect();
+                Some(format!("r{id}{marca} {n} caracteres: {primera}"))
+            })
+            .collect();
+        if lineas.is_empty() {
+            "no hay resultados de tools en el contexto".into()
+        } else {
+            lineas.join("\n")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_spec_tiene_nombre_y_op_obligatoria() {
+        let spec = context_spec();
+        assert_eq!(spec.name, "contexto");
+        let requeridos = spec.parameters["required"].as_array().unwrap();
+        assert!(requeridos.iter().any(|v| v == "op"));
+    }
+
+    #[test]
+    fn tool_soltar_y_fijar_como_en_el_ejemplo() {
+        let mut ms = vec![
+            Message::tool_result("c1", "[r1] uno"),
+            Message::tool_result("c2", "[r2] dos\nmás"),
+            Message::tool_result("c3", "[r3] tres"),
+        ];
+        let mut l = ContextLedger::new();
+        l.sync(&ms);
+        assert_eq!(
+            l.handle(&json!({"op":"fijar","ids":[1]}), &mut ms),
+            "fijados: r1"
+        );
+        assert_eq!(
+            l.handle(&json!({"op":"soltar","ids":[1,2]}), &mut ms),
+            "soltados 1 de 2 (los fijados y los ya soltados no se tocan)"
+        );
+        assert_eq!(
+            l.handle(&json!({"op":"lista"}), &mut ms),
+            "r1 (fijado) 8 caracteres: uno\nr3 9 caracteres: tres"
+        );
+        assert_eq!(
+            l.handle(&json!({"op":"borrar"}), &mut ms),
+            "op no válida: usa \"soltar\", \"fijar\" o \"lista\""
+        );
+    }
+
+    #[test]
+    fn tool_lista_omite_soltados_y_marca_fijados() {
+        let mut ms = vec![
+            Message::tool_result("c1", "[r1] uno"),
+            Message::tool_result("c2", "[r2] dos"),
+            Message::tool_result("c3", "[r3] tres"),
+        ];
+        let mut l = ContextLedger::new();
+        l.sync(&ms);
+        l.handle(&json!({"op":"fijar","ids":[1]}), &mut ms);
+        l.handle(&json!({"op":"soltar","ids":[2]}), &mut ms);
+        let lista = l.handle(&json!({"op":"lista"}), &mut ms);
+        assert_eq!(
+            lista,
+            "r1 (fijado) 8 caracteres: uno\nr3 9 caracteres: tres"
+        );
+        assert!(!lista.contains("r2"));
+    }
+
+    #[test]
+    fn tool_sin_ids_explica_el_formato() {
+        let mut l = ContextLedger::new();
+        let texto = l.handle(&json!({"op":"soltar"}), &mut []);
+        assert!(texto.starts_with("faltan ids"));
+    }
+
+    #[test]
+    fn tool_op_desconocida() {
+        let mut l = ContextLedger::new();
+        let esperado = "op no válida: usa \"soltar\", \"fijar\" o \"lista\"";
+        assert_eq!(l.handle(&json!({"op":"borrar"}), &mut []), esperado);
+        assert_eq!(l.handle(&json!({}), &mut []), esperado);
+    }
 
     #[test]
     fn etiqueta_numera_desde_uno() {
