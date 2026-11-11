@@ -5,6 +5,7 @@ Uso:
     rendimiento.py medir --pcode BIN [--proyecto DIR] [--repeticiones N] [--salida actual.json]
     rendimiento.py comparar --base base.json --actual actual.json [--umbral 0.2]
     rendimiento.py presupuesto --actual actual.json
+    rendimiento.py medir-ide --pcode BIN [--proyecto DIR] [--espera S]
     rendimiento.py procesos PATRON [PATRON ...]
 
 `medir` saca, en Linux:
@@ -32,10 +33,10 @@ import urllib.error
 import urllib.request
 
 # Límites absolutos (docs/rendimiento.md): lo que se compromete para un equipo modesto.
-PRESUPUESTO = {"arranque_ms": 50.0, "studio_listo_ms": 300.0, "reposo_mb": 60.0}
+PRESUPUESTO = {"arranque_ms": 50.0, "studio_listo_ms": 300.0, "reposo_mb": 60.0, "ide_reposo_mb": 120.0}
 
 # Métricas en las que menos es mejor (todas las que se comparan).
-METRICAS = ["arranque_ms", "studio_listo_ms", "reposo_mb", "pico_mb"]
+METRICAS = ["arranque_ms", "studio_listo_ms", "reposo_mb", "pico_mb", "ide_reposo_mb"]
 
 ESPERA_MAX_S = 20.0  # nada espera más que esto
 
@@ -188,6 +189,27 @@ def medir(pcode, proyecto, repeticiones=7):
     return r
 
 
+def medir_ide(pcode, proyecto, espera=5.0):
+    """Memoria del demonio + IDE nativo (`pcode ide`) tras `espera` s; None si no hay pantalla."""
+    import shutil
+    orden = [pcode, "ide"]
+    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        if not shutil.which("xvfb-run"):
+            return None
+        orden = ["xvfb-run", "-a"] + orden
+    p = subprocess.Popen(orden, cwd=proyecto, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(espera)
+        return {"ide_reposo_mb": memoria_arbol_mb(p.pid)}
+    finally:
+        p.terminate()
+        try:
+            p.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait(timeout=5)
+
+
 def comparar(base, actual, umbral=0.2):
     """Lista de textos con lo que empeora más de `umbral` (fracción) respecto a la base."""
     malos = []
@@ -243,6 +265,10 @@ def main(argv=None):
     c.add_argument("--base", required=True)
     c.add_argument("--actual", required=True)
     c.add_argument("--umbral", type=float, default=0.2)
+    mi = sub.add_parser("medir-ide")
+    mi.add_argument("--pcode", default="pcode")
+    mi.add_argument("--proyecto", default=".")
+    mi.add_argument("--espera", type=float, default=5.0)
     p = sub.add_parser("presupuesto")
     p.add_argument("--actual", required=True)
     pr = sub.add_parser("procesos")
@@ -256,6 +282,10 @@ def main(argv=None):
             with open(a.salida, "w", encoding="utf-8") as f:
                 f.write(texto + "\n")
         print(texto)
+        return 0
+    if a.orden == "medir-ide":
+        r = medir_ide(a.pcode, a.proyecto, a.espera)
+        print("sin pantalla: se salta" if r is None else json.dumps(r, indent=2))
         return 0
     if a.orden == "procesos":
         for pat, (n, mb) in procesos(a.patrones).items():

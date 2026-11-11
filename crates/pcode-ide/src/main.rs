@@ -13,6 +13,16 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     };
+    // Lanzado por `pcode ide`: cuando el demonio muere se cierra su tubo y el IDE también acaba.
+    if std::env::args().any(|a| a == "--hasta-eof") {
+        std::thread::spawn(|| {
+            use std::io::Read;
+            let mut buf = [0u8; 64];
+            let mut stdin = std::io::stdin();
+            while matches!(stdin.read(&mut buf), Ok(n) if n > 0) {}
+            std::process::exit(0);
+        });
+    }
     let lang = std::env::var("LANG").unwrap_or_default();
     let t = pcode_ide::texts::for_locale(&lang);
     let opts = eframe::NativeOptions {

@@ -21,6 +21,7 @@ pcode-flow = { path = "../pcode-flow" }
 pcode-spec = { path = "../pcode-spec" }
 pcode-server = { path = "../pcode-server" }
 pcode-lsp = { path = "../pcode-lsp" }
+pcode-extensions = { path = "../pcode-extensions" }
 pcode-tui = { path = "../pcode-tui" }
 async-trait.workspace = true
 clap.workspace = true

@@ -4,7 +4,9 @@ mod backend_run;
 mod chat;
 mod doctor;
 mod flow_cmd;
+mod launcher;
 mod provider;
+mod recent;
 mod remote;
 mod run;
 mod spec_cmd;
@@ -66,10 +68,18 @@ enum Cmd {
     },
     /// IDE nativo (sin navegador): abre `pcode-ide` sobre el Studio de este proyecto.
     Ide {
+        /// Carpeta del proyecto (por defecto, la actual; desde el menú, la última abierta).
+        ruta: Option<std::path::PathBuf>,
         /// Puerto del demonio (0 = uno libre).
         #[arg(long, default_value_t = 0)]
         puerto: u16,
     },
+    /// PublicCode en el menú de aplicaciones (Linux).
+    #[command(subcommand)]
+    Lanzador(launcher::LauncherCmd),
+    /// Extensiones de VS Code (solo temas, fragmentos y lenguajes; nada ejecutable).
+    #[command(subcommand)]
+    Extensiones(ExtCmd),
     /// Trabaja en otro equipo por SSH: Studio (o la TUI, o el IDE) con lo pesado en el servidor.
     Remoto(remote::RemoteArgs),
     /// Servidores MCP configurados y las tools que aporta cada uno.
@@ -182,7 +192,23 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Some(Cmd::Ide { puerto }) => {
+        Some(Cmd::Ide { ruta, puerto }) => {
+            let cwd = std::env::current_dir()?;
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            let recent = recent::load();
+            let dir = recent::choose(ruta.as_deref(), &cwd, home.as_deref(), &recent);
+            let dir = if dir.is_file() {
+                dir.parent().map(|d| d.to_path_buf()).unwrap_or(dir)
+            } else {
+                dir
+            };
+            std::env::set_current_dir(&dir)?;
+            if home.as_deref() != Some(dir.as_path()) {
+                let _ = recent::save(&recent::push(
+                    &recent,
+                    &dir.canonicalize().unwrap_or(dir.clone()),
+                ));
+            }
             let token = format!(
                 "{}{}",
                 uuid::Uuid::new_v4().simple(),
@@ -209,6 +235,8 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Lanzador(c)) => std::process::exit(launcher::launcher_cmd(c)?),
+        Some(Cmd::Extensiones(c)) => std::process::exit(ext_cmd(c)?),
         Some(Cmd::Remoto(a)) => std::process::exit(remote::remote(a).await?),
         Some(Cmd::Mcp { config }) => std::process::exit(doctor::mcp_cmd(&config).await?),
         Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
@@ -268,6 +296,85 @@ fn apply_lsp_config(st: &pcode_server::AppState) {
     }
 }
 
+/// Subórdenes de `pcode extensiones`.
+#[derive(Debug, Subcommand)]
+enum ExtCmd {
+    /// Instala desde un `.vsix` o una carpeta de extensión (p. ej. de `~/.vscode/extensions`).
+    Instalar {
+        /// Archivo `.vsix` o carpeta.
+        origen: std::path::PathBuf,
+    },
+    /// Importa lo declarativo de todas las extensiones de VS Code instaladas.
+    ImportarVscode,
+    /// Lista las instaladas.
+    Listar,
+    /// Quita una (`editor.nombre`).
+    Quitar {
+        /// Identificador.
+        id: String,
+    },
+}
+
+fn ext_cmd(c: ExtCmd) -> anyhow::Result<i32> {
+    let root = pcode_extensions::default_root()
+        .ok_or_else(|| anyhow::anyhow!("no se encuentra la carpeta de datos del usuario"))?;
+    let show = |m: &pcode_extensions::Manifest, w: &[String]| {
+        println!(
+            "✓ {} {} · {} temas · {} fragmentos · {} lenguajes",
+            m.id,
+            m.version,
+            m.themes.len(),
+            m.snippets.len(),
+            m.languages.len()
+        );
+        for x in w {
+            println!("  ⚠ {x}");
+        }
+    };
+    match c {
+        ExtCmd::Instalar { origen } => {
+            let (m, w) = pcode_extensions::install(&origen, &root)?;
+            show(&m, &w);
+        }
+        ExtCmd::ImportarVscode => {
+            let home = std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default();
+            let mut n = 0;
+            for e in std::fs::read_dir(home.join(".vscode/extensions"))
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                if !e.path().join("package.json").is_file() {
+                    continue;
+                }
+                match pcode_extensions::install(&e.path(), &root) {
+                    Ok((m, w)) => {
+                        show(&m, &w);
+                        n += 1;
+                    }
+                    Err(err) => println!("✗ {}: {err}", e.file_name().to_string_lossy()),
+                }
+            }
+            println!("{n} extensiones importadas en {}", root.display());
+        }
+        ExtCmd::Listar => {
+            for m in pcode_extensions::list(&root) {
+                show(&m, &[]);
+            }
+        }
+        ExtCmd::Quitar { id } => {
+            if !pcode_extensions::uninstall(&root, &id)? {
+                eprintln!("no está instalada: {id}");
+                return Ok(2);
+            }
+            println!("quitada: {id}");
+        }
+    }
+    Ok(0)
+}
+
 /// Termina cuando la entrada estándar llega al final (o falla).
 async fn stdin_closed() {
     use tokio::io::AsyncReadExt;
@@ -301,10 +408,17 @@ fn ide_path() -> Option<std::path::PathBuf> {
 
 /// Lanza el IDE nativo contra `url` (None si no está instalado).
 fn spawn_ide(url: &str) -> Option<std::process::Child> {
-    std::process::Command::new(ide_path()?)
-        .args(["--url", url])
+    let mut child = std::process::Command::new(ide_path()?)
+        .args(["--url", url, "--hasta-eof"])
+        .stdin(std::process::Stdio::piped())
         .spawn()
-        .ok()
+        .ok()?;
+    // El extremo de escritura vive lo que viva este proceso: si muere (incluso con SIGKILL), el
+    // sistema lo cierra y el IDE ve el final de su entrada y termina.
+    if let Some(w) = child.stdin.take() {
+        std::mem::forget(w);
+    }
+    Some(child)
 }
 
 /// Abre el IDE nativo; si no está, el navegador.

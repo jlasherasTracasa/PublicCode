@@ -9,6 +9,7 @@ pub mod lsp_pos;
 pub mod problems;
 pub mod rpc;
 pub mod settings;
+pub mod snippets;
 pub mod state;
 pub mod terminal;
 pub mod texts;

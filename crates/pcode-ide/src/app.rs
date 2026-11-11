@@ -33,6 +33,43 @@ pub enum Msg {
     Note(String),
 }
 
+/// Fuentes del sistema que traen los símbolos que usa la interfaz (▸ ● ⎇ ✗ ⚠ ✎ ↶).
+pub const FALLBACK_FONTS: &[(&str, &str)] = &[
+    ("dejavu", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    (
+        "dejavu-mono",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    ),
+    ("segoe-symbol", "C:\\Windows\\Fonts\\seguisym.ttf"),
+];
+
+/// Añade como respaldo las fuentes de [`FALLBACK_FONTS`] que existan (si no hay ninguna, los
+/// símbolos salen como cuadros pero todo funciona).
+fn install_fallback_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let mut added = false;
+    for (name, path) in FALLBACK_FONTS {
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
+        fonts.font_data.insert(
+            (*name).to_string(),
+            Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(fam)
+                .or_default()
+                .push((*name).to_string());
+        }
+        added = true;
+    }
+    if added {
+        ctx.set_fonts(fonts);
+    }
+}
+
 /// El IDE.
 pub struct Ide {
     client: Arc<Client>,
@@ -101,6 +138,7 @@ impl Ide {
             goto: None,
             pending_cursor: None,
         };
+        install_fallback_fonts(ctx);
         ctx.set_visuals(if ide.dark {
             egui::Visuals::dark()
         } else {

@@ -2,6 +2,27 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versionado semántico.
 
+## [1.2.0] — 2026-11-11
+
+PublicCode para equipos modestos: un IDE nativo sin navegador, servidores de lenguaje que no se comen la memoria y
+trabajo en otro equipo por SSH. Medido en un portátil de 2 núcleos y 3,6 GB ([docs/ligero.md](docs/ligero.md)).
+
+### Añadido
+- **IDE nativo** (`pcode ide`, binario `pcode-ide`): explorador, pestañas con resaltado y números de línea, Ctrl+P,
+  buscar y reemplazar, ir a línea, búsqueda en el proyecto, git, terminal, problemas del LSP y el agente con streaming,
+  tarjeta de cambios del turno y deshacer. egui sobre OpenGL, sin navegador ni WebView; repinta solo con eventos.
+- **PublicCode en el menú de aplicaciones**, como VS Code (`pcode lanzador instalar`; lo hace `install.sh`).
+- **`pcode remoto <servidor>`**: Studio, TUI (`--tui`) o IDE (`--ide`) contra otro equipo por SSH; `--instalar` copia
+  pcode allí por la misma conexión (sin Internet en el servidor); `--reenviar 11434` trae su Ollama; `--listar` muestra
+  los servidores de `~/.ssh/config`.
+- **`[recursos]`** con perfil `auto | ligero | normal` (ligero con menos de 6 GB o 2 núcleos); `pcode doctor` lo enseña.
+- **LSP ligero**: como mucho `lsp_max` servidores vivos (se para el menos usado), parada por inactividad y, en el perfil
+  ligero, primero `jedi-language-server` o `pylsp` en vez de pyright.
+- Perfil de compilación `ligero` y `tools/compilar-ligero.sh`; `tools/bench/rendimiento.py` mide arranque y memoria.
+
+### Cambiado
+- Los agentes del plan hacen `git push origin HEAD` tras cada tarea aceptada (nunca forzado).
+
 ## [1.1.0] — 2026-11-01
 
 El agente trabaja mejor: localiza antes de leer, pregunta cuando hace falta, recuerda las decisiones del proyecto y

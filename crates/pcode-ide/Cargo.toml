@@ -10,8 +10,14 @@ name = "pcode-ide"
 path = "src/main.rs"
 
 [dependencies]
-# Solo OpenGL (glow) y X11: compila y arranca mucho más ligero que wgpu (ADR-0011).
-eframe = { version = "=0.37.0", default-features = false, features = ["glow", "default_fonts", "x11", "clipboard"] }
+# Solo OpenGL (glow) con EGL y X11: compila y arranca mucho más ligero que wgpu (ADR-0011).
+# Sin GLX a propósito: si el GLX del servidor X se cuelga (pasa con DRI3 roto), eframe no cae a
+# EGL; con solo EGL abre siempre (en el peor caso, con llvmpipe). Por eso no se usa `eframe/x11`
+# sino X11 pieza a pieza.
+eframe = { version = "=0.37.0", default-features = false, features = ["glow", "default_fonts", "clipboard"] }
+egui-winit = { version = "=0.37.0", default-features = false, features = ["x11"] }
+glutin = { version = "=0.32.3", default-features = false, features = ["x11", "egl"] }
+glutin-winit = { version = "=0.5.0", default-features = false, features = ["x11", "egl"] }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
