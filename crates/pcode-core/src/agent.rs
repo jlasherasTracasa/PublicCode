@@ -2,6 +2,7 @@
 use crate::ask::{ASK_TOOL, AskMode, AskOutcome, AskState, SENT_NOTE};
 use crate::checkpoint::{Checkpoints, FileChange};
 use crate::compress::compress_tool_output;
+use crate::context::CONTEXT_TOOL;
 use crate::memory::REMEMBER_TOOL;
 use crate::stop_hook::{StopHook, run_acceptance};
 use crate::stuck::{StuckDetector, StuckSignal, hint_for};
@@ -134,6 +135,7 @@ pub struct Agent {
     ask: Option<AskState>,
     memory: bool,
     verify_reminder: bool,
+    context: Option<crate::context::ContextLedger>,
 }
 
 /// Instrucción para resumir la conversación al compactar. Recoge los modos de fallo de la compresión
@@ -184,6 +186,7 @@ impl Agent {
             ask: None,
             memory: false,
             verify_reminder: false,
+            context: None,
         }
     }
     /// Ofrece la tool `preguntar` (F4.11) con este modo y el presupuesto por defecto.
@@ -199,6 +202,11 @@ impl Agent {
     /// `recordar` (solo con aprobador: lo que propone el agente lo aprueba el usuario).
     pub fn with_memory(mut self) -> Self {
         self.memory = true;
+        self
+    }
+    /// Etiqueta cada resultado de tool con un id (`[rN]`) y ofrece la tool `contexto` (F4.01).
+    pub fn with_context_tool(mut self) -> Self {
+        self.context = Some(crate::context::ContextLedger::new());
         self
     }
     /// Si el turno cambió archivos y no ejecutó ninguna comprobación, antes de terminar se le pide al
@@ -483,6 +491,9 @@ impl Agent {
                 }
             };
         }
+        if let Some(l) = self.context.as_mut() {
+            l.sync(&messages);
+        }
         loop {
             let limit = self.cfg.budget.max_context_tokens;
             if limit > 0 && self.last_input_tokens > limit {
@@ -507,6 +518,9 @@ impl Agent {
                 && self.policy.tool_visible(REMEMBER_TOOL, &[])
             {
                 specs.push(crate::memory::remember_spec());
+            }
+            if self.context.is_some() && self.policy.tool_visible(CONTEXT_TOOL, &[]) {
+                specs.push(crate::context::context_spec());
             }
             let mut msgs = messages.clone();
             if ro {
@@ -636,6 +650,19 @@ impl Agent {
                     messages.push(Message::tool_result(call.id.clone(), content));
                     continue;
                 }
+                if call.name == CONTEXT_TOOL
+                    && let Some(l) = self.context.as_mut()
+                {
+                    let content = l.handle(&call.arguments, &mut messages);
+                    self.audit(&call, "allow");
+                    self.emit(AgentEvent::ToolResult {
+                        name: call.name.clone(),
+                        is_error: false,
+                        content: content.clone(),
+                    });
+                    messages.push(Message::tool_result(call.id.clone(), content));
+                    continue;
+                }
                 if self
                     .tools
                     .get(&call.name)
@@ -671,7 +698,11 @@ impl Agent {
                     is_error: out.is_error,
                     content: out.content.clone(),
                 });
-                messages.push(Message::tool_result(call.id.clone(), out.content));
+                let content = match self.context.as_mut() {
+                    Some(l) => l.tag(&out.content),
+                    None => out.content,
+                };
+                messages.push(Message::tool_result(call.id.clone(), content));
             }
             if let Some(q) = question {
                 self.emit(AgentEvent::Text(q.clone()));
@@ -791,6 +822,67 @@ mod tests {
             },
         );
         (a, p)
+    }
+
+    #[tokio::test]
+    async fn contexto_etiqueta_y_suelta_con_mock() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("a.txt"), "hola").unwrap();
+        let script = vec![
+            tool("leer", json!({"path": "a.txt"})),
+            tool("contexto", json!({"op": "soltar", "ids": [1]})),
+            text("fin"),
+        ];
+        let (a, p) = agent(&d, script, Capabilities::default(), None);
+        let mut a = a.with_context_tool();
+        let r = a.run("lee").await;
+        assert!(matches!(r.outcome, Outcome::Done { .. }), "{:?}", r.outcome);
+        let resultados: Vec<&str> = r
+            .transcript
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .map(|m| m.content.as_str())
+            .collect();
+        assert!(resultados[0].starts_with("[r1 soltado:"), "{resultados:?}");
+        assert!(
+            resultados[1].starts_with("soltados 1 de 1"),
+            "{resultados:?}"
+        );
+        let tools = &p.requests()[0].tools;
+        assert!(tools.iter().any(|t| t.name == "contexto"));
+    }
+
+    #[tokio::test]
+    async fn contexto_se_anuncia_solo_si_se_activa() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("a.txt"), "hola").unwrap();
+        let script = || vec![tool("leer", json!({"path": "a.txt"})), text("fin")];
+
+        let (a, p) = agent(&d, script(), Capabilities::default(), None);
+        let mut a = a.with_context_tool();
+        let r = a.run("lee").await;
+        assert!(p.requests()[0].tools.iter().any(|t| t.name == "contexto"));
+        let con = r.transcript.iter().find(|m| m.role == Role::Tool).unwrap();
+        assert!(con.content.starts_with("[r1]"), "{}", con.content);
+
+        let (mut a, p) = agent(&d, script(), Capabilities::default(), None);
+        let r = a.run("lee").await;
+        assert!(!p.requests()[0].tools.iter().any(|t| t.name == "contexto"));
+        let sin = r.transcript.iter().find(|m| m.role == Role::Tool).unwrap();
+        assert!(!sin.content.starts_with("[r"), "{}", sin.content);
+    }
+
+    #[tokio::test]
+    async fn contexto_oculta_por_politica() {
+        let d = tempfile::tempdir().unwrap();
+        let caps = Capabilities {
+            hidden_tools: vec!["contexto".into()],
+            ..Default::default()
+        };
+        let (a, p) = agent(&d, vec![text("hecho")], caps, None);
+        let mut a = a.with_context_tool();
+        a.run("nada").await;
+        assert!(!p.requests()[0].tools.iter().any(|t| t.name == "contexto"));
     }
 
     #[tokio::test]
