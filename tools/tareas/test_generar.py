@@ -166,6 +166,13 @@ class Estados(Base):
         self.assertEqual(est, {"F1.01": "hecha", "F1.02": "lista", "F1.03": "bloqueada", "F1.04": "sustituida",
                                "F1.05": "lista"})
 
+    def test_un_informe_de_bloqueo_no_cierra_la_tarea(self):
+        a, b = tarea("F1.01"), tarea("F1.02", depende=["F1.01"])
+        ts = generar.completar([a, b])
+        with open(os.path.join(self.raiz, "informes", generar.fid(a) + ".md"), "w") as f:
+            f.write("# F1.01\nEstado: bloqueada\n## Pendiente\n- falta una dependencia\n")
+        self.assertEqual(generar.estados(ts, self.raiz), {"F1.01": "lista", "F1.02": "bloqueada"})
+
     def test_siguiente_ordena_por_hito_y_por_lo_que_desbloquea(self):
         ts = generar.completar([
             tarea("F1.01", hito="1.3"), tarea("F1.02"), tarea("F1.03"),

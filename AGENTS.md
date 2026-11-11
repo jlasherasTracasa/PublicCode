@@ -259,6 +259,9 @@ puras que se prueban en Linux, y lo específico queda tras `cfg`.
 
 El informe cuenta **hechos**: no afirmes nada que `acepta` o los tests no hayan comprobado.
 
+Si paras sin terminar (dependencia sin hacer, mismo error 3 veces), la **segunda línea** del informe es
+`Estado: bloqueada`. Así la tarea no cuenta como hecha y vuelve a salir cuando se resuelva el bloqueo.
+
 ```bash
 git add <archivos de Toca> informes/<id>.md && git commit -m "<id>: <resumen en una línea>"
 ```

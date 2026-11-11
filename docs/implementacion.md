@@ -43,7 +43,7 @@ exigen a las **abiertas**.
 
 | Estado | Significado | Quién lo fija |
 |---|---|---|
-| `hecha` | existe `informes/<id>-<nombre>.md` | el ejecutor, al escribir el informe |
+| `hecha` | existe `informes/<id>-<nombre>.md` y no dice `Estado: bloqueada` | el ejecutor, al escribir el informe |
 | `lista` | pendiente y con todas sus dependencias cerradas: **se puede empezar** | se calcula |
 | `bloqueada` | pendiente y con alguna dependencia abierta | se calcula |
 | `sustituida` | otra tarea ya cubre lo mismo (`por`, `motivo`) | el coordinador, en el plan |

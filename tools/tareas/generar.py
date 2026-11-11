@@ -18,7 +18,7 @@ Ids: F<fase>.<NN> para una tarea y F<fase>.<NN><letra> para una subtarea (F8.14a
 depende sola de sus subtareas y queda como tarea de cierre.
 
 Estados (calculados):
-  hecha       existe informes/<id>-<nombre>.md
+  hecha       existe informes/<id>-<nombre>.md (y no declara `Estado: bloqueada`)
   sustituida  otra tarea cubre lo mismo (campos `por` y `motivo`); cuenta como cerrada
   descartada  ya no se hará (`motivo`); cuenta como cerrada
   esbozo      falta desgranarla: ningún agente debe empezarla
@@ -106,12 +106,20 @@ def completar(tareas):
     return tareas
 
 
+def informe_cierra(ruta):
+    """Un informe cierra la tarea salvo que declare `Estado: bloqueada` (el agente paró sin terminarla)."""
+    if not os.path.exists(ruta):
+        return False
+    with open(ruta, encoding="utf-8") as f:
+        return not re.search(r"(?mi)^\s*estado:\s*bloquead[ao]\b", f.read())
+
+
 def estados(tareas, raiz=RAIZ):
     """Estado calculado de cada tarea: {id: estado}."""
     ids = {t["id"]: t for t in tareas}
     est = {}
     for t in tareas:
-        if os.path.exists(os.path.join(raiz, "informes", f"{fid(t)}.md")):
+        if informe_cierra(os.path.join(raiz, "informes", f"{fid(t)}.md")):
             est[t["id"]] = "hecha"
         elif t.get("estado") in ESTADOS_EXPLICITOS:
             est[t["id"]] = t["estado"]
