@@ -3,6 +3,7 @@ pub mod bash;
 pub mod bm25;
 pub mod catalog;
 pub mod edit;
+pub mod lsp_tools;
 pub mod mcp;
 pub mod outline;
 pub mod read;

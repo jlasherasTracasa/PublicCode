@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 pcode-models = { path = "../pcode-models" }
+pcode-lsp = { path = "../pcode-lsp" }
 serde.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true
