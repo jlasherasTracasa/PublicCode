@@ -95,8 +95,23 @@ pub const LIGHT: Palette = Palette {
     code_bg: hex(0xf3f3f3),
 };
 
+/// Paleta de un tema de extensión, si hay una elegida (sustituye a la clara y a la oscura).
+static CUSTOM: std::sync::RwLock<Option<&'static Palette>> = std::sync::RwLock::new(None);
+
+/// Pone (o quita con `None`) una paleta de tema de extensión, que sustituye a la clara y a la oscura.
+pub fn set_custom(p: Option<Palette>) {
+    // Cada cambio de tema filtra una paleta de pocos bytes a propósito: así no hace falta `unsafe`.
+    let nueva = p.map(|p| &*Box::leak(Box::new(p)));
+    if let Ok(mut g) = CUSTOM.write() {
+        *g = nueva;
+    }
+}
+
 /// Paleta del tema.
 pub fn palette(dark: bool) -> &'static Palette {
+    if let Some(p) = CUSTOM.read().ok().and_then(|g| *g) {
+        return p;
+    }
     if dark { &DARK } else { &LIGHT }
 }
 
@@ -202,6 +217,16 @@ pub fn git_decoration(index: &str, worktree: &str, p: &Palette) -> Option<(&'sta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tema_personalizado_sustituye_y_se_quita() {
+        let mut p = DARK;
+        p.editor = Color32::from_rgb(1, 2, 3);
+        set_custom(Some(p));
+        assert_eq!(palette(true).editor, p.editor);
+        set_custom(None);
+        assert_eq!(palette(true).editor, DARK.editor);
+    }
 
     #[test]
     fn iconos_por_tipo() {

@@ -219,6 +219,10 @@ pub struct Texts {
     pub no_file: &'static str,
     /// «Ctrl+P abrir · Ctrl+Mayús+P comandos · Ctrl+B barra · Ctrl+J panel · Ctrl+I agente».
     pub shortcuts: &'static str,
+    /// Título de la lista de temas de extensiones en Ajustes.
+    pub ext_themes: &'static str,
+    /// Primera opción de la lista de temas: el tema del propio IDE.
+    pub default_theme: &'static str,
 }
 
 /// Español.
@@ -331,6 +335,8 @@ pub const ES: Texts = Texts {
     connect_failed: "No se pudo conectar",
     no_file: "Abre un archivo del explorador o con Ctrl+P",
     shortcuts: "Ctrl+P abrir · Ctrl+Mayús+P comandos · Ctrl+B barra · Ctrl+J panel · Ctrl+I agente",
+    ext_themes: "Temas de extensiones",
+    default_theme: "Tema del IDE",
 };
 
 /// Inglés.
@@ -443,6 +449,8 @@ pub const EN: Texts = Texts {
     connect_failed: "Could not connect",
     no_file: "Open a file from the explorer or with Ctrl+P",
     shortcuts: "Ctrl+P open · Ctrl+Shift+P commands · Ctrl+B side bar · Ctrl+J panel · Ctrl+I agent",
+    ext_themes: "Extension themes",
+    default_theme: "IDE theme",
 };
 
 /// Textos para un valor de `LANG` (`es_ES.UTF-8` → español; lo demás que empiece por `en`, inglés).

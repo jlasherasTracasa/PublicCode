@@ -18,6 +18,9 @@ pub struct IdeSettings {
     /// Ancho del explorador.
     #[serde(rename = "ancho_explorador")]
     pub explorer_width: f32,
+    /// Tema de una extensión: `<id>/<ruta>`; vacío = el del IDE.
+    #[serde(rename = "tema_extension")]
+    pub ext_theme: String,
 }
 
 impl Default for IdeSettings {
@@ -27,6 +30,7 @@ impl Default for IdeSettings {
             font_size: 14.0,
             show_agent: true,
             explorer_width: 240.0,
+            ext_theme: String::new(),
         }
     }
 }
@@ -106,7 +110,18 @@ mod tests {
             font_size: 18.0,
             show_agent: false,
             explorer_width: 300.0,
+            ext_theme: String::new(),
         };
         assert_eq!(IdeSettings::parse(&s.to_toml()), s);
+    }
+
+    #[test]
+    fn tema_de_extension_se_guarda_y_se_lee() {
+        let s = IdeSettings {
+            ext_theme: "ana.temas/themes/noche.json".to_string(),
+            ..IdeSettings::default()
+        };
+        assert_eq!(IdeSettings::parse(&s.to_toml()), s);
+        assert_eq!(IdeSettings::parse("oscuro = true").ext_theme, "");
     }
 }

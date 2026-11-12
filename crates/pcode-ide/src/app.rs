@@ -394,7 +394,7 @@ impl Ide {
         let settings = IdeSettings::load();
         install_fonts(ctx);
         theme::apply(ctx, settings.dark, settings.font_size);
-        let ide = Ide {
+        let mut ide = Ide {
             client: client.clone(),
             tx: tx.clone(),
             rx,
@@ -446,6 +446,7 @@ impl Ide {
             debug: crate::debug::DebugState::default(),
             last_sync: None,
         };
+        ide.apply_ext_theme(ctx);
         ide.list_dir("");
         ide.spawn(|c| {
             let repo = c
@@ -853,6 +854,26 @@ impl Ide {
     fn set_theme(&mut self, ctx: &egui::Context) {
         theme::apply(ctx, self.settings.dark, self.settings.font_size);
         self.settings.save();
+    }
+
+    /// Aplica el tema de extensión guardado en los ajustes (o lo quita).
+    fn apply_ext_theme(&mut self, ctx: &egui::Context) {
+        let clave = self.settings.ext_theme.clone();
+        // Una clave con `..` o absoluta podría salir de la carpeta de extensiones: se ignora.
+        let custom = if clave.is_empty() || clave.contains("..") || clave.starts_with('/') {
+            None
+        } else {
+            let base = if self.settings.dark {
+                &theme::DARK
+            } else {
+                &theme::LIGHT
+            };
+            pcode_extensions::default_root()
+                .and_then(|root| std::fs::read_to_string(root.join(&clave)).ok())
+                .and_then(|json| crate::theme_ext::palette_from_theme(&json, base))
+        };
+        theme::set_custom(custom);
+        theme::apply(ctx, self.settings.dark, self.settings.font_size);
     }
 
     fn run(&mut self, cmd: Command, ctx: &egui::Context) {
@@ -1702,6 +1723,43 @@ impl Ide {
                         self.run(Command::ToggleTheme, &ctx);
                     }
                 });
+                ui.add_space(10.0);
+                ui.label(RichText::new(t.ext_themes).strong());
+                // La carpeta de extensiones se lee una sola vez por fotograma.
+                let temas: Vec<(String, String, String)> = pcode_extensions::default_root()
+                    .map(|root| {
+                        pcode_extensions::list(&root)
+                            .into_iter()
+                            .flat_map(|m| {
+                                let id = m.id.clone();
+                                m.themes.into_iter().map(move |tema| {
+                                    let clave =
+                                        format!("{}/{}", id, tema.path.trim_start_matches("./"));
+                                    (clave, tema.label, tema.ui_theme)
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if ui
+                    .selectable_label(self.settings.ext_theme.is_empty(), t.default_theme)
+                    .clicked()
+                {
+                    self.settings.ext_theme.clear();
+                    self.apply_ext_theme(&ctx);
+                    self.settings.save();
+                }
+                for (clave, label, ui_theme) in &temas {
+                    if ui
+                        .selectable_label(*clave == self.settings.ext_theme, label.as_str())
+                        .clicked()
+                    {
+                        self.settings.ext_theme = clave.clone();
+                        self.settings.dark = crate::theme_ext::is_dark(ui_theme);
+                        self.apply_ext_theme(&ctx);
+                        self.settings.save();
+                    }
+                }
                 ui.add_space(10.0);
                 ui.label(RichText::new(t.font_size).strong());
                 let mut size = self.settings.font_size;
