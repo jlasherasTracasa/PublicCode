@@ -3,6 +3,7 @@ mod ask;
 mod backend_run;
 mod chat;
 mod doctor;
+mod ext_remote;
 mod flow_cmd;
 mod launcher;
 mod provider;
@@ -245,7 +246,20 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Cmd::Lanzador(c)) => std::process::exit(launcher::launcher_cmd(c)?),
-        Some(Cmd::Extensiones(c)) => std::process::exit(ext_cmd(c)?),
+        Some(Cmd::Extensiones(c)) => {
+            let c = match c {
+                ExtCmd::Instalar { origen } => ExtCmd::Instalar {
+                    origen: ext_remote::resolve_source(
+                        &origen,
+                        &ext_remote::base_url(),
+                        &std::env::temp_dir(),
+                    )
+                    .await?,
+                },
+                otro => otro,
+            };
+            std::process::exit(ext_cmd(c)?)
+        }
         Some(Cmd::Remoto(a)) => std::process::exit(remote::remote(a).await?),
         Some(Cmd::Mcp { config }) => std::process::exit(doctor::mcp_cmd(&config).await?),
         Some(Cmd::Doctor { config }) => std::process::exit(doctor::doctor(&config)),
@@ -310,7 +324,7 @@ fn apply_lsp_config(st: &pcode_server::AppState) {
 enum ExtCmd {
     /// Instala desde un `.vsix` o una carpeta de extensión (p. ej. de `~/.vscode/extensions`).
     Instalar {
-        /// Archivo `.vsix` o carpeta.
+        /// Archivo `.vsix`, carpeta o `editor.nombre` (se descarga de Open VSX).
         origen: std::path::PathBuf,
     },
     /// Importa lo declarativo de todas las extensiones de VS Code instaladas.
