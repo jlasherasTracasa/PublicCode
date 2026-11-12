@@ -12,7 +12,7 @@ Categories=Development;IDE;TextEditor;Utility;
 MimeType=inode/directory;text/plain;
 Keywords=code;editor;ide;agent;ai;pcode;
 StartupWMClass=pcode-ide
-Actions=studio;tui;
+Actions=studio;tui;opencode;
 
 [Desktop Action studio]
 Name=Abrir en el navegador (Studio)
@@ -21,3 +21,7 @@ Exec=pcode studio
 [Desktop Action tui]
 Name=Terminal (TUI)
 Exec=x-terminal-emulator -e pcode
+
+[Desktop Action opencode]
+Name=Modo terminal (como opencode)
+Exec=x-terminal-emulator -e pcode tui --tema opencode

@@ -121,6 +121,16 @@ mod tests {
     }
 
     #[test]
+    fn accion_modo_opencode_con_ruta_absoluta() {
+        let e = desktop_entry("/home/ana/.local/bin/pcode");
+        assert!(e.contains("Actions=studio;tui;opencode;"));
+        assert!(e.contains("[Desktop Action opencode]"));
+        assert!(e.contains(
+            "Exec=x-terminal-emulator -e /home/ana/.local/bin/pcode tui --tema opencode\n"
+        ));
+    }
+
+    #[test]
     fn instala_y_quita_en_xdg_data_home() {
         let d = tempfile::tempdir().unwrap();
         let data = data_dir(Some(d.path().to_str().unwrap()), "/no/usado");
