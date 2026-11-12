@@ -28,6 +28,8 @@ pub struct TuiOptions {
     pub notices: Vec<String>,
     /// Raíz del proyecto (para `@archivo` y `!orden`).
     pub root: std::path::PathBuf,
+    /// Conversaciones guardadas del proyecto.
+    pub sessions: Vec<crate::tree::SessionItem>,
 }
 
 /// Archivos del proyecto: con git, los versionados y los nuevos no ignorados; si no, un recorrido
@@ -271,6 +273,7 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
 
     let mut app = App::new(opts.lang, opts.theme, opts.model);
     app.context_limit = context_limit;
+    app.sessions = opts.sessions;
     for n in opts.notices {
         app.entries.push(crate::Entry::Info(format!("· {n}")));
     }

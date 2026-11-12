@@ -169,6 +169,8 @@ pub struct App {
     pub changes: Vec<pcode_core::FileChange>,
     /// La barra lateral está pedida.
     pub show_side: bool,
+    /// Conversaciones guardadas del proyecto.
+    pub sessions: Vec<crate::tree::SessionItem>,
 }
 
 /// Tokens en corto: `950`, `3.1k`, `1.2M`.
@@ -278,6 +280,7 @@ impl App {
             title: String::new(),
             changes: vec![],
             show_side: false,
+            sessions: vec![],
         }
     }
 

@@ -2,6 +2,7 @@
 //! Todo sale de [`App`]; no hay E/S aquí. Dibujarla en pantalla es cosa de `render`.
 use crate::app::{App, human_tokens};
 use crate::i18n::t;
+use crate::tree::{subagents_of, tree_rows};
 use pcode_core::FileChange;
 use ratatui::text::Line;
 
@@ -71,15 +72,34 @@ pub fn side_lines(app: &App, width: u16) -> Vec<Line<'static>> {
         format!(" {}", t(lang, "side_session")),
         th.strong(),
     ));
-    let title = if app.title.is_empty() {
-        t(lang, "untitled").to_string()
+    if app.sessions.is_empty() {
+        let title = if app.title.is_empty() {
+            t(lang, "untitled").to_string()
+        } else {
+            app.title.clone()
+        };
+        out.push(Line::styled(
+            format!(" {}", clip(&title, w.saturating_sub(1))),
+            th.text(),
+        ));
     } else {
-        app.title.clone()
-    };
-    out.push(Line::styled(
-        format!(" {}", clip(&title, w.saturating_sub(1))),
-        th.text(),
-    ));
+        let rows = tree_rows(&app.sessions, &subagents_of(&app.entries), width);
+        let shown = rows.len().min(8);
+        for row in rows.iter().take(shown) {
+            let style = if row.starts_with(" ●") {
+                th.strong()
+            } else {
+                th.text()
+            };
+            out.push(Line::styled(row.clone(), style));
+        }
+        if rows.len() > shown {
+            out.push(Line::styled(
+                format!(" \u{2026} +{}", rows.len() - shown),
+                th.dimmed(),
+            ));
+        }
+    }
     out.push(Line::raw(""));
 
     out.push(Line::styled(
@@ -230,6 +250,50 @@ mod tests {
         assert_eq!(lines.len(), 19);
         assert_eq!(lines[18], " … +2");
         assert_eq!(lines.iter().filter(|l| l.starts_with(" M f")).count(), 10);
+    }
+
+    fn session(id: i64, title: &str, messages: usize, current: bool) -> crate::tree::SessionItem {
+        crate::tree::SessionItem {
+            id,
+            title: title.to_string(),
+            messages,
+            current,
+        }
+    }
+
+    #[test]
+    fn arbol_en_la_barra_lateral() {
+        let mut a = app();
+        a.sessions = vec![
+            session(2, "arregla el test", 6, true),
+            session(1, "añade login", 12, false),
+        ];
+        let lines = texts(&side_lines(&a, 29));
+        assert_eq!(lines[0], " Sesión");
+        assert_eq!(lines[1], " ● arregla el test (6)");
+        assert_eq!(lines[2], " ○ añade login (12)");
+        assert_eq!(lines[3], "");
+        assert_eq!(lines[4], " Contexto");
+    }
+
+    #[test]
+    fn arbol_sin_sesiones_muestra_el_titulo() {
+        let lines = texts(&side_lines(&app(), 29));
+        assert_eq!(lines[1], " (sin título)");
+    }
+
+    #[test]
+    fn arbol_con_mas_de_ocho_sesiones_resume() {
+        let mut a = app();
+        a.sessions = (0..11)
+            .map(|i| session(i, &format!("sesion {i}"), 1, false))
+            .collect();
+        let lines = texts(&side_lines(&a, 29));
+        // Línea 0: título; líneas 1..=8: ocho filas; línea 9: el resumen.
+        assert_eq!(lines[9], " \u{2026} +3");
+        assert!(lines[1].starts_with(" ○ sesion 0"));
+        assert!(lines[8].starts_with(" ○ sesion 7"));
+        assert!(!lines.iter().any(|l| l.contains("sesion 8")));
     }
 
     #[test]

@@ -365,9 +365,32 @@ fn interactive_policy(project: &std::path::Path) -> Policy {
     p.child(crate::run::load_capabilities(project))
 }
 
+/// Conversaciones guardadas del proyecto para la barra lateral (las 20 últimas). Si la consulta
+/// falla, lista vacía; si no se pueden leer los mensajes de una, cuenta cero.
+fn saved_sessions(store: &Store, current: Option<i64>) -> Vec<pcode_tui::tree::SessionItem> {
+    store
+        .sessions(20)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| {
+            let messages = store
+                .events(row.id)
+                .map(|evs| evs.iter().filter(|e| e.kind == "mensaje").count())
+                .unwrap_or(0);
+            pcode_tui::tree::SessionItem {
+                id: row.id,
+                title: row.task,
+                messages,
+                current: current == Some(row.id),
+            }
+        })
+        .collect()
+}
+
 /// `pcode tui`: la interfaz a pantalla completa.
 pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
     let p = prepare(&a).await?;
+    let sessions = saved_sessions(&p.persist.store, p.resumed.map(|r| r.0));
     let mut persist = p.persist;
     let on_turn: pcode_tui::OnTurn = Box::new(move |turn| match turn {
         Some((user, transcript)) => persist.save(user, transcript),
@@ -397,6 +420,7 @@ pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
                 .unwrap_or_else(pcode_tui::Theme::from_env),
             notices: p.notices,
             root: std::env::current_dir()?,
+            sessions,
         },
         on_turn,
     )
