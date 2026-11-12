@@ -16,3 +16,4 @@ pub mod state;
 pub mod terminal;
 pub mod texts;
 pub mod theme;
+pub mod theme_ext;
