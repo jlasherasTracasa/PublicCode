@@ -138,18 +138,18 @@ tools/tareas/generar.py --comprobar
 | F5 Interfaces | 11 | 11 | 1 | 10 | 35 | 1 | 69 |
 | F6 Aprendizaje | 0 | 0 | 0 | 3 | 13 | 0 | 16 |
 | F7 Endurecimiento | 2 | 0 | 0 | 1 | 3 | 0 | 6 |
-| F8 1.x: editor, agente y plataforma | 17 | 0 | 0 | 37 | 164 | 0 | 218 |
-| F9 Equipos modestos, remoto e IDE nativo | 39 | 0 | 0 | 15 | 22 | 6 | 82 |
+| F8 1.x: editor, agente y plataforma | 18 | 0 | 0 | 36 | 164 | 0 | 218 |
+| F9 Equipos modestos, remoto e IDE nativo | 45 | 0 | 0 | 11 | 20 | 6 | 82 |
 | F10 Agente al nivel de los mejores | 0 | 0 | 0 | 6 | 23 | 0 | 29 |
 | F11 Planificación y flujos para modelos pequeños | 0 | 0 | 0 | 1 | 34 | 0 | 35 |
 | F12 Seguridad, gobierno y operación | 0 | 0 | 0 | 6 | 18 | 0 | 24 |
-| **Total** | 135 | 11 | 1 | 95 | 373 | 7 | 622 |
+| **Total** | 142 | 11 | 1 | 90 | 371 | 7 | 622 |
 
 ### Por hito (solo tareas abiertas)
 
 | Hito | Qué entrega | Listas | Bloqueadas | Esbozos | Para haiku | Para coordinador |
 |---|---|---|---|---|---|---|
-| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 6 | 2 | 2 | 9 | 1 |
+| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 1 | 0 | 2 | 2 | 1 |
 | **1.3** | Agente al nivel de los mejores: hooks, pendientes, segundo plano, permisos, órdenes y agentes propios, TUI | 19 | 63 | 0 | 82 | 0 |
 | **1.4** | Planificación y flujos medidos: banco, lint y desglose de tareas, revisión cruzada, GitHub | 7 | 64 | 0 | 68 | 3 |
 | **1.5** | Seguridad: Landlock, seccomp, red filtrada, secretos y política gestionada | 12 | 40 | 0 | 52 | 0 |
@@ -164,12 +164,7 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 
 | Tarea | Qué | Ejecutor | Talla | Hito | Desbloquea |
 |---|---|---|---|---|---|
-| [F9.40b-ide-tema-de-extension-ajustes](../tareas/F9.40b-ide-tema-de-extension-ajustes.md) | IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo | haiku | M | 1.2 | 1 |
-| [F9.45-instalar-desde-codigo](../tareas/F9.45-instalar-desde-codigo.md) | `install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo | haiku | S | 1.2 | 1 |
-| [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | 1 |
-| [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | S | 1.2 | 0 |
 | [F9.25-releases-periodicas](../tareas/F9.25-releases-periodicas.md) | Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas | coordinador | S | 1.2 | 0 |
-| [F9.48-plan-hook-precommit](../tareas/F9.48-plan-hook-precommit.md) | Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa) | haiku | S | 1.2 | 0 |
 | [F5.10a-tui-arbol-sesiones](../tareas/F5.10a-tui-arbol-sesiones.md) | TUI: árbol de sesiones y subagentes para la barra lateral (lógica pura) | haiku | S | 1.3 | 37 |
 | [F5.11a-tui-atajos-mapa](../tareas/F5.11a-tui-atajos-mapa.md) | TUI: mapa de atajos y `keybindings.toml` (lógica pura) | haiku | M | 1.3 | 35 |
 | [F8.24a-tui-selector-nucleo](../tareas/F8.24a-tui-selector-nucleo.md) | TUI: lista seleccionable con búsqueda difusa (lógica pura) | haiku | S | 1.3 | 32 |
@@ -189,8 +184,13 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 | [F4.12c-guion-cableado](../tareas/F4.12c-guion-cableado.md) | Bucle del agente: ofrecer e interceptar la tool `guion` | haiku | M | 1.3 | 1 |
 | [F8.09c-lsp-tools-chat](../tareas/F8.09c-lsp-tools-chat.md) | Registrar las tools del LSP en el agente del chat y de la TUI | haiku | S | 1.3 | 1 |
 | [F4.10-busqueda-tools](../tareas/F4.10-busqueda-tools.md) | Búsqueda y deduplicación de tools: anunciar solo las relevantes | haiku | S | 1.3 | 0 |
+| [F11.01a-tarea-secciones](../tareas/F11.01a-tarea-secciones.md) | Flujos: leer las secciones de una tarea (`Brief`) desde su Markdown | haiku | M | 1.4 | 64 |
+| [F5.04a-api-flujo-protocolo](../tareas/F5.04a-api-flujo-protocolo.md) | Protocolo: métodos `flow.run` y `flow.stop` y tipo `FlowStatusResult` | haiku | S | 1.4 | 6 |
+| [F5.17a-skills-api-nucleo](../tareas/F5.17a-skills-api-nucleo.md) | Demonio: listar skills (activas, en cuarentena, retiradas) y exportarlas | haiku | M | 1.4 | 4 |
+| [F5.17b-banco-api-nucleo](../tareas/F5.17b-banco-api-nucleo.md) | Demonio: resumen de los resultados del banco por backend | haiku | S | 1.4 | 4 |
+| [F0.04a-bench-conjunto-validador](../tareas/F0.04a-bench-conjunto-validador.md) | Banco: formato de `bench/*.jsonl` y validador `tools/bench/conjunto.py` | haiku | S | 1.4 | 3 |
 
-…y 70 más.
+…y 65 más.
 <!-- resumen:fin -->
 
 ## Tabla de tareas
@@ -622,7 +622,7 @@ El estado se calcula solo (ver «Estados»).
 | [F8.33a-pr-textos](../tareas/F8.33a-pr-textos.md) | PR: prompts y lectura de la descripción y de los comentarios de revisión (lógica pura) | haiku | M | 1.8 | F5.26 | bloqueada |
 | [F8.33b-pr-crear-cli](../tareas/F8.33b-pr-crear-cli.md) | CLI: `pcode pr crear` genera título y descripción del PR (y lo publica solo con `--publicar --si`) | haiku | M | 1.8 | F8.33a | bloqueada |
 | [F8.33c-pr-revisar-cli](../tareas/F8.33c-pr-revisar-cli.md) | CLI: `pcode pr revisar <n>` deja los comentarios en borrador y solo los publica con `--publicar --si` | haiku | M | 1.8 | F8.33b | bloqueada |
-| [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | S | 1.2 | F0.07 | lista |
+| [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | S | 1.2 | F0.07 | hecha |
 | [F8.35-accesibilidad](../tareas/F8.35-accesibilidad.md) | Accesibilidad de Studio: lector de pantalla, contraste AA y solo teclado | haiku | S | 1.6 | F8.01, F8.35a, F8.35b, F8.35c, F8.35d | bloqueada |
 | [F8.35a-contraste-aa](../tareas/F8.35a-contraste-aa.md) | Accesibilidad: contraste AA de los tres temas comprobado con un test (`contraste.js`) | haiku | M | 1.6 | F8.01 | bloqueada |
 | [F8.35b-foco-nucleo](../tareas/F8.35b-foco-nucleo.md) | Accesibilidad: zonas de F6 y movimiento con flechas en árbol y pestañas (módulo puro `foco.js`) | haiku | S | 1.6 | F8.01 | bloqueada |
@@ -764,9 +764,9 @@ El estado se calcula solo (ver «Estados»).
 | [F9.39-ide-atajos-configurables](../tareas/F9.39-ide-atajos-configurables.md) | IDE: atajos de teclado configurables en `keybindings.toml` (cierre) | haiku | S | 1.6 | F9.15, F9.39a, F9.39b | bloqueada |
 | [F9.39a-ide-atajos-nucleo](../tareas/F9.39a-ide-atajos-nucleo.md) | IDE: leer atajos («Ctrl+Mayús+P») y el archivo `keybindings.toml` (lógica pura) | haiku | M | 1.6 | F9.15 | lista |
 | [F9.39b-ide-atajos-cableado](../tareas/F9.39b-ide-atajos-cableado.md) | IDE: usar los atajos de `keybindings.toml` en el teclado y enseñarlos en menús y paleta | haiku | M | 1.6 | F9.39a | bloqueada |
-| [F9.40-ide-temas-de-extension](../tareas/F9.40-ide-temas-de-extension.md) | IDE: usar los temas de color de las extensiones instaladas (cierre) | haiku | S | 1.2 | F9.20, F9.40a, F9.40b | bloqueada |
+| [F9.40-ide-temas-de-extension](../tareas/F9.40-ide-temas-de-extension.md) | IDE: usar los temas de color de las extensiones instaladas (cierre) | haiku | S | 1.2 | F9.20, F9.40a, F9.40b | hecha |
 | [F9.40a-ide-tema-de-extension-nucleo](../tareas/F9.40a-ide-tema-de-extension-nucleo.md) | IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura) | haiku | S | 1.2 | F9.20 | hecha |
-| [F9.40b-ide-tema-de-extension-ajustes](../tareas/F9.40b-ide-tema-de-extension-ajustes.md) | IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo | haiku | M | 1.2 | F9.40a | lista |
+| [F9.40b-ide-tema-de-extension-ajustes](../tareas/F9.40b-ide-tema-de-extension-ajustes.md) | IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo | haiku | M | 1.2 | F9.40a | hecha |
 | [F9.41-ide-explorador-de-tests](../tareas/F9.41-ide-explorador-de-tests.md) | IDE: explorador de tests (descubrir, ejecutar y marcar ✓ ✗) sobre los métodos `tests.*` del demonio (cierre) | haiku | S | 1.6 | F8.14, F9.12, F9.41a, F9.41b, F9.41c | bloqueada |
 | [F9.41a-ide-tests-estado](../tareas/F9.41a-ide-tests-estado.md) | IDE: estado del explorador de tests y captura de la salida de la terminal (lógica pura) | haiku | M | 1.6 | F9.12 | lista |
 | [F9.41b-ide-tests-peticiones](../tareas/F9.41b-ide-tests-peticiones.md) | IDE: pedir ejecutores, lanzar las órdenes de tests con `terminal.run` y mandar su salida a `tests.parse` | haiku | M | 1.6 | F9.41a, F8.14 | bloqueada |
@@ -774,10 +774,10 @@ El estado se calcula solo (ver «Estados»).
 | [F9.42-ide-plegado](../tareas/F9.42-ide-plegado.md) | IDE: plegar y desplegar bloques de código | haiku | — | despues | F9.05 | esbozo |
 | [F9.43-ide-multicursor](../tareas/F9.43-ide-multicursor.md) | IDE: multicursor básico (Ctrl+D añade la siguiente coincidencia; Alt+clic añade un cursor) | haiku | — | despues | F9.42 | esbozo |
 | [F9.44-extensiones-wasm](../tareas/F9.44-extensiones-wasm.md) | Extensiones: tools en módulos WASM sin red ni disco salvo lo declarado | coordinador | — | despues | F8.32 | esbozo |
-| [F9.45-instalar-desde-codigo](../tareas/F9.45-instalar-desde-codigo.md) | `install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo | haiku | S | 1.2 | F9.18 | lista |
-| [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | — | lista |
-| [F9.47-actualizar-local](../tareas/F9.47-actualizar-local.md) | `tools/actualizar-local.sh`: pull, compilar ligero, instalar y comprobar en una orden | haiku | S | 1.2 | F9.45, F9.46 | bloqueada |
-| [F9.48-plan-hook-precommit](../tareas/F9.48-plan-hook-precommit.md) | Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa) | haiku | S | 1.2 | — | lista |
+| [F9.45-instalar-desde-codigo](../tareas/F9.45-instalar-desde-codigo.md) | `install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo | haiku | S | 1.2 | F9.18 | hecha |
+| [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | — | hecha |
+| [F9.47-actualizar-local](../tareas/F9.47-actualizar-local.md) | `tools/actualizar-local.sh`: pull, compilar ligero, instalar y comprobar en una orden | haiku | S | 1.2 | F9.45, F9.46 | hecha |
+| [F9.48-plan-hook-precommit](../tareas/F9.48-plan-hook-precommit.md) | Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa) | haiku | S | 1.2 | — | hecha |
 | [F9.49-ide-abrir-carpeta](../tareas/F9.49-ide-abrir-carpeta.md) | IDE: «Abrir carpeta…» (Ctrl+O) y «Abrir reciente» sin salir a la terminal | haiku | S | 1.2 | F9.24, F9.49a, F9.49b | esbozo |
 | [F9.49a-ide-abrir-carpeta-nucleo](../tareas/F9.49a-ide-abrir-carpeta-nucleo.md) | IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura) | haiku | S | 1.2 | F9.24 | hecha |
 | [F9.49b-ide-abrir-carpeta-ventana](../tareas/F9.49b-ide-abrir-carpeta-ventana.md) | IDE: menú Archivo con «Abrir carpeta…» (Ctrl+O) y «Abrir reciente», y la ventana del selector | haiku | M | 1.2 | F9.49a | esbozo |
