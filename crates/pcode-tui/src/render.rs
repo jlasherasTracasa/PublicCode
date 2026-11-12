@@ -280,6 +280,8 @@ pub fn render(app: &App, f: &mut Frame) {
         let w = body.width.saturating_sub(2).clamp(10, 70);
         if h >= 3 {
             let r = Rect::new(input_area.x + 1, input_area.y - h, w, h);
+            let orden = app.suggestions[0].starts_with('/');
+            let inner = r.width.saturating_sub(2) as usize;
             let items: Vec<Line> = app
                 .suggestions
                 .iter()
@@ -291,15 +293,24 @@ pub fn render(app: &App, f: &mut Frame) {
                         th.text()
                     };
                     let sym = if i == app.suggestion { "› " } else { "  " };
+                    if orden {
+                        let ayuda = crate::commands::find(f.trim_start_matches('/'))
+                            .map(|spec| crate::commands::help(spec, app.lang))
+                            .unwrap_or("");
+                        let fila = format!("{sym}{f}  {ayuda}");
+                        let fila: String = fila.chars().take(inner).collect();
+                        return Line::from(Span::styled(fila, st));
+                    }
                     Line::from(Span::styled(format!("{sym}{f}"), st))
                 })
                 .collect();
+            let titulo = if orden { " / " } else { " @ " };
             f.render_widget(Clear, r);
             f.render_widget(
                 Paragraph::new(items).block(
                     Block::bordered()
                         .border_type(BorderType::Rounded)
-                        .title(Span::styled(" @ ", th.strong()))
+                        .title(Span::styled(titulo, th.strong()))
                         .border_style(th.strong()),
                 ),
                 r,
@@ -600,6 +611,17 @@ mod tests {
         let all = s.join("\n");
         assert!(all.contains("› src/main.rs"), "{all}");
         assert!(all.contains("╭ @ "));
+    }
+
+    #[test]
+    fn paleta_render_80x24_muestra_ayuda() {
+        let mut a = App::new(Lang::Es, Theme::by_name("azul", false).unwrap(), "m");
+        a.input = "/desh".into();
+        a.suggestions = vec!["/deshacer".into()];
+        let s = screen(&a, 80, 24);
+        let all = s.join("\n");
+        assert!(s.iter().any(|fila| fila.contains("› /deshacer")), "{all}");
+        assert!(all.contains("╭ / "), "{all}");
     }
 
     #[test]

@@ -281,6 +281,16 @@ impl App {
 
     fn refresh_suggestions(&mut self) {
         self.suggestion = 0;
+        if let Some(prefix) = self.input.strip_prefix('/')
+            && !self.input.chars().any(char::is_whitespace)
+        {
+            self.suggestions = crate::commands::matching(prefix, self.lang)
+                .into_iter()
+                .take(8)
+                .map(|spec| format!("/{}", crate::commands::display_name(spec, self.lang)))
+                .collect();
+            return;
+        }
         self.suggestions = match self.mention_token() {
             Some(q) if !self.files.is_empty() => best_matches(&self.files, q, 8),
             _ => vec![],
@@ -289,6 +299,11 @@ impl App {
 
     fn complete_mention(&mut self) {
         if let Some(path) = self.suggestions.get(self.suggestion).cloned() {
+            if path.starts_with('/') {
+                self.input = format!("{path} ");
+                self.suggestions.clear();
+                return;
+            }
             let start = self
                 .input
                 .rfind(char::is_whitespace)
@@ -453,7 +468,21 @@ impl App {
                     self.suggestion = (self.suggestion + 1).min(self.suggestions.len() - 1);
                     return vec![];
                 }
-                KeyCode::Tab | KeyCode::Enter => {
+                KeyCode::Tab => {
+                    self.complete_mention();
+                    return vec![];
+                }
+                KeyCode::Enter => {
+                    let orden = self
+                        .suggestions
+                        .get(self.suggestion)
+                        .filter(|s| s.starts_with('/'))
+                        .cloned();
+                    if let Some(orden) = orden {
+                        self.input = orden;
+                        self.suggestions.clear();
+                        return self.submit();
+                    }
                     self.complete_mention();
                     return vec![];
                 }
@@ -913,6 +942,43 @@ mod tests {
         a.update(key(KeyCode::Down));
         a.update(key(KeyCode::Enter));
         assert!(a.input.ends_with("@src/lib.rs "), "{}", a.input);
+    }
+
+    #[test]
+    fn paleta_sugiere_al_escribir_barra() {
+        let mut a = app();
+        typed(&mut a, "/desh");
+        assert_eq!(a.suggestions, vec!["/deshacer"]);
+        a.update(key(KeyCode::Backspace));
+        a.update(key(KeyCode::Backspace));
+        a.update(key(KeyCode::Backspace));
+        a.update(key(KeyCode::Backspace));
+        assert_eq!(a.input, "/");
+        assert_eq!(a.suggestions.len(), 8);
+        assert_eq!(a.suggestions[0], "/ayuda");
+    }
+
+    #[test]
+    fn paleta_tab_completa_con_espacio() {
+        let mut a = app();
+        typed(&mut a, "/mo");
+        a.update(key(KeyCode::Tab));
+        assert_eq!(a.input, "/modelo ");
+        assert!(a.suggestions.is_empty());
+    }
+
+    #[test]
+    fn paleta_intro_ejecuta_la_elegida() {
+        let mut a = app();
+        typed(&mut a, "/sal");
+        assert_eq!(a.update(key(KeyCode::Enter)), vec![Command::Quit]);
+    }
+
+    #[test]
+    fn paleta_no_aparece_con_argumento() {
+        let mut a = app();
+        typed(&mut a, "/modelo x");
+        assert!(a.suggestions.is_empty());
     }
 
     #[test]
