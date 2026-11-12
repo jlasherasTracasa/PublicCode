@@ -11,6 +11,7 @@ pub mod render;
 pub mod run;
 pub mod side;
 pub mod theme;
+pub mod tree;
 
 pub use app::{App, Command, Entry, Event, ToolState};
 pub use i18n::{Lang, t};
