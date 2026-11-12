@@ -14,7 +14,7 @@ fn line(ok: bool, what: &str, detail: &str) {
 pub fn doctor(project_cfg: &Path) -> i32 {
     println!(
         "pcode {} · {} {}\n",
-        env!("CARGO_PKG_VERSION"),
+        env!("PCODE_VERSION_LONG"),
         std::env::consts::OS,
         std::env::consts::ARCH
     );

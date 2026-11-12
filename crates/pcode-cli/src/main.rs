@@ -17,7 +17,7 @@ use clap::{Parser, Subcommand};
 
 /// PublicCode: programación agéntica con varios agentes.
 #[derive(Debug, Parser)]
-#[command(name = "pcode", version, about)]
+#[command(name = "pcode", version = env!("PCODE_VERSION_LONG"), about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Cmd>,
