@@ -502,13 +502,7 @@ impl App {
 
     fn key_main(&mut self, k: KeyEvent, ctrl: bool) -> Vec<Command> {
         match k.code {
-            KeyCode::BackTab => {
-                self.plan = !self.plan;
-                self.entries.push(Entry::Info(
-                    t(self.lang, if self.plan { "plan_on" } else { "plan_off" }).into(),
-                ));
-                vec![Command::SetPlan(self.plan)]
-            }
+            KeyCode::BackTab => self.toggle_plan(),
             KeyCode::Char('c') if ctrl => {
                 if self.busy {
                     vec![Command::Cancel]
@@ -563,8 +557,12 @@ impl App {
                 vec![]
             }
             KeyCode::Tab => {
-                self.input.push_str("    ");
-                vec![]
+                if self.input.is_empty() {
+                    self.toggle_plan()
+                } else {
+                    self.input.push_str("    ");
+                    vec![]
+                }
             }
             KeyCode::Char(c) if !ctrl => {
                 self.input.push(c);
@@ -573,6 +571,15 @@ impl App {
             }
             _ => vec![],
         }
+    }
+
+    /// Alterna el modo plan y deja constancia en la transcripción.
+    fn toggle_plan(&mut self) -> Vec<Command> {
+        self.plan = !self.plan;
+        self.entries.push(Entry::Info(
+            t(self.lang, if self.plan { "plan_on" } else { "plan_off" }).into(),
+        ));
+        vec![Command::SetPlan(self.plan)]
     }
 
     fn browse(&mut self, up: bool) {
@@ -965,6 +972,24 @@ mod tests {
         a.update(key(KeyCode::Tab));
         assert_eq!(a.input, "/modelo ");
         assert!(a.suggestions.is_empty());
+    }
+
+    #[test]
+    fn modo_tab_con_entrada_vacia_alterna_plan() {
+        let mut a = app();
+        assert_eq!(a.update(key(KeyCode::Tab)), vec![Command::SetPlan(true)]);
+        assert!(a.plan);
+        assert_eq!(a.update(key(KeyCode::Tab)), vec![Command::SetPlan(false)]);
+        assert!(!a.plan);
+    }
+
+    #[test]
+    fn modo_tab_con_texto_inserta_espacios() {
+        let mut a = app();
+        typed(&mut a, "a");
+        assert!(a.update(key(KeyCode::Tab)).is_empty());
+        assert_eq!(a.input, "a    ");
+        assert!(!a.plan);
     }
 
     #[test]

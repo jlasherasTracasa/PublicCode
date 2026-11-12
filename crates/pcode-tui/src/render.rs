@@ -254,9 +254,15 @@ pub fn render(app: &App, f: &mut Frame) {
         t(app.lang, "input").to_string()
     };
     let accent = if app.busy { th.warning() } else { th.strong() };
+    let (modo, estilo_modo) = if app.plan {
+        (t(app.lang, "mode_plan"), th.warning())
+    } else {
+        (t(app.lang, "mode_build"), th.dimmed())
+    };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .title(Span::styled(title, accent))
+        .title_bottom(Span::styled(modo, estilo_modo))
         .border_style(accent);
     let visible = (input_h - 2) as usize;
     let skip = input_lines.len().saturating_sub(visible);
@@ -454,6 +460,17 @@ mod tests {
         assert!(s[20].starts_with("╭ Mensaje"), "{}", s[20]);
         assert!(s[22].starts_with("╰"), "{}", s[22]);
         assert!(s[23].starts_with(" ↑0 ↓0 tokens"), "{}", s[23]);
+    }
+
+    #[test]
+    fn modo_tab_se_ve_en_el_borde_80x24() {
+        let a = App::new(Lang::Es, Theme::by_name("oscuro", true).unwrap(), "m");
+        let s = screen(&a, 80, 24);
+        assert!(s[22].starts_with("╰ ▶ Construir"), "{}", s[22]);
+        let mut p = App::new(Lang::Es, Theme::by_name("oscuro", true).unwrap(), "m");
+        p.plan = true;
+        let s = screen(&p, 80, 24);
+        assert!(s[22].starts_with("╰ ◆ Plan"), "{}", s[22]);
     }
 
     #[test]
