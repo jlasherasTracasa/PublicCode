@@ -99,6 +99,11 @@ const ES: &[(&str, &str)] = &[
     ),
     ("mode_build", " ▶ Construir · Tab cambia "),
     ("mode_plan", " ◆ Plan · Tab cambia "),
+    ("theme_changed", "Tema cambiado."),
+    (
+        "leader_hint",
+        " Ctrl+X ▸ n nueva · m modelo · t tema · u deshacer · r rehacer · q salir",
+    ),
 ];
 
 const EN: &[(&str, &str)] = &[
@@ -174,6 +179,11 @@ const EN: &[(&str, &str)] = &[
     ),
     ("mode_build", " ▶ Build · Tab switches "),
     ("mode_plan", " ◆ Plan · Tab switches "),
+    ("theme_changed", "Theme changed."),
+    (
+        "leader_hint",
+        " Ctrl+X ▸ n new · m model · t theme · u undo · r redo · q quit",
+    ),
 ];
 
 /// Texto de `key` en `lang` (la propia clave si falta, para que se note en las pruebas).

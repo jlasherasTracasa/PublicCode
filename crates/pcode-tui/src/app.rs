@@ -161,6 +161,8 @@ pub struct App {
     pub suggestions: Vec<String>,
     /// Sugerencia seleccionada.
     pub suggestion: usize,
+    /// Se pulsó Ctrl+X y se espera la segunda tecla.
+    pub leader: bool,
 }
 
 /// Tokens en corto: `950`, `3.1k`, `1.2M`.
@@ -266,6 +268,7 @@ impl App {
             files: vec![],
             suggestions: vec![],
             suggestion: 0,
+            leader: false,
         }
     }
 
@@ -458,6 +461,10 @@ impl App {
                 None => vec![],
             };
         }
+        if self.leader {
+            self.leader = false;
+            return self.leader_key(k);
+        }
         if !self.suggestions.is_empty() {
             match k.code {
                 KeyCode::Up => {
@@ -522,6 +529,10 @@ impl App {
                 self.input.clear();
                 vec![]
             }
+            KeyCode::Char('x') if ctrl => {
+                self.leader = true;
+                vec![]
+            }
             KeyCode::Esc if self.busy => vec![Command::Cancel],
             KeyCode::Enter
                 if k.modifiers.contains(KeyModifiers::ALT)
@@ -571,6 +582,32 @@ impl App {
             }
             _ => vec![],
         }
+    }
+
+    /// Segunda tecla tras Ctrl+X: atajos de órdenes frecuentes. Cualquier otra tecla cancela.
+    fn leader_key(&mut self, k: KeyEvent) -> Vec<Command> {
+        let orden = match k.code {
+            KeyCode::Char('n') => "/nuevo",
+            KeyCode::Char('u') => "/deshacer",
+            KeyCode::Char('r') => "/rehacer",
+            KeyCode::Char('c') => "/compactar",
+            KeyCode::Char('h') => "/ayuda",
+            KeyCode::Char('q') => "/salir",
+            KeyCode::Char('m') => {
+                self.input = "/modelo ".into();
+                return vec![];
+            }
+            KeyCode::Char('t') => {
+                self.theme = self.theme.next();
+                self.entries
+                    .push(Entry::Info(t(self.lang, "theme_changed").into()));
+                return vec![];
+            }
+            _ => return vec![],
+        };
+        self.suggestions.clear();
+        self.input = orden.into();
+        self.submit()
     }
 
     /// Alterna el modo plan y deja constancia en la transcripción.
@@ -1052,5 +1089,41 @@ mod tests {
         assert!(!a.busy);
         assert_eq!(a.usage.input_tokens, 5);
         assert_eq!(a.entries.last(), Some(&Entry::Error("✗ fallo".into())));
+    }
+
+    #[test]
+    fn lider_ctrl_x_n_nueva_sesion() {
+        let mut a = app();
+        a.update(ctrl('x'));
+        assert!(a.leader);
+        assert_eq!(a.update(key(KeyCode::Char('n'))), vec![Command::New]);
+        assert!(!a.leader);
+    }
+
+    #[test]
+    fn lider_m_prepara_la_orden_de_modelo() {
+        let mut a = app();
+        a.update(ctrl('x'));
+        assert!(a.update(key(KeyCode::Char('m'))).is_empty());
+        assert_eq!(a.input, "/modelo ");
+        assert!(!a.leader);
+    }
+
+    #[test]
+    fn lider_t_cambia_de_tema() {
+        let mut a = app();
+        let antes = a.theme;
+        a.update(ctrl('x'));
+        assert!(a.update(key(KeyCode::Char('t'))).is_empty());
+        assert!(a.theme != antes);
+    }
+
+    #[test]
+    fn lider_tecla_desconocida_cancela() {
+        let mut a = app();
+        a.update(ctrl('x'));
+        assert!(a.update(key(KeyCode::Char('z'))).is_empty());
+        assert!(a.input.is_empty());
+        assert!(!a.leader);
     }
 }

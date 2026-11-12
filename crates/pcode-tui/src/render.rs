@@ -357,7 +357,18 @@ pub fn render(app: &App, f: &mut Frame) {
             th.dimmed(),
         ));
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), status);
+    if app.leader {
+        // Con el líder pulsado, la barra solo muestra las teclas que se pueden pulsar.
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                t(app.lang, "leader_hint"),
+                th.warning(),
+            ))),
+            status,
+        );
+    } else {
+        f.render_widget(Paragraph::new(Line::from(spans)), status);
+    }
 
     // Aprobación.
     if let Some((action, reason)) = &app.approval {
@@ -460,6 +471,14 @@ mod tests {
         assert!(s[20].starts_with("╭ Mensaje"), "{}", s[20]);
         assert!(s[22].starts_with("╰"), "{}", s[22]);
         assert!(s[23].starts_with(" ↑0 ↓0 tokens"), "{}", s[23]);
+    }
+
+    #[test]
+    fn lider_render_80x24_muestra_las_teclas() {
+        let mut a = App::new(Lang::Es, Theme::by_name("oscuro", true).unwrap(), "m");
+        a.leader = true;
+        let s = screen(&a, 80, 24);
+        assert!(s[23].starts_with(" Ctrl+X ▸ n nueva"), "{}", s[23]);
     }
 
     #[test]
