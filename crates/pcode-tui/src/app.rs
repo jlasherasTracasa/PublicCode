@@ -612,6 +612,10 @@ impl App {
                     .push(Entry::Info(t(self.lang, "theme_changed").into()));
                 return vec![];
             }
+            KeyCode::Char('b') => {
+                self.show_side = !self.show_side;
+                return vec![];
+            }
             _ => return vec![],
         };
         self.suggestions.clear();
@@ -667,6 +671,8 @@ impl App {
                 "nuevo" | "new" => {
                     self.entries = vec![Entry::Info(t(self.lang, "new").into())];
                     self.usage = Usage::default();
+                    self.title.clear();
+                    self.changes.clear();
                     vec![Command::New]
                 }
                 "modelo" | "model" if arg.is_empty() => {
@@ -747,6 +753,15 @@ impl App {
                 return vec![];
             }
             return vec![Command::Shell(cmd)];
+        }
+        if self.title.is_empty() {
+            self.title = text
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(40)
+                .collect();
         }
         self.entries.push(Entry::User(text.clone()));
         self.busy = true;
@@ -1098,6 +1113,34 @@ mod tests {
         assert!(!a.busy);
         assert_eq!(a.usage.input_tokens, 5);
         assert_eq!(a.entries.last(), Some(&Entry::Error("✗ fallo".into())));
+    }
+
+    #[test]
+    fn lateral_titulo_sale_del_primer_mensaje() {
+        let mut a = app();
+        typed(&mut a, "arregla el test");
+        a.update(key(KeyCode::Enter));
+        assert_eq!(a.title, "arregla el test");
+        a.busy = false;
+        typed(&mut a, "otra cosa");
+        a.update(key(KeyCode::Enter));
+        assert_eq!(a.title, "arregla el test");
+        typed(&mut a, "/nuevo");
+        a.update(key(KeyCode::Enter));
+        assert_eq!(a.title, "");
+        assert!(a.changes.is_empty());
+    }
+
+    #[test]
+    fn lateral_ctrl_x_b_alterna() {
+        let mut a = app();
+        assert!(!a.show_side);
+        a.update(ctrl('x'));
+        assert!(a.update(key(KeyCode::Char('b'))).is_empty());
+        assert!(a.show_side);
+        a.update(ctrl('x'));
+        a.update(key(KeyCode::Char('b')));
+        assert!(!a.show_side);
     }
 
     #[test]

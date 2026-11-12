@@ -2,10 +2,11 @@
 use crate::app::{App, Entry, ToolState};
 use crate::i18n::t;
 use crate::markdown::{render_markdown_lines, wrap};
+use crate::side::{SIDE_WIDTH, side_lines, side_visible};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
 const SPINNER: [&str; 4] = ["◐", "◓", "◑", "◒"];
 /// Líneas de salida de una tool que se muestran plegadas.
@@ -199,19 +200,45 @@ pub fn render(app: &App, f: &mut Frame) {
     ])
     .areas(area);
 
+    // Barra lateral a la derecha del cuerpo, si está pedida y cabe.
+    let (body, side) = if side_visible(app.show_side, area.width) {
+        let [b, s] =
+            Layout::horizontal([Constraint::Min(1), Constraint::Length(SIDE_WIDTH)]).areas(body);
+        (b, Some(s))
+    } else {
+        (body, None)
+    };
+    if let Some(side) = side {
+        f.render_widget(
+            Paragraph::new(side_lines(app, SIDE_WIDTH - 1)).block(
+                Block::new()
+                    .borders(Borders::LEFT)
+                    .border_style(th.dimmed()),
+            ),
+            side,
+        );
+    }
+
     // Barra superior: logo, nombre y modelo a la izquierda; estado a la derecha.
     let state = if app.busy {
         format!("{} {}", SPINNER[app.spinner % 4], t(app.lang, "working"))
     } else {
         t(app.lang, "ready").to_string()
     };
-    let left = format!(" >_ PublicCode  ·  {}", app.model);
+    let mut left = format!(" >_ PublicCode  ·  {}", app.model);
     let mode = if app.plan {
         format!(" ◆ {} ", t(app.lang, "plan"))
     } else {
         String::new()
     };
     let right = format!("{state} ");
+    // Título de la sesión, si cabe: "  ·  <título>" recortado al ancho libre.
+    let fijo = left.chars().count() + mode.chars().count() + 1 + right.chars().count();
+    let libre = (header.width as usize).saturating_sub(fijo + 5);
+    if !app.title.is_empty() && libre > 0 {
+        let titulo: String = app.title.chars().take(libre).collect();
+        left.push_str(&format!("  ·  {titulo}"));
+    }
     let gap = (header.width as usize)
         .saturating_sub(left.chars().count() + mode.chars().count() + 1 + right.chars().count());
     f.render_widget(
@@ -471,6 +498,39 @@ mod tests {
         assert!(s[20].starts_with("╭ Mensaje"), "{}", s[20]);
         assert!(s[22].starts_with("╰"), "{}", s[22]);
         assert!(s[23].starts_with(" ↑0 ↓0 tokens"), "{}", s[23]);
+    }
+
+    #[test]
+    fn lateral_render_80x24_y_120x40() {
+        for (w, h) in [(80u16, 24u16), (120, 40)] {
+            let mut a = sample();
+            a.show_side = true;
+            let s = screen(&a, w, h);
+            assert!(s.iter().any(|f| f.contains("Cambios (0)")), "{w}x{h}");
+            if w == 80 {
+                assert_eq!(s[1].chars().nth(50), Some('│'), "{}", s[1]);
+            }
+            a.show_side = false;
+            let s = screen(&a, w, h);
+            assert!(!s.iter().any(|f| f.contains("Cambios (0)")), "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn lateral_no_se_dibuja_en_60_columnas() {
+        let mut a = sample();
+        a.show_side = true;
+        let s = screen(&a, 60, 24);
+        assert!(!s.iter().any(|f| f.contains("Cambios (0)")));
+    }
+
+    #[test]
+    fn lateral_cabecera_muestra_el_titulo() {
+        let mut a = sample();
+        a.title = "arregla el test".into();
+        let s = screen(&a, 80, 24);
+        assert!(s[0].contains("·  arregla el test"), "{}", s[0]);
+        assert!(s[0].ends_with("✓ listo"), "{}", s[0]);
     }
 
     #[test]

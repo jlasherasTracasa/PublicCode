@@ -347,7 +347,9 @@ pub async fn run_tui(agent: Agent, opts: TuiOptions, mut on_turn: OnTurn) -> std
                 Msg::Turn(user, report) => {
                     turn = None;
                     if let Ok(a) = agent.try_lock() {
-                        note = changes_summary(lang, &a.turn_changes());
+                        let ch = a.turn_changes();
+                        note = changes_summary(lang, &ch);
+                        crate::side::merge_changes(&mut app.changes, &ch);
                         app.context_used = a.context_tokens();
                         app.context_limit = a.context_limit();
                     }
