@@ -3551,3 +3551,138 @@ tests = [
   "test_plan_valido_deja_hacer_el_commit: mismo archivo y validador falso que sale con 0 → el commit se hace y existe `llamado`",
   "test_otros_archivos_no_validan: se añade `README.md` → el commit se hace y `llamado` no existe",
 ]
+
+[[tarea]]
+id = "F9.49"
+nombre = "ide-abrir-carpeta"
+titulo = "IDE: «Abrir carpeta…» (Ctrl+O) y «Abrir reciente» sin salir a la terminal"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.24"]
+toca = []
+acepta = "cargo test -p pcode-ide folder:: && cargo test -p pcode-ide abrir_carpeta"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F9.49a (selector de carpetas, lógica pura) y F9.49b (menú, atajo y ventana del selector). Hoy el
+IDE solo dice «Para abrir otra carpeta: pcode ide <ruta>» y el usuario no puede cambiar de proyecto desde la ventana.
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+notas = "Cada carpeta abre su propia ventana con su demonio (`pcode ide <ruta>`), como «Conectar a un servidor…» con `pcode remoto`; la ventana actual se cierra si no hay cambios sin guardar."
+
+[[tarea]]
+id = "F9.49a"
+nombre = "ide-abrir-carpeta-nucleo"
+titulo = "IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura)"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.24"]
+toca = ["crates/pcode-ide/src/folder.rs", "crates/pcode-ide/src/lib.rs"]
+acepta = "cargo test -p pcode-ide folder::"
+contexto = [
+  "crates/pcode-ide/src/remote.rs (`pcode_path` y `connect`: cómo el IDE lanza otro proceso sin esperarlo)",
+  "crates/pcode-cli/src/recent.rs (formato de `recientes.txt`, junto a la configuración global)",
+]
+objetivo = '''
+1. Crea `folder.rs` con lo de *Firmas* y sus tests; en `lib.rs`, `pub mod folder;` en orden alfabético.
+2. `FolderPicker::new(start)`: `dir = start`, filtro vacío y `refresh()`. `refresh`: `entries` = nombres de las
+   subcarpetas de `dir` que no empiezan por `.`, ordenados sin distinguir mayúsculas; si no se puede leer, vacío;
+   `selected = 0`. `visible()`: las de `entries` que contienen `filter` (sin distinguir mayúsculas), en orden.
+3. `enter(name)`: `dir = dir.join(name)`, filtro vacío, `refresh()`. `up()`: si `dir` tiene padre, pasa a él y
+   `refresh()`. `move_selection(delta)`: suma `delta` a `selected` sin salir de `0..visible().len()` (con lista
+   vacía, 0). `selected_dir()`: `dir.join(visible()[selected])`, o `dir` si no hay ninguna visible.
+4. `parse_recent(text)`: una ruta por línea, recortada, sin vacías ni repetidas, solo las que existen como carpeta.
+   `load_recent()`: lee `recientes.txt` en la carpeta de `pcode_config::user_config_path()` (vacío si no hay).
+5. `open_folder_command(pcode, dir)`: `Command::new(pcode)` con argumentos `["ide", <dir>]` y `stdin(Stdio::null())`.
+   `open_folder(pcode, dir)`: si `dir` no es una carpeta → `Err(InvalidInput, "no es una carpeta")`; si no,
+   `open_folder_command(..).spawn()` sin esperar.
+'''
+firmas = '''
+// crates/pcode-ide/src/folder.rs
+//! Abrir otra carpeta desde el IDE: navegar por carpetas y lanzar `pcode ide <ruta>`.
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+/// Estado del selector de carpetas.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FolderPicker { pub dir: PathBuf, pub entries: Vec<String>, pub filter: String, pub selected: usize }
+
+impl FolderPicker {
+    pub fn new(start: &Path) -> FolderPicker;
+    pub fn refresh(&mut self);
+    pub fn visible(&self) -> Vec<&str>;
+    pub fn enter(&mut self, name: &str);
+    pub fn up(&mut self);
+    pub fn move_selection(&mut self, delta: i32);
+    pub fn selected_dir(&self) -> PathBuf;
+}
+
+/// Proyectos recientes de un `recientes.txt` que aún existen.
+pub fn parse_recent(text: &str) -> Vec<PathBuf>;
+/// Proyectos recientes guardados por `pcode ide`.
+pub fn load_recent() -> Vec<PathBuf>;
+/// Orden `pcode ide <dir>`.
+pub fn open_folder_command(pcode: &Path, dir: &Path) -> Command;
+/// Abre `dir` en otra ventana del IDE (no espera).
+pub fn open_folder(pcode: &Path, dir: &Path) -> std::io::Result<()>;
+'''
+tests = [
+  "lista_solo_subcarpetas_visibles: tempdir con `b/`, `A/`, `.oculta/` y `c.txt` → `entries == [\"A\", \"b\"]`",
+  "filtra_sin_mayusculas: filtro `B` → `visible() == [\"b\"]`",
+  "entrar_y_subir: `enter(\"A\")` → `dir` acaba en `A` y filtro vacío; `up()` → vuelve al tempdir",
+  "seleccion_sin_salirse: dos visibles y `move_selection(5)` → 1; `move_selection(-9)` → 0; `selected_dir` es `tempdir/A`",
+  "recientes_solo_los_que_existen: texto con el tempdir, una ruta inexistente, una vacía y el tempdir repetido → solo el tempdir una vez",
+  "orden_de_abrir: `open_folder_command(\"/x/pcode\", \"/p\")` → programa `/x/pcode` y argumentos `[\"ide\", \"/p\"]`",
+  "abrir_un_archivo_es_error: `open_folder` con la ruta de `c.txt` → Err de tipo `InvalidInput`",
+]
+
+[[tarea]]
+id = "F9.49b"
+nombre = "ide-abrir-carpeta-ventana"
+titulo = "IDE: menú Archivo con «Abrir carpeta…» (Ctrl+O) y «Abrir reciente», y la ventana del selector"
+fase = "F9"
+hito = "1.2"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F9.49a"]
+toca = ["crates/pcode-ide/src/app.rs", "crates/pcode-ide/src/texts.rs"]
+acepta = "cargo test -p pcode-ide abrir_carpeta"
+contexto = [
+  "crates/pcode-ide/src/app.rs (`enum Command`, la lista de comandos de la paleta, `Command::label`, la tabla de atajos con `Key::P`, `Command::Quit` y el menú `t.menu_file` con el submenú `t.connect`)",
+  "crates/pcode-ide/src/app.rs (la ventana de «Ir a archivo»: `self.quick` y `Picker`, para copiar su forma)",
+  "crates/pcode-ide/src/texts.rs (`Texts`, `ES`, `EN` y el texto `open_folder_hint`)",
+  "crates/pcode-ide/src/folder.rs (de F9.49a)",
+]
+objetivo = '''
+1. `texts.rs`: añade a `Texts` (y a `ES` y `EN`) `open_folder` («Abrir carpeta…» / «Open Folder…»), `open_recent`
+   («Abrir reciente» / «Open Recent»), `open_this_folder` («Abrir esta carpeta» / «Open this folder»), `folder_up`
+   («Subir» / «Up») y `no_recent` («No hay proyectos recientes» / «No recent projects»). Quita `open_folder_hint` de
+   `Texts`, `ES` y `EN`.
+2. `app.rs`: variante `Command::OpenFolder` (doc «Abrir carpeta»), en la lista de la paleta antes de `Quit`, con
+   `label` → `(t.open_folder, "Ctrl+O")` y atajo Ctrl+O en la tabla donde está Ctrl+P.
+3. Campo `folder: Option<crate::folder::FolderPicker>` en `Ide` (`None` al crear). `Command::OpenFolder` →
+   `self.folder = Some(FolderPicker::new(<carpeta padre de std::env::current_dir()>, o la actual si no tiene padre))`.
+4. Función privada `open_folder_and_close(&mut self, ctx, dir)`: si `self.tabs.any_dirty()`, toast
+   `t.quit_unsaved` y no hace nada más; si no, `crate::folder::open_folder(&crate::remote::pcode_path(std::env::current_exe().ok().as_deref()), &dir)`:
+   `Ok` → `self.folder = None` y `ctx.send_viewport_cmd(egui::ViewportCommand::Close)`; `Err(e)` → toast de error.
+5. Ventana del selector (como la de «Ir a archivo», mientras `self.folder` es `Some`): título `t.open_folder`; la ruta
+   actual; botón `t.folder_up` (→ `up()`); campo de texto del filtro con el foco; la lista `visible()` (la elegida
+   resaltada; clic → `enter`); botón `t.open_this_folder` (→ abre `dir`). Teclas: ↑/↓ → `move_selection(∓1)`;
+   Intro → `enter` de la elegida; Ctrl+Intro → abre `selected_dir()`; Esc → `self.folder = None`.
+6. Menú `t.menu_file`: primero `Command::OpenFolder`; después un submenú `t.open_recent` con
+   `crate::folder::load_recent()` (cada ruta, un botón que llama a `open_folder_and_close`; si no hay,
+   `t.no_recent`); quita la etiqueta de `open_folder_hint`.
+7. Tests en el módulo de tests de `app.rs`.
+'''
+sin_firmas = "añade una variante de `Command`, un campo privado y textos; las firmas están en el objetivo"
+tests = [
+  "abrir_carpeta_etiqueta_y_atajo: `Command::OpenFolder.label(&ES)` → `(\"Abrir carpeta…\", \"Ctrl+O\")`",
+  "abrir_carpeta_en_la_paleta: filtrar la paleta por `carpeta` (como `paleta_filtra_comandos`) → incluye `Command::OpenFolder`",
+  "abrir_carpeta_textos_en_ingles: `EN.open_folder == \"Open Folder…\"` y `EN.open_recent == \"Open Recent\"`",
+]

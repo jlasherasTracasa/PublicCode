@@ -139,17 +139,17 @@ tools/tareas/generar.py --comprobar
 | F6 Aprendizaje | 0 | 0 | 0 | 3 | 13 | 0 | 16 |
 | F7 Endurecimiento | 2 | 0 | 0 | 1 | 3 | 0 | 6 |
 | F8 1.x: editor, agente y plataforma | 17 | 0 | 0 | 37 | 164 | 0 | 218 |
-| F9 Equipos modestos, remoto e IDE nativo | 32 | 0 | 0 | 18 | 26 | 3 | 79 |
+| F9 Equipos modestos, remoto e IDE nativo | 32 | 0 | 0 | 19 | 28 | 3 | 82 |
 | F10 Agente al nivel de los mejores | 0 | 0 | 0 | 6 | 23 | 0 | 29 |
 | F11 Planificación y flujos para modelos pequeños | 0 | 0 | 0 | 1 | 34 | 0 | 35 |
 | F12 Seguridad, gobierno y operación | 0 | 0 | 0 | 6 | 18 | 0 | 24 |
-| **Total** | 128 | 11 | 1 | 98 | 377 | 4 | 619 |
+| **Total** | 128 | 11 | 1 | 99 | 379 | 4 | 622 |
 
 ### Por hito (solo tareas abiertas)
 
 | Hito | Qué entrega | Listas | Bloqueadas | Esbozos | Para haiku | Para coordinador |
 |---|---|---|---|---|---|---|
-| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 8 | 6 | 0 | 13 | 1 |
+| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 9 | 8 | 0 | 16 | 1 |
 | **1.3** | Agente al nivel de los mejores: hooks, pendientes, segundo plano, permisos, órdenes y agentes propios, TUI | 19 | 63 | 0 | 82 | 0 |
 | **1.4** | Planificación y flujos medidos: banco, lint y desglose de tareas, revisión cruzada, GitHub | 7 | 64 | 0 | 68 | 3 |
 | **1.5** | Seguridad: Landlock, seccomp, red filtrada, secretos y política gestionada | 12 | 40 | 0 | 52 | 0 |
@@ -167,6 +167,7 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 | [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | 6 |
 | [F9.19a-openvsx-nucleo](../tareas/F9.19a-openvsx-nucleo.md) | Extensiones: URL de Open VSX y lectura de su respuesta (lógica pura) | haiku | S | 1.2 | 5 |
 | [F9.40a-ide-tema-de-extension-nucleo](../tareas/F9.40a-ide-tema-de-extension-nucleo.md) | IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura) | haiku | S | 1.2 | 2 |
+| [F9.49a-ide-abrir-carpeta-nucleo](../tareas/F9.49a-ide-abrir-carpeta-nucleo.md) | IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura) | haiku | S | 1.2 | 2 |
 | [F9.45-instalar-desde-codigo](../tareas/F9.45-instalar-desde-codigo.md) | `install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo | haiku | S | 1.2 | 1 |
 | [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | 1 |
 | [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | S | 1.2 | 0 |
@@ -188,9 +189,8 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 | [F8.21a-imagenes-tipo](../tareas/F8.21a-imagenes-tipo.md) | `Message` con imágenes (base64 propio, sin dependencias) y su envío a Anthropic | haiku | M | 1.3 | 3 |
 | [F8.20a-web-tool](../tareas/F8.20a-web-tool.md) | `pcode-tools`: tool `web` (GET con tiempo y tamaño máximos, HTML a texto sin scripts ni estilos) | haiku | M | 1.3 | 2 |
 | [F10.41a-revisar-objetivo](../tareas/F10.41a-revisar-objetivo.md) | Revisión: prompt para los cambios preparados (staged) o respecto a una rama | haiku | S | 1.3 | 2 |
-| [F4.12c-guion-cableado](../tareas/F4.12c-guion-cableado.md) | Bucle del agente: ofrecer e interceptar la tool `guion` | haiku | M | 1.3 | 1 |
 
-…y 73 más.
+…y 74 más.
 <!-- resumen:fin -->
 
 ## Tabla de tareas
@@ -778,6 +778,9 @@ El estado se calcula solo (ver «Estados»).
 | [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | — | lista |
 | [F9.47-actualizar-local](../tareas/F9.47-actualizar-local.md) | `tools/actualizar-local.sh`: pull, compilar ligero, instalar y comprobar en una orden | haiku | S | 1.2 | F9.45, F9.46 | bloqueada |
 | [F9.48-plan-hook-precommit](../tareas/F9.48-plan-hook-precommit.md) | Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa) | haiku | S | 1.2 | — | lista |
+| [F9.49-ide-abrir-carpeta](../tareas/F9.49-ide-abrir-carpeta.md) | IDE: «Abrir carpeta…» (Ctrl+O) y «Abrir reciente» sin salir a la terminal | haiku | S | 1.2 | F9.24, F9.49a, F9.49b | bloqueada |
+| [F9.49a-ide-abrir-carpeta-nucleo](../tareas/F9.49a-ide-abrir-carpeta-nucleo.md) | IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura) | haiku | S | 1.2 | F9.24 | lista |
+| [F9.49b-ide-abrir-carpeta-ventana](../tareas/F9.49b-ide-abrir-carpeta-ventana.md) | IDE: menú Archivo con «Abrir carpeta…» (Ctrl+O) y «Abrir reciente», y la ventana del selector | haiku | M | 1.2 | F9.49a | bloqueada |
 
 ### F10 — Agente al nivel de los mejores
 
