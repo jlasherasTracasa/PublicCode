@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Valida el plan antes del commit cuando el commit toca tareas/ o tools/tareas/generar.py.
+set -eu
+
+cambios="$(git diff --cached --name-only)"
+if printf '%s\n' "$cambios" | grep -Eq '^(tareas/|tools/tareas/generar\.py$)'; then
+  if ! ${PCODE_GENERAR:-python3 tools/tareas/generar.py} --comprobar; then
+    echo "El plan no valida: corrige los errores o regenera con tools/tareas/generar.py" >&2
+    exit 1
+  fi
+fi
+exit 0

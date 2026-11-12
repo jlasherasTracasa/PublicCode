@@ -33,6 +33,7 @@ Uso:
   tools/tareas/generar.py --tarea F8.14    estado de una tarea y qué la bloquea
   tools/tareas/generar.py --lint a.toml    valida las tareas de un archivo suelto (borradores)
 Con --siguiente, `--ejecutor haiku|coordinador` filtra y `--ids` imprime solo los ids.
+Para validarlo antes de cada commit: git config core.hooksPath tools/hooks
 """
 import argparse
 import glob
