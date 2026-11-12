@@ -139,6 +139,12 @@ cd PublicCode && cargo install --path crates/pcode-cli --locked
 El binario queda en `~/.cargo/bin/pcode` (`%USERPROFILE%\.cargo\bin\pcode.exe` en Windows). Para desarrollar,
 `cargo build -p pcode-cli` y `target/debug/pcode`; las comprobaciones de la CI están en [AGENTS.md](../AGENTS.md#4-cómo-comprobar-según-el-área).
 
+Para instalar lo compilado con el perfil ligero (pcode, pcode-ide y el lanzador del menú):
+
+```bash
+tools/compilar-ligero.sh && ./install.sh --local
+```
+
 ## 6. Primer arranque
 
 1. **Una clave de modelo** en el entorno (nunca en archivos):

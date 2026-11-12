@@ -22,7 +22,28 @@ case "$0" in */install.sh|install.sh) here="$(cd "$(dirname "$0")" && pwd)";; es
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-if [ -n "$here" ] && [ -f "$here/pcode" ]; then
+# --local [carpeta]: instala lo compilado en este equipo (tools/compilar-ligero.sh).
+local_dir=""
+case "${1:-}" in
+  "") ;;
+  --local)
+    local_dir="${2:-}"
+    if [ -z "$local_dir" ]; then
+      for d in "$here/target/ligero" "$here/target/release"; do
+        if [ -f "$d/pcode" ]; then local_dir="$d"; break; fi
+      done
+    fi
+    if [ -z "$local_dir" ] || [ ! -f "$local_dir/pcode" ]; then
+      echo "No hay pcode compilado en ${local_dir:-target/ligero ni target/release}: ejecuta tools/compilar-ligero.sh" >&2
+      exit 1
+    fi
+    ;;
+  *) echo "uso: install.sh [--local [carpeta]]" >&2; exit 2 ;;
+esac
+
+if [ -n "$local_dir" ]; then
+  src="$local_dir/pcode"
+elif [ -n "$here" ] && [ -f "$here/pcode" ]; then
   src="$here/pcode"
 else
   [ "$(uname -s)" = Linux ] || { echo "Este instalador es para Linux; en Windows usa install.ps1" >&2; exit 1; }
