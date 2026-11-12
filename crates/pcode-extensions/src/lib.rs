@@ -2,6 +2,7 @@
 //! Lo ejecutable (`main`, `browser`) no se carga nunca: no hay anfitrión de extensiones, que es lo que
 //! hace pesado a VS Code. Lo equivalente llega por LSP, DAP y MCP. Un `.vsix` es un zip; se abre con
 //! `unzip` del sistema (sin dependencias nuevas).
+pub mod openvsx;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,9 @@ pub enum ExtError {
     /// No se pudo descomprimir.
     #[error("no se pudo abrir el .vsix (¿está instalado unzip?): {0}")]
     Unzip(String),
+    /// El registro no contestó lo esperado.
+    #[error("Open VSX: {0}")]
+    Remote(String),
 }
 
 /// Un tema de color.
