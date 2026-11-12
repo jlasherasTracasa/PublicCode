@@ -3316,3 +3316,238 @@ Que una extensión con manifiesto (F8.32) pueda traer tools como módulos WASM q
 capacidades declaradas y aprobadas (sin red ni disco por defecto).
 '''
 tests = ["(por definir al desgranar)"]
+
+[[tarea]]
+id = "F9.45"
+nombre = "instalar-desde-codigo"
+titulo = "`install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.18"]
+toca = ["install.sh", "tools/instalar/test_install.py", "docs/instalacion.md"]
+acepta = "python3 -m unittest tools/instalar/test_install.py -v"
+contexto = [
+  "install.sh (entero: variable `here`, bloque `if [ -n \"$here\" ] && [ -f \"$here/pcode\" ]`, copia atómica y `lanzador instalar`)",
+  "tools/compilar-ligero.sh (deja los binarios en `target/ligero/`)",
+  "tools/bench/test_reglas.py (estilo de un test con `unittest`)",
+]
+objetivo = '''
+Hoy `install.sh` solo instala desde una release de GitHub o desde una carpeta que tenga `pcode` al lado del propio
+script. Quien compila en su equipo (`tools/compilar-ligero.sh`) no tiene forma de instalar lo que acaba de compilar:
+`./install.sh` en la raíz del repo descarga la última release, que puede ser más vieja que el código.
+1. En `install.sh`, justo después de `trap 'rm -rf "$tmp"' EXIT`, lee los argumentos tal como dice *Firmas*: `--local`
+   con carpeta opcional. Sin carpeta, prueba en orden `$here/target/ligero` y `$here/target/release` y usa la primera
+   que tenga un archivo `pcode`. Si no hay ninguna, o la carpeta dada no tiene `pcode`, escribe por stderr
+   `No hay pcode compilado en <carpeta>: ejecuta tools/compilar-ligero.sh` y sale con 1. Cualquier otro argumento:
+   `uso: install.sh [--local [carpeta]]` por stderr y sale con 2.
+2. Cambia el `if` que elige `src`: primero `if [ -n "$local_dir" ]; then src="$local_dir/pcode"`, después el `elif` con
+   la condición que ya había (`$here/pcode`) y por último el `else` de la descarga, sin tocarlo. El resto del script
+   (copia atómica de `pcode` y de `pcode-ide` si está al lado, lanzador, PATH y `--version`) no cambia.
+3. Crea `tools/instalar/test_install.py` (con `#!/usr/bin/env python3` y bit de ejecución) con los tests de la lista.
+   Cada test crea un directorio temporal con: `src/pcode` falso (script sh que con `--version` imprime
+   `pcode 9.9.9` y con cualquier otra cosa sale con 1), opcionalmente `src/pcode-ide` falso, y `bin/` vacío. Ejecuta
+   `sh <raíz>/install.sh --local <tmp>/src` con `subprocess.run` y `timeout=30`, entorno con `PCODE_DIR=<tmp>/bin`,
+   `HOME=<tmp>/home` y `PATH=<tmp>/bin:/usr/bin:/bin` (así no toca ningún `.bashrc` real ni usa la red).
+4. En `docs/instalacion.md`, sección «5. Compilar desde el código», añade después del bloque de `cargo install` un
+   párrafo y un bloque: «Para instalar lo compilado con el perfil ligero (pcode, pcode-ide y el lanzador del menú):»
+   con `tools/compilar-ligero.sh && ./install.sh --local`.
+'''
+lenguaje = "sh"
+firmas = '''
+# install.sh — argumentos (el resto del script igual)
+local_dir=""
+case "${1:-}" in
+  "") ;;
+  --local)
+    local_dir="${2:-}"
+    if [ -z "$local_dir" ]; then
+      for d in "$here/target/ligero" "$here/target/release"; do
+        if [ -f "$d/pcode" ]; then local_dir="$d"; break; fi
+      done
+    fi
+    if [ -z "$local_dir" ] || [ ! -f "$local_dir/pcode" ]; then
+      echo "No hay pcode compilado en ${local_dir:-target/ligero ni target/release}: ejecuta tools/compilar-ligero.sh" >&2
+      exit 1
+    fi
+    ;;
+  *) echo "uso: install.sh [--local [carpeta]]" >&2; exit 2 ;;
+esac
+'''
+tests = [
+  "test_local_copia_pcode_y_pcode_ide: carpeta con pcode y pcode-ide falsos → código 0, los dos en bin/ con permiso 755 y la salida contiene `pcode 9.9.9`",
+  "test_local_sin_ide_instala_solo_pcode: carpeta solo con pcode → código 0, bin/pcode existe y bin/pcode-ide no",
+  "test_local_carpeta_sin_pcode_falla: carpeta vacía → código 1, stderr contiene `No hay pcode compilado` y bin/ sigue vacío",
+  "test_argumento_desconocido_sale_con_2: `--otro` → código 2 y stderr contiene `uso: install.sh`",
+]
+no_hagas = ["no cambies la rama de descarga de la release ni la comprobación SHA-256", "no uses red en los tests"]
+
+[[tarea]]
+id = "F9.46"
+nombre = "version-con-commit"
+titulo = "`pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)`"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = ["crates/pcode-cli/build.rs", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/doctor.rs", "crates/pcode-cli/tests/version.rs"]
+acepta = "cargo test -p pcode-cli --test version"
+contexto = [
+  "crates/pcode-cli/src/main.rs (línea `#[command(name = \"pcode\", version, about)]`)",
+  "crates/pcode-cli/src/doctor.rs (dónde imprime la versión: busca `CARGO_PKG_VERSION`)",
+  "crates/pcode-cli/tests/ (estilo de los tests con `assert_cmd`)",
+]
+objetivo = '''
+Entre dos releases todas las compilaciones dicen `pcode 1.1.0`, así que tras un `git pull` y una instalación no se
+sabe qué código está instalado. El binario debe llevar el commit corto con el que se compiló.
+1. Crea `crates/pcode-cli/build.rs` con el código de *Firmas* tal cual (sin dependencias nuevas: solo `std`). Calcula
+   `PCODE_VERSION_LONG` = `<versión> (<commit de 7 cifras>)`, o solo `<versión>` si no hay git o no es un repo, y pide
+   recompilar cuando cambian `HEAD`, la rama actual o `packed-refs`.
+2. En `main.rs` cambia el atributo a `#[command(name = "pcode", version = env!("PCODE_VERSION_LONG"), about)]`.
+3. En `doctor.rs`, donde se imprime la versión con `env!("CARGO_PKG_VERSION")`, usa `env!("PCODE_VERSION_LONG")`. Si
+   hay más de un sitio, cámbialos todos dentro de `doctor.rs`; no toques el de `update.rs` (compara versiones semver).
+4. Crea `crates/pcode-cli/tests/version.rs` con los tests de la lista (usa `assert_cmd::Command::cargo_bin("pcode")`).
+   Para saber el commit esperado ejecuta `git rev-parse --short=7 HEAD` desde `env!("CARGO_MANIFEST_DIR")`; si falla,
+   el test solo comprueba que la línea empieza por `pcode ` seguido de la versión.
+'''
+firmas = '''
+// crates/pcode-cli/build.rs
+use std::process::Command;
+
+fn git(args: &[&str]) -> Option<String> {
+    let out = Command::new("git").args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn main() {
+    let pkg = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    let commit = git(&["rev-parse", "--short=7", "HEAD"]).filter(|c| c.chars().all(|x| x.is_ascii_hexdigit()));
+    let long = match commit {
+        Some(c) => format!("{pkg} ({c})"),
+        None => pkg,
+    };
+    println!("cargo:rustc-env=PCODE_VERSION_LONG={long}");
+    println!("cargo:rerun-if-changed=build.rs");
+    for path in [git(&["rev-parse", "--git-path", "HEAD"]), git(&["rev-parse", "--git-path", "packed-refs"])]
+        .into_iter()
+        .flatten()
+    {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    if let Some(r) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        if let Some(p) = git(&["rev-parse", "--git-path", &r]) {
+            println!("cargo:rerun-if-changed={p}");
+        }
+    }
+}
+'''
+tests = [
+  "version_incluye_el_commit: `pcode --version` → una línea `pcode <CARGO_PKG_VERSION> (<git rev-parse --short=7 HEAD>)`",
+  "version_empieza_por_el_numero: `pcode --version` → empieza por `pcode ` + CARGO_PKG_VERSION y acaba en salto de línea",
+]
+notas = "Las rutas de `--git-path` son relativas al directorio desde el que se ejecuta git (el del paquete), que es el mismo que usa cargo para `rerun-if-changed`: funciona también en worktrees."
+
+[[tarea]]
+id = "F9.47"
+nombre = "actualizar-local"
+titulo = "`tools/actualizar-local.sh`: pull, compilar ligero, instalar y comprobar en una orden"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F9.45", "F9.46"]
+toca = ["tools/actualizar-local.sh", "tools/instalar/test_actualizar.py", "docs/instalacion.md"]
+acepta = "python3 -m unittest tools/instalar/test_actualizar.py -v"
+contexto = [
+  "tools/compilar-ligero.sh (compila con el perfil ligero según la RAM libre)",
+  "install.sh (opción `--local` de F9.45)",
+  "tools/instalar/test_install.py (estilo de los tests de F9.45)",
+]
+objetivo = '''
+Quien desarrolla en su propio equipo repite siempre lo mismo: traer cambios, compilar e instalar. Una orden lo hace
+en orden y para en el primer fallo, sin trucos de git que puedan perder trabajo.
+1. Crea `tools/actualizar-local.sh` (`#!/usr/bin/env sh`, `set -eu`, bit de ejecución) que hace `cd` a la raíz del repo
+   (`"$(dirname "$0")/.."`) y ejecuta en este orden los pasos de *Firmas*: `git pull --ff-only`,
+   `sh tools/compilar-ligero.sh`, `sh install.sh --local target/ligero` y `"${PCODE_DIR:-$HOME/.local/bin}/pcode" --version`.
+2. Opciones: `--sin-pull` se salta el pull (para instalar lo que ya hay); `--en-seco` no ejecuta nada y escribe por
+   stdout cada orden en una línea, en el orden en que se ejecutaría, con el prefijo `+ `; pueden ir juntas en
+   cualquier orden. Otro argumento: `uso: tools/actualizar-local.sh [--sin-pull] [--en-seco]` por stderr y código 2.
+3. Antes del pull, si `git status --porcelain` no está vacío, escribe `Hay cambios sin commit: se compila lo que hay
+   sin hacer pull` por stderr y se salta el pull (nunca `stash`, `reset` ni `checkout`). En `--en-seco` esta
+   comprobación también se hace.
+4. Crea `tools/instalar/test_actualizar.py` (con `#!/usr/bin/env python3` y bit de ejecución) con los tests de la
+   lista; ejecutan el script con `--en-seco` desde la raíz real del repo con `subprocess.run(..., timeout=30)` y solo
+   miran la salida, así que no compilan ni usan red.
+5. En `docs/instalacion.md`, sección «13. Actualizar y desinstalar», añade: «Si compilas desde el código:
+   `tools/actualizar-local.sh` (trae los cambios, compila con el perfil ligero e instala)».
+'''
+lenguaje = "sh"
+firmas = '''
+# tools/actualizar-local.sh [--sin-pull] [--en-seco]
+paso() { if [ "$seco" = 1 ]; then echo "+ $*"; else "$@"; fi; }
+# pasos, en este orden:
+paso git pull --ff-only                       # salvo --sin-pull o árbol con cambios
+paso sh tools/compilar-ligero.sh
+paso sh install.sh --local target/ligero
+paso "${PCODE_DIR:-$HOME/.local/bin}/pcode" --version
+'''
+tests = [
+  "test_en_seco_lista_los_pasos_en_orden: `--en-seco` → las líneas que empiezan por `+ ` contienen, en este orden, `compilar-ligero.sh`, `install.sh --local target/ligero` y `pcode --version`, y código 0",
+  "test_sin_pull_no_hace_pull: `--sin-pull --en-seco` → ninguna línea contiene `git pull`",
+  "test_argumento_desconocido_sale_con_2: `--otro` → código 2 y stderr contiene `uso:`",
+]
+no_hagas = ["nunca `git stash`, `git reset` ni `git checkout` en el script", "los tests no compilan ni instalan: solo `--en-seco`"]
+
+[[tarea]]
+id = "F9.48"
+nombre = "plan-hook-precommit"
+titulo = "Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa)"
+fase = "F9"
+hito = "1.2"
+talla = "S"
+ejecutor = "haiku"
+depende = []
+toca = ["tools/hooks/pre-commit", "tools/hooks/test_pre_commit.py", "tools/tareas/generar.py"]
+acepta = "python3 -m unittest tools/hooks/test_pre_commit.py -v"
+contexto = [
+  "tools/tareas/generar.py (docstring del principio: sección «Uso»; opción `--comprobar`)",
+  ".github/workflows/ci.yml (el paso que ejecuta `generar.py --comprobar`)",
+]
+objetivo = '''
+El 11 nov 2026 llegaron al repositorio reglas nuevas en `generar.py` sin migrar 10 tareas antiguas y la CI quedó en
+rojo con 98 errores. Un hook de git lo habría parado en el equipo de quien hizo el commit.
+1. Crea `tools/hooks/pre-commit` (`#!/usr/bin/env sh`, `set -eu`, bit de ejecución) como en *Firmas*: si
+   `git diff --cached --name-only` incluye algo que empiece por `tareas/` o es `tools/tareas/generar.py`, ejecuta
+   `${PCODE_GENERAR:-python3 tools/tareas/generar.py} --comprobar`; si falla, escribe por stderr
+   `El plan no valida: corrige los errores o regenera con tools/tareas/generar.py` y sale con 1. Si el commit no toca
+   esas rutas, sale con 0 sin ejecutar nada.
+2. En la docstring de `tools/tareas/generar.py`, al final de «Uso», añade la línea
+   `Para validarlo antes de cada commit: git config core.hooksPath tools/hooks`. No cambies nada más de ese archivo.
+3. Crea `tools/hooks/test_pre_commit.py` (con `#!/usr/bin/env python3` y bit de ejecución). Cada test crea un repo
+   temporal (`git init -q`, `git -c user.name=t -c user.email=t@t commit` para los commits), copia el hook a
+   `.git/hooks/pre-commit` con permiso 755 y pone `PCODE_GENERAR` a un script sh falso del directorio temporal que
+   escribe un archivo `llamado` y sale con 0 o con 1 según el test. Todas las llamadas con `timeout=30`.
+'''
+lenguaje = "sh"
+firmas = '''
+# tools/hooks/pre-commit
+cambios="$(git diff --cached --name-only)"
+if printf '%s\n' "$cambios" | grep -Eq '^(tareas/|tools/tareas/generar\.py$)'; then
+  if ! ${PCODE_GENERAR:-python3 tools/tareas/generar.py} --comprobar; then
+    echo "El plan no valida: corrige los errores o regenera con tools/tareas/generar.py" >&2
+    exit 1
+  fi
+fi
+exit 0
+'''
+tests = [
+  "test_plan_invalido_bloquea_el_commit: se añade `tareas/plan/F1.toml` y el validador falso sale con 1 → el commit falla y `git log` sigue vacío",
+  "test_plan_valido_deja_hacer_el_commit: mismo archivo y validador falso que sale con 0 → el commit se hace y existe `llamado`",
+  "test_otros_archivos_no_validan: se añade `README.md` → el commit se hace y `llamado` no existe",
+]
