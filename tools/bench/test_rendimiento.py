@@ -16,6 +16,12 @@ PCODE_FALSO = textwrap.dedent('''\
     import http.server, json, sys, time
     if sys.argv[1:] == ["--version"]:
         print("pcode 0.0.0"); sys.exit(0)
+    if sys.argv[1] == "chat":
+        import os
+        ruta = os.environ.get("PCODE_MOCK_SCRIPT")
+        if not ruta or not os.path.exists(ruta):
+            sys.exit(2)
+        print("hola desde el mock"); sys.exit(0)
     if sys.argv[1] == "ide":
         time.sleep(30); sys.exit(0)
     class H(http.server.BaseHTTPRequestHandler):
@@ -66,6 +72,16 @@ class Rendimiento(unittest.TestCase):
             json.dump({"arranque_ms": 9, "studio_listo_ms": 100, "reposo_mb": 600}, f)
         self.assertEqual(rendimiento.main(["presupuesto", "--actual", bien]), 0)
         self.assertEqual(rendimiento.main(["presupuesto", "--actual", mal]), 1)
+
+    def test_primera_respuesta_con_binario_falso(self):
+        self.assertGreater(rendimiento.primera_respuesta_ms(self.pcode, n=3), 0)
+        self.assertIsNone(rendimiento.primera_respuesta_ms("/bin/false", n=1))
+
+    def test_presupuesto_incluye_la_primera_respuesta(self):
+        malos = rendimiento.fuera_de_presupuesto({"primera_respuesta_ms": 900})
+        self.assertEqual(len(malos), 1)
+        self.assertIn("primera_respuesta_ms", malos[0])
+        self.assertEqual(rendimiento.fuera_de_presupuesto({"primera_respuesta_ms": 100}), [])
 
     def test_medir_ide_con_binario_falso(self):
         env = dict(os.environ)

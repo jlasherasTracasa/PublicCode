@@ -15,6 +15,7 @@ Uso:
     peticiones típicas (árbol de archivos, búsqueda, git) y un segundo en reposo.
   - pico_mb: pico de memoria residente del demonio (VmHWM).
   - hilos: hilos del demonio.
+  - primera_respuesta_ms: mediana de «pcode chat di hola» con un modelo simulado (PCODE_MOCK_SCRIPT) hasta que termina.
 
 `comparar` sale con 1 si alguna métrica empeora más del umbral (20 % por defecto) respecto a la base.
 `presupuesto` sale con 1 si se pasa de los límites absolutos (PRESUPUESTO).
@@ -28,17 +29,23 @@ import re
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 
 # Límites absolutos (docs/rendimiento.md): lo que se compromete para un equipo modesto.
-PRESUPUESTO = {"arranque_ms": 50.0, "studio_listo_ms": 300.0, "reposo_mb": 60.0, "ide_reposo_mb": 120.0}
+PRESUPUESTO = {"arranque_ms": 50.0, "studio_listo_ms": 300.0, "reposo_mb": 60.0, "ide_reposo_mb": 120.0,
+               "primera_respuesta_ms": 500.0}
 
 # Métricas en las que menos es mejor (todas las que se comparan).
-METRICAS = ["arranque_ms", "studio_listo_ms", "reposo_mb", "pico_mb", "ide_reposo_mb"]
+METRICAS = ["arranque_ms", "studio_listo_ms", "reposo_mb", "pico_mb", "ide_reposo_mb", "primera_respuesta_ms"]
 
 ESPERA_MAX_S = 20.0  # nada espera más que esto
+
+# Guion del modelo simulado: una sola respuesta, sin tools.
+GUION_MOCK = [{"message": {"role": "assistant", "content": "hola desde el mock", "tool_calls": []},
+               "usage": {"input_tokens": 3, "output_tokens": 2, "cached_input_tokens": 0}, "stop_reason": "EndTurn"}]
 
 
 def memoria_kb(pid):
@@ -114,6 +121,27 @@ def mediana_arranque_ms(pcode, n):
     return round(statistics.median(tiempos), 1)
 
 
+def primera_respuesta_ms(pcode, n=5):
+    """Mediana en ms de `pcode chat di hola` con un modelo simulado; None si el binario no lo admite."""
+    tiempos = []
+    with tempfile.TemporaryDirectory() as d:
+        script = os.path.join(d, "script.json")
+        with open(script, "w", encoding="utf-8") as f:
+            json.dump(GUION_MOCK, f)
+        entorno = dict(os.environ, PCODE_MOCK_SCRIPT=script, NO_COLOR="1")
+        for _ in range(n):
+            t = time.perf_counter()
+            try:
+                r = subprocess.run([pcode, "chat", "di", "hola"], cwd=d, stdin=subprocess.DEVNULL,
+                                   capture_output=True, timeout=ESPERA_MAX_S, env=entorno)
+            except subprocess.TimeoutExpired:
+                return None
+            tiempos.append((time.perf_counter() - t) * 1000)
+            if r.returncode != 0 or b"hola desde el mock" not in r.stdout:
+                return None
+    return round(statistics.median(tiempos), 1)
+
+
 def rpc(base, token, metodo, params):
     """Llamada JSON-RPC al demonio; devuelve el `result` o None."""
     cuerpo = json.dumps({"jsonrpc": "2.0", "id": 1, "method": metodo, "params": params}).encode()
@@ -186,6 +214,9 @@ def medir(pcode, proyecto, repeticiones=7):
     """Todas las métricas de `pcode` en `proyecto`."""
     r = {"arranque_ms": mediana_arranque_ms(pcode, repeticiones)}
     r.update(medir_studio(pcode, proyecto))
+    pr = primera_respuesta_ms(pcode)
+    if pr is not None:
+        r["primera_respuesta_ms"] = pr
     return r
 
 
