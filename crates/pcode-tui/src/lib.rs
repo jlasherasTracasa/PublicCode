@@ -4,6 +4,7 @@
 //! [`Command`]s, y [`render`] dibuja sin efectos. La E/S (teclado, agente, aprobaciones) está en
 //! [`run_tui`], que traduce lo que pasa a [`Event`]s y ejecuta los [`Command`]s.
 pub mod app;
+pub mod commands;
 pub mod i18n;
 pub mod markdown;
 pub mod render;
