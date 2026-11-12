@@ -163,6 +163,12 @@ pub struct App {
     pub suggestion: usize,
     /// Se pulsó Ctrl+X y se espera la segunda tecla.
     pub leader: bool,
+    /// Título de la sesión (vacío si no tiene).
+    pub title: String,
+    /// Archivos tocados en la sesión.
+    pub changes: Vec<pcode_core::FileChange>,
+    /// La barra lateral está pedida.
+    pub show_side: bool,
 }
 
 /// Tokens en corto: `950`, `3.1k`, `1.2M`.
@@ -269,6 +275,9 @@ impl App {
             suggestions: vec![],
             suggestion: 0,
             leader: false,
+            title: String::new(),
+            changes: vec![],
+            show_side: false,
         }
     }
 

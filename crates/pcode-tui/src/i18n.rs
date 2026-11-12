@@ -104,6 +104,11 @@ const ES: &[(&str, &str)] = &[
         "leader_hint",
         " Ctrl+X ▸ n nueva · m modelo · t tema · u deshacer · r rehacer · q salir",
     ),
+    ("side_session", "Sesión"),
+    ("untitled", "(sin título)"),
+    ("side_context", "Contexto"),
+    ("side_changes", "Cambios"),
+    ("none", "(ninguno)"),
 ];
 
 const EN: &[(&str, &str)] = &[
@@ -184,6 +189,11 @@ const EN: &[(&str, &str)] = &[
         "leader_hint",
         " Ctrl+X ▸ n new · m model · t theme · u undo · r redo · q quit",
     ),
+    ("side_session", "Session"),
+    ("untitled", "(untitled)"),
+    ("side_context", "Context"),
+    ("side_changes", "Changes"),
+    ("none", "(none)"),
 ];
 
 /// Texto de `key` en `lang` (la propia clave si falta, para que se note en las pruebas).

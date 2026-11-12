@@ -9,6 +9,7 @@ pub mod i18n;
 pub mod markdown;
 pub mod render;
 pub mod run;
+pub mod side;
 pub mod theme;
 
 pub use app::{App, Command, Entry, Event, ToolState};
