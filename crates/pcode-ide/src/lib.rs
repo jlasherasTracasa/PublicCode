@@ -4,6 +4,7 @@ pub mod app;
 pub mod debug;
 pub mod events;
 pub mod find;
+pub mod folder;
 pub mod git;
 pub mod highlight;
 pub mod lsp_pos;
