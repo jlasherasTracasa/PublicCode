@@ -42,6 +42,9 @@ pub struct ChatArgs {
     /// programa (el demonio, un IDE) maneje la conversación.
     #[arg(long = "formato", default_value = "texto")]
     pub format: String,
+    /// Tema de la TUI: `azul`, `oscuro`, `claro`, `alto-contraste` u `opencode`.
+    #[arg(long = "tema")]
+    pub theme: Option<String>,
 }
 
 impl ChatArgs {
@@ -56,6 +59,7 @@ impl ChatArgs {
             max_steps: 100,
             config: PathBuf::from("pcode.toml"),
             format: "texto".into(),
+            theme: None,
         }
     }
 }
@@ -381,10 +385,15 @@ pub async fn tui(a: ChatArgs) -> anyhow::Result<i32> {
             history: p.history,
             approve_all: a.approve_all,
             lang: pcode_tui::Lang::from_env(),
-            theme: p
+            theme: a
                 .theme
                 .as_deref()
                 .and_then(|t| pcode_tui::Theme::by_name(t, std::env::var_os("NO_COLOR").is_some()))
+                .or_else(|| {
+                    p.theme.as_deref().and_then(|t| {
+                        pcode_tui::Theme::by_name(t, std::env::var_os("NO_COLOR").is_some())
+                    })
+                })
                 .unwrap_or_else(pcode_tui::Theme::from_env),
             notices: p.notices,
             root: std::env::current_dir()?,

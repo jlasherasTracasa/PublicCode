@@ -31,7 +31,23 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Tema por nombre: `azul` (por defecto), `oscuro`, `claro` o `alto-contraste`.
+    /// Nombres de los temas, en el orden en que se recorren.
+    pub const NAMES: [&'static str; 5] = ["azul", "oscuro", "claro", "alto-contraste", "opencode"];
+
+    /// El tema siguiente a este en `NAMES` (el primero tras el último o si no se reconoce).
+    pub fn next(&self) -> Theme {
+        let no_color = !self.use_color;
+        let pos = Self::NAMES
+            .iter()
+            .position(|n| Theme::by_name(n, no_color) == Some(*self));
+        let idx = match pos {
+            Some(i) => (i + 1) % Self::NAMES.len(),
+            None => 0,
+        };
+        Theme::by_name(Self::NAMES[idx], no_color).unwrap()
+    }
+
+    /// Tema por nombre: `azul` (por defecto), `oscuro`, `claro`, `alto-contraste` u `opencode`.
     pub fn by_name(name: &str, no_color: bool) -> Option<Theme> {
         let mut t = match name {
             "azul" | "blue" => Theme {
@@ -88,6 +104,20 @@ impl Theme {
                 bar_fg: Color::Black,
                 bubble_bg: Color::Black,
                 bubble_fg: Color::LightYellow,
+                use_color: true,
+            },
+            "opencode" => Theme {
+                fg: Color::Reset,
+                dim: Color::Rgb(128, 128, 128),
+                accent: Color::Rgb(250, 178, 131),
+                ok: Color::Rgb(127, 216, 143),
+                err: Color::Rgb(224, 108, 117),
+                warn: Color::Rgb(245, 167, 66),
+                code_bg: Color::Rgb(20, 20, 20),
+                bar_bg: Color::Rgb(20, 20, 20),
+                bar_fg: Color::Rgb(238, 238, 238),
+                bubble_bg: Color::Rgb(30, 30, 30),
+                bubble_fg: Color::Rgb(238, 238, 238),
                 use_color: true,
             },
             _ => return None,
@@ -182,5 +212,30 @@ mod tests {
             Some(Color::Rgb(11, 87, 208))
         );
         assert!(t.bar().add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn theme_opencode_existe_y_tiene_su_acento() {
+        let t = Theme::by_name("opencode", false).unwrap();
+        assert_eq!(t.accent, Color::Rgb(250, 178, 131));
+    }
+
+    #[test]
+    fn theme_todos_los_nombres_existen() {
+        for n in Theme::NAMES {
+            assert!(Theme::by_name(n, false).is_some(), "falta el tema {n}");
+        }
+    }
+
+    #[test]
+    fn theme_next_recorre_y_vuelve_al_primero() {
+        let azul = Theme::by_name("azul", false).unwrap();
+        let oscuro = Theme::by_name("oscuro", false).unwrap();
+        assert_eq!(azul.next(), oscuro);
+        let opencode = Theme::by_name("opencode", false).unwrap();
+        assert_eq!(opencode.next(), azul);
+        let sin_color = Theme::by_name("opencode", true).unwrap().next();
+        assert_eq!(sin_color, Theme::by_name("azul", true).unwrap());
+        assert!(!sin_color.use_color);
     }
 }
