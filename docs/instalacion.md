@@ -317,6 +317,8 @@ pcode actualizar              # descarga e instala la última versión, comproba
 pcode actualizar --comprobar  # solo avisa si hay versión nueva
 ```
 
+Si compilas desde el código: `tools/actualizar-local.sh` (trae los cambios, compila con el perfil ligero e instala).
+
 Para desinstalar, borra el binario y, si quieres, la configuración y el estado:
 
 | Qué | Linux | Windows |
