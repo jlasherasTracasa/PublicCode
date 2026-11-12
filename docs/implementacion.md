@@ -139,21 +139,21 @@ tools/tareas/generar.py --comprobar
 | F6 Aprendizaje | 0 | 0 | 0 | 3 | 13 | 0 | 16 |
 | F7 Endurecimiento | 2 | 0 | 0 | 1 | 3 | 0 | 6 |
 | F8 1.x: editor, agente y plataforma | 17 | 0 | 0 | 37 | 164 | 0 | 218 |
-| F9 Equipos modestos, remoto e IDE nativo | 32 | 0 | 0 | 19 | 28 | 3 | 82 |
+| F9 Equipos modestos, remoto e IDE nativo | 39 | 0 | 0 | 15 | 22 | 6 | 82 |
 | F10 Agente al nivel de los mejores | 0 | 0 | 0 | 6 | 23 | 0 | 29 |
 | F11 Planificación y flujos para modelos pequeños | 0 | 0 | 0 | 1 | 34 | 0 | 35 |
 | F12 Seguridad, gobierno y operación | 0 | 0 | 0 | 6 | 18 | 0 | 24 |
-| **Total** | 128 | 11 | 1 | 99 | 379 | 4 | 622 |
+| **Total** | 135 | 11 | 1 | 95 | 373 | 7 | 622 |
 
 ### Por hito (solo tareas abiertas)
 
 | Hito | Qué entrega | Listas | Bloqueadas | Esbozos | Para haiku | Para coordinador |
 |---|---|---|---|---|---|---|
-| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 9 | 8 | 0 | 16 | 1 |
+| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 6 | 2 | 2 | 9 | 1 |
 | **1.3** | Agente al nivel de los mejores: hooks, pendientes, segundo plano, permisos, órdenes y agentes propios, TUI | 19 | 63 | 0 | 82 | 0 |
 | **1.4** | Planificación y flujos medidos: banco, lint y desglose de tareas, revisión cruzada, GitHub | 7 | 64 | 0 | 68 | 3 |
 | **1.5** | Seguridad: Landlock, seccomp, red filtrada, secretos y política gestionada | 12 | 40 | 0 | 52 | 0 |
-| **1.6** | Studio e IDE completos: editor, LSP, git, tests y depurador | 31 | 138 | 0 | 169 | 0 |
+| **1.6** | Studio e IDE completos: editor, LSP, git, tests y depurador | 30 | 138 | 1 | 169 | 0 |
 | **1.7** | Contexto, memoria y aprendizaje: compactación, facetas, búsqueda híbrida, router y skills aprendidas | 10 | 35 | 0 | 45 | 0 |
 | **1.8** | Plataformas e integraciones: instaladores, ARM64, APK, ACP, extensiones y servidor MCP | 11 | 31 | 0 | 36 | 6 |
 | **despues** | Sin fecha: esbozos que hay que desgranar antes de empezarlos | 0 | 0 | 4 | 3 | 1 |
@@ -164,10 +164,7 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 
 | Tarea | Qué | Ejecutor | Talla | Hito | Desbloquea |
 |---|---|---|---|---|---|
-| [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | 6 |
-| [F9.19a-openvsx-nucleo](../tareas/F9.19a-openvsx-nucleo.md) | Extensiones: URL de Open VSX y lectura de su respuesta (lógica pura) | haiku | S | 1.2 | 5 |
-| [F9.40a-ide-tema-de-extension-nucleo](../tareas/F9.40a-ide-tema-de-extension-nucleo.md) | IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura) | haiku | S | 1.2 | 2 |
-| [F9.49a-ide-abrir-carpeta-nucleo](../tareas/F9.49a-ide-abrir-carpeta-nucleo.md) | IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura) | haiku | S | 1.2 | 2 |
+| [F9.40b-ide-tema-de-extension-ajustes](../tareas/F9.40b-ide-tema-de-extension-ajustes.md) | IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo | haiku | M | 1.2 | 1 |
 | [F9.45-instalar-desde-codigo](../tareas/F9.45-instalar-desde-codigo.md) | `install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo | haiku | S | 1.2 | 1 |
 | [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | 1 |
 | [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | S | 1.2 | 0 |
@@ -189,8 +186,11 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 | [F8.21a-imagenes-tipo](../tareas/F8.21a-imagenes-tipo.md) | `Message` con imágenes (base64 propio, sin dependencias) y su envío a Anthropic | haiku | M | 1.3 | 3 |
 | [F8.20a-web-tool](../tareas/F8.20a-web-tool.md) | `pcode-tools`: tool `web` (GET con tiempo y tamaño máximos, HTML a texto sin scripts ni estilos) | haiku | M | 1.3 | 2 |
 | [F10.41a-revisar-objetivo](../tareas/F10.41a-revisar-objetivo.md) | Revisión: prompt para los cambios preparados (staged) o respecto a una rama | haiku | S | 1.3 | 2 |
+| [F4.12c-guion-cableado](../tareas/F4.12c-guion-cableado.md) | Bucle del agente: ofrecer e interceptar la tool `guion` | haiku | M | 1.3 | 1 |
+| [F8.09c-lsp-tools-chat](../tareas/F8.09c-lsp-tools-chat.md) | Registrar las tools del LSP en el agente del chat y de la TUI | haiku | S | 1.3 | 1 |
+| [F4.10-busqueda-tools](../tareas/F4.10-busqueda-tools.md) | Búsqueda y deduplicación de tools: anunciar solo las relevantes | haiku | S | 1.3 | 0 |
 
-…y 74 más.
+…y 70 más.
 <!-- resumen:fin -->
 
 ## Tabla de tareas
@@ -717,9 +717,9 @@ El estado se calcula solo (ver «Estados»).
 | [F9.16-remoto-hosts](../tareas/F9.16-remoto-hosts.md) | `pcode remoto --listar` y conectar desde el IDE: servidores de ~/.ssh/config | haiku | — | — | F9.04, F9.05 | hecha |
 | [F9.17-rendimiento-en-ci](../tareas/F9.17-rendimiento-en-ci.md) | Presupuesto de rendimiento en la CI: arranque, Studio listo y memoria en reposo del demonio y del IDE | haiku | — | — | F9.05 | hecha |
 | [F9.18-empaquetar-ide](../tareas/F9.18-empaquetar-ide.md) | Release e instalador con pcode-ide al lado de pcode (Linux y Windows) | haiku | — | — | F9.05 | hecha |
-| [F9.19-extensiones-vscode-declarativas](../tareas/F9.19-extensiones-vscode-declarativas.md) | Extensiones de VS Code (solo lo declarativo): temas, fragmentos y lenguajes desde .vsix u Open VSX (cierre) | haiku | S | 1.2 | F9.05, F9.19a, F9.19b | bloqueada |
-| [F9.19a-openvsx-nucleo](../tareas/F9.19a-openvsx-nucleo.md) | Extensiones: URL de Open VSX y lectura de su respuesta (lógica pura) | haiku | S | 1.2 | F9.05 | lista |
-| [F9.19b-openvsx-instalar](../tareas/F9.19b-openvsx-instalar.md) | `pcode extensiones instalar editor.nombre`: descargar el .vsix de Open VSX e instalarlo | haiku | M | 1.2 | F9.19a | bloqueada |
+| [F9.19-extensiones-vscode-declarativas](../tareas/F9.19-extensiones-vscode-declarativas.md) | Extensiones de VS Code (solo lo declarativo): temas, fragmentos y lenguajes desde .vsix u Open VSX (cierre) | haiku | S | 1.2 | F9.05, F9.19a, F9.19b | hecha |
+| [F9.19a-openvsx-nucleo](../tareas/F9.19a-openvsx-nucleo.md) | Extensiones: URL de Open VSX y lectura de su respuesta (lógica pura) | haiku | S | 1.2 | F9.05 | hecha |
+| [F9.19b-openvsx-instalar](../tareas/F9.19b-openvsx-instalar.md) | `pcode extensiones instalar editor.nombre`: descargar el .vsix de Open VSX e instalarlo | haiku | M | 1.2 | F9.19a | hecha |
 | [F9.20-ide-fragmentos-y-temas](../tareas/F9.20-ide-fragmentos-y-temas.md) | IDE: usar los fragmentos (snippets) y temas de las extensiones instaladas | haiku | — | — | F9.19, F9.15 | hecha |
 | [F9.21-depurador-python](../tareas/F9.21-depurador-python.md) | Depurador en el IDE: DAP con debugpy (puntos de ruptura, pasos, variables) a través del demonio | coordinador | — | — | F9.05 | hecha |
 | [F9.22-ide-wayland-y-accesibilidad](../tareas/F9.22-ide-wayland-y-accesibilidad.md) | IDE: Wayland nativo (carga dinámica) y lector de pantalla (AccessKit) como funciones opcionales | haiku | S | 1.6 | F9.05 | lista |
@@ -729,7 +729,7 @@ El estado se calcula solo (ver «Estados»).
 | [F9.26-ide-sin-gpu](../tareas/F9.26-ide-sin-gpu.md) | IDE en equipos sin aceleración: aviso claro y modo software (llvmpipe) automático si OpenGL falla | haiku | — | — | F9.05 | hecha |
 | [F9.27-medir-ide](../tareas/F9.27-medir-ide.md) | Medir el IDE nativo: arranque hasta la primera ventana y memoria en reposo, con Xvfb si no hay pantalla | haiku | — | — | F9.17 | hecha |
 | [F9.28-ide-pulido-visual](../tareas/F9.28-ide-pulido-visual.md) | IDE: pulido visual pendiente (command center, iconos con glifos que existen, bienvenida centrada) | haiku | — | — | F9.05 | hecha |
-| [F9.29-modo-opencode](../tareas/F9.29-modo-opencode.md) | Modo opencode: la TUI con el aspecto y los atajos de opencode, más ligera (`pcode` en la terminal) | haiku | S | 1.2 | F5.34, F9.29a, F9.29b, F9.29c, F9.29d, F9.29e, F9.29f, F9.29g, F9.29h | bloqueada |
+| [F9.29-modo-opencode](../tareas/F9.29-modo-opencode.md) | Modo opencode: la TUI con el aspecto y los atajos de opencode, más ligera (`pcode` en la terminal) | haiku | S | 1.2 | F5.34, F9.29a, F9.29b, F9.29c, F9.29d, F9.29e, F9.29f, F9.29g, F9.29h | hecha |
 | [F9.29a-opencode-catalogo-ordenes](../tareas/F9.29a-opencode-catalogo-ordenes.md) | TUI: catálogo de órdenes `/` (tabla única con nombre, alias y ayuda) | haiku | S | 1.2 | F5.34 | hecha |
 | [F9.29b-opencode-paleta-ordenes](../tareas/F9.29b-opencode-paleta-ordenes.md) | TUI: al escribir `/` se abre la lista de órdenes (↑/↓, Tab completa, Intro ejecuta) | haiku | M | 1.2 | F9.29a | hecha |
 | [F9.29c-opencode-tab-build-plan](../tareas/F9.29c-opencode-tab-build-plan.md) | TUI: Tab con la entrada vacía cambia entre Build y Plan, y el modo se ve en el borde de la entrada | haiku | S | 1.2 | F9.29b | hecha |
@@ -737,7 +737,7 @@ El estado se calcula solo (ver «Estados»).
 | [F9.29e-opencode-tecla-lider](../tareas/F9.29e-opencode-tecla-lider.md) | TUI: tecla líder Ctrl+X (n nueva, m modelo, t tema, u/r deshacer y rehacer, c compactar, q salir) | haiku | M | 1.2 | F9.29c, F9.29d | hecha |
 | [F9.29f-opencode-barra-lateral](../tareas/F9.29f-opencode-barra-lateral.md) | TUI: contenido de la barra lateral (sesión, contexto y archivos tocados), lógica pura | haiku | M | 1.2 | F9.29e | hecha |
 | [F9.29g-opencode-cabecera-lateral](../tareas/F9.29g-opencode-cabecera-lateral.md) | TUI: dibujar la barra lateral (Ctrl+X b) y el título de la sesión en la cabecera | haiku | M | 1.2 | F9.29f | hecha |
-| [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | F9.29d | lista |
+| [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | F9.29d | hecha |
 | [F9.30-ide-cambios-sin-guardar](../tareas/F9.30-ide-cambios-sin-guardar.md) | IDE: preguntar antes de cerrar una pestaña o la ventana con cambios sin guardar (cierre) | haiku | S | 1.6 | F9.05, F9.30a, F9.30b | bloqueada |
 | [F9.30a-ide-cierre-nucleo](../tareas/F9.30a-ide-cierre-nucleo.md) | IDE: qué pestañas con cambios afecta un cierre (lógica pura) | haiku | S | 1.6 | F9.05 | lista |
 | [F9.30b-ide-cierre-dialogo](../tareas/F9.30b-ide-cierre-dialogo.md) | IDE: diálogo «¿Guardar los cambios?» al cerrar una pestaña, al salir y al cerrar la ventana | haiku | M | 1.6 | F9.30a | bloqueada |
@@ -760,13 +760,13 @@ El estado se calcula solo (ver «Estados»).
 | [F9.37-ide-vista-dividida](../tareas/F9.37-ide-vista-dividida.md) | IDE: vista dividida, con un segundo editor a la derecha (cierre) | haiku | S | 1.6 | F9.05, F9.37a, F9.37b | bloqueada |
 | [F9.37a-ide-vista-dividida-nucleo](../tareas/F9.37a-ide-vista-dividida-nucleo.md) | IDE: estado de la vista dividida (qué archivo va a la derecha) sin interfaz | haiku | S | 1.6 | F9.05 | lista |
 | [F9.37b-ide-vista-dividida-panel](../tareas/F9.37b-ide-vista-dividida-panel.md) | IDE: orden «Dividir el editor» (Ctrl+\) y segundo editor a la derecha | haiku | M | 1.6 | F9.37a | bloqueada |
-| [F9.38-ide-arrastrar-pestanas](../tareas/F9.38-ide-arrastrar-pestanas.md) | IDE: reordenar las pestañas arrastrándolas | haiku | S | 1.6 | F9.05 | lista |
+| [F9.38-ide-arrastrar-pestanas](../tareas/F9.38-ide-arrastrar-pestanas.md) | IDE: reordenar las pestañas arrastrándolas | haiku | S | 1.6 | F9.05 | esbozo |
 | [F9.39-ide-atajos-configurables](../tareas/F9.39-ide-atajos-configurables.md) | IDE: atajos de teclado configurables en `keybindings.toml` (cierre) | haiku | S | 1.6 | F9.15, F9.39a, F9.39b | bloqueada |
 | [F9.39a-ide-atajos-nucleo](../tareas/F9.39a-ide-atajos-nucleo.md) | IDE: leer atajos («Ctrl+Mayús+P») y el archivo `keybindings.toml` (lógica pura) | haiku | M | 1.6 | F9.15 | lista |
 | [F9.39b-ide-atajos-cableado](../tareas/F9.39b-ide-atajos-cableado.md) | IDE: usar los atajos de `keybindings.toml` en el teclado y enseñarlos en menús y paleta | haiku | M | 1.6 | F9.39a | bloqueada |
 | [F9.40-ide-temas-de-extension](../tareas/F9.40-ide-temas-de-extension.md) | IDE: usar los temas de color de las extensiones instaladas (cierre) | haiku | S | 1.2 | F9.20, F9.40a, F9.40b | bloqueada |
-| [F9.40a-ide-tema-de-extension-nucleo](../tareas/F9.40a-ide-tema-de-extension-nucleo.md) | IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura) | haiku | S | 1.2 | F9.20 | lista |
-| [F9.40b-ide-tema-de-extension-ajustes](../tareas/F9.40b-ide-tema-de-extension-ajustes.md) | IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo | haiku | M | 1.2 | F9.40a | bloqueada |
+| [F9.40a-ide-tema-de-extension-nucleo](../tareas/F9.40a-ide-tema-de-extension-nucleo.md) | IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura) | haiku | S | 1.2 | F9.20 | hecha |
+| [F9.40b-ide-tema-de-extension-ajustes](../tareas/F9.40b-ide-tema-de-extension-ajustes.md) | IDE: elegir en Ajustes un tema de una extensión instalada y recordarlo | haiku | M | 1.2 | F9.40a | lista |
 | [F9.41-ide-explorador-de-tests](../tareas/F9.41-ide-explorador-de-tests.md) | IDE: explorador de tests (descubrir, ejecutar y marcar ✓ ✗) sobre los métodos `tests.*` del demonio (cierre) | haiku | S | 1.6 | F8.14, F9.12, F9.41a, F9.41b, F9.41c | bloqueada |
 | [F9.41a-ide-tests-estado](../tareas/F9.41a-ide-tests-estado.md) | IDE: estado del explorador de tests y captura de la salida de la terminal (lógica pura) | haiku | M | 1.6 | F9.12 | lista |
 | [F9.41b-ide-tests-peticiones](../tareas/F9.41b-ide-tests-peticiones.md) | IDE: pedir ejecutores, lanzar las órdenes de tests con `terminal.run` y mandar su salida a `tests.parse` | haiku | M | 1.6 | F9.41a, F8.14 | bloqueada |
@@ -778,9 +778,9 @@ El estado se calcula solo (ver «Estados»).
 | [F9.46-version-con-commit](../tareas/F9.46-version-con-commit.md) | `pcode --version` y `pcode doctor` dicen de qué commit sale el binario: `pcode 1.1.0 (e2e30ab)` | haiku | S | 1.2 | — | lista |
 | [F9.47-actualizar-local](../tareas/F9.47-actualizar-local.md) | `tools/actualizar-local.sh`: pull, compilar ligero, instalar y comprobar en una orden | haiku | S | 1.2 | F9.45, F9.46 | bloqueada |
 | [F9.48-plan-hook-precommit](../tareas/F9.48-plan-hook-precommit.md) | Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa) | haiku | S | 1.2 | — | lista |
-| [F9.49-ide-abrir-carpeta](../tareas/F9.49-ide-abrir-carpeta.md) | IDE: «Abrir carpeta…» (Ctrl+O) y «Abrir reciente» sin salir a la terminal | haiku | S | 1.2 | F9.24, F9.49a, F9.49b | bloqueada |
-| [F9.49a-ide-abrir-carpeta-nucleo](../tareas/F9.49a-ide-abrir-carpeta-nucleo.md) | IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura) | haiku | S | 1.2 | F9.24 | lista |
-| [F9.49b-ide-abrir-carpeta-ventana](../tareas/F9.49b-ide-abrir-carpeta-ventana.md) | IDE: menú Archivo con «Abrir carpeta…» (Ctrl+O) y «Abrir reciente», y la ventana del selector | haiku | M | 1.2 | F9.49a | bloqueada |
+| [F9.49-ide-abrir-carpeta](../tareas/F9.49-ide-abrir-carpeta.md) | IDE: «Abrir carpeta…» (Ctrl+O) y «Abrir reciente» sin salir a la terminal | haiku | S | 1.2 | F9.24, F9.49a, F9.49b | esbozo |
+| [F9.49a-ide-abrir-carpeta-nucleo](../tareas/F9.49a-ide-abrir-carpeta-nucleo.md) | IDE: selector de carpetas (navegar, filtrar, recientes) y lanzar `pcode ide <ruta>` (lógica pura) | haiku | S | 1.2 | F9.24 | hecha |
+| [F9.49b-ide-abrir-carpeta-ventana](../tareas/F9.49b-ide-abrir-carpeta-ventana.md) | IDE: menú Archivo con «Abrir carpeta…» (Ctrl+O) y «Abrir reciente», y la ventana del selector | haiku | M | 1.2 | F9.49a | esbozo |
 
 ### F10 — Agente al nivel de los mejores
 
