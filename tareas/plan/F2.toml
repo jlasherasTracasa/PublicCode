@@ -1113,31 +1113,6 @@ tests = ["contrato_completo", "sin_contrato_es_none", "contrato_sin_ejemplo_es_e
 papers = ["Skill-as-Pseudocode (Findings EMNLP 2026)", "SKILL.state (EMNLP 2026 Industry)", "When Not to Imitate (Findings EMNLP 2026)"]
 
 [[tarea]]
-id = "F2.16"
-nombre = "mcp-servidor"
-titulo = "`pcode-mcp`: servidor MCP (stdio) con las tools de PublicCode filtradas por política"
-fase = "F2"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "haiku"
-depende = ["F2.03", "F1.18", "F1.11"]
-toca = ["crates/pcode-mcp/Cargo.toml", "crates/pcode-mcp/src/lib.rs", "crates/pcode-mcp/src/tools.rs", "crates/pcode-cli/src/main.rs"]
-acepta = "cargo test -p pcode-mcp && cargo test -p pcode-cli"
-contexto = ["docs/arquitectura.md (sección «MCP»)", "crates/pcode-policy/src/caps.rs"]
-objetivo = '''
-1. Dependencia nueva permitida: `rmcp` (SDK oficial de MCP para Rust), transporte stdio.
-2. Tools: `sandbox_ejecutar {orden, red?: bool, tiempo?: int}` → `{estado, codigo, salida}`;
-   `sandbox_cambios {estado}`; `sandbox_aplicar {estado}`; `sandbox_descartar {estado}`;
-   `aceptar {orden}` → `{ok, salida_comprimida}`; `buscar_repo {patron, glob?}` (reusa `Grep`).
-3. Esquemas mínimos: descripciones de una línea (el coste de MCP está en el esquema, *ProMCP*).
-4. Política: el servidor recibe `--politica <toml>` y **no anuncia** las tools que la política oculta.
-5. `pcode mcp` arranca el servidor.
-'''
-tests = ["mcp_lista_tools", "mcp_oculta_por_politica", "mcp_aceptar_devuelve_salida_comprimida", "mcp_sandbox_ida_y_vuelta (se salta sin userns)"]
-papers = ["ProMCP (Findings ACL 2026)", "Prompts Don't Protect (EMNLP 2026 Industry)", "DynamicMCPBench / AgentCheck (EMNLP 2026)"]
-
-[[tarea]]
 id = "F2.17"
 nombre = "sincronizar-instrucciones"
 titulo = "`pcode instrucciones sincronizar`: AGENTS.md → CLAUDE.md, GEMINI.md, copilot-instructions"
@@ -1811,3 +1786,163 @@ objetivo = '''
    del proyecto; conexión en paralelo al arrancar; avisos de los que fallan; `pcode mcp`.
 '''
 tests = ["mcp_lista_con_paginacion_y_llama", "mcp_tiempo_maximo_y_servidor_caido", "nombres_validos_para_los_proveedores", "mcp_se_lee_y_expande_el_entorno", "mcp_tools_de_un_servidor_real_en_chat_y_en_pcode_mcp"]
+
+[[tarea]]
+id = "F2.16"
+nombre = "mcp-servidor"
+titulo = "Servidor MCP (stdio) con las tools de PublicCode filtradas por la política: `pcode mcp --servir`"
+fase = "F2"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.03", "F1.18", "F1.11"]
+toca = []
+acepta = "cargo test -p pcode-mcp && cargo test -p pcode-cli --test mcp_servir"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F2.16a (núcleo del servidor en el crate nuevo `pcode-mcp`) y F2.16b (orden `pcode mcp --servir`).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+notas = '''
+Cambio respecto al esbozo antiguo: se exponen las tools nativas (`leer`, `buscar`, `listar`, `esquema`, `escribir`,
+`editar`, `bash`) en vez de tools de sandbox, y el protocolo se escribe a mano con `serde_json` (sin `rmcp`): son 4
+métodos y así no entra una dependencia nueva.
+'''
+
+[[tarea]]
+id = "F2.16a"
+nombre = "mcp-servidor-nucleo"
+titulo = "Crate `pcode-mcp`: `McpServer` responde initialize, tools/list y tools/call aplicando la política"
+fase = "F2"
+hito = "1.8"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F1.11", "F1.13"]
+toca = ["crates/pcode-mcp/Cargo.toml", "crates/pcode-mcp/src/lib.rs"]
+acepta = "cargo test -p pcode-mcp"
+contexto = [
+  "crates/pcode-dap/Cargo.toml (forma del Cargo.toml de un crate del workspace)",
+  "crates/pcode-tools/src/registry.rs (`Tool`, `ToolRegistry::specs_filtered`, `ToolRegistry::get`, `ToolContext`)",
+  "crates/pcode-policy/src/caps.rs (`Policy::tool_visible`, `check_effects`, `check_write`, `check_command`, `Decision`)",
+  "crates/pcode-core/src/agent.rs (cómo decide el agente una llamada: busca `check_effects(effects)`)",
+]
+objetivo = '''
+MCP por stdio son mensajes JSON-RPC 2.0, uno por línea. Este crate atiende las peticiones de un cliente MCP (Claude
+Code, un IDE…) con las tools de PublicCode. El workspace ya incluye `crates/*`: no toques el Cargo.toml raíz.
+1. `Cargo.toml` del crate: `name = "pcode-mcp"`, `version/edition/license.workspace = true`; dependencias
+   `pcode-tools` y `pcode-policy` (por ruta `../pcode-…`), `serde_json.workspace = true`, `tokio.workspace = true`;
+   en `[dev-dependencies]`, `tempfile.workspace = true`.
+2. `lib.rs` con lo de *Firmas*. `new`: recorre `registry.specs_filtered(|n, e| policy.tool_visible(n, e))` y guarda
+   `registry.get(&spec.name)` de cada una (lo oculto por la política no se anuncia ni se puede llamar).
+3. `handle(msg)`: si `msg` no tiene `"id"` es una notificación → `None`. Si no, responde
+   `{"jsonrpc":"2.0","id":<id>,"result":…}` según `msg["method"]`:
+   - `initialize` → `{"protocolVersion": PROTOCOL_VERSION, "capabilities": {"tools": {}}, "serverInfo": {"name": "pcode", "version": env!("CARGO_PKG_VERSION")}}`
+   - `ping` → `{}`
+   - `tools/list` → `{"tools": [{"name", "description", "inputSchema": <spec.parameters>}, …]}` en el orden guardado.
+   - `tools/call` → ver paso 4.
+   - otro → `{"jsonrpc":"2.0","id":<id>,"error":{"code":-32601,"message":"método desconocido: <m>"}}`.
+4. `tools/call`: `name = params.name`, `args = params.arguments` (o `{}`). Tool no encontrada → resultado de error
+   `tool desconocida: <name>`. Decisión como el agente: `policy.check_effects(tool.effects())`; si sale `Allow`, la
+   tool tiene `Effect::Write` y `args["path"]` es texto → `check_write`; si sigue `Allow`, tiene `Effect::Exec` y
+   `args["command"]` es texto → `check_command`. `Deny(m)` → error `denegado por la política: <m>`; `Ask(m)` → error
+   `requiere aprobación humana: <m> (el servidor MCP no puede preguntar)`; `Allow` → `tool.call(args, &ctx)`.
+   Resultado: `{"content":[{"type":"text","text":<texto>}],"isError":<bool>}` (los errores de este paso también van
+   así, con `isError: true`, no como error JSON-RPC).
+5. `serve`: lee línea a línea; salta las vacías; si una línea no es JSON escribe
+   `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"JSON inválido"}}`; cada respuesta `Some` se escribe en
+   una línea con `\n` y `flush`. Termina con `Ok(())` al acabar la entrada.
+6. Tests en `#[cfg(test)]` de `lib.rs` (`#[tokio::test]`), con `pcode_tools::native_registry()` y la raíz en un
+   `tempfile::tempdir()`.
+'''
+firmas = '''
+// crates/pcode-mcp/src/lib.rs
+//! Servidor MCP (stdio) con las tools de PublicCode filtradas por la política.
+use pcode_policy::{Decision, Policy};
+use pcode_tools::{Effect, Tool, ToolContext, ToolRegistry};
+use serde_json::{Value, json};
+use std::sync::Arc;
+
+/// Versión del protocolo MCP que se anuncia en `initialize`.
+pub const PROTOCOL_VERSION: &str = "2025-06-18";
+
+/// Servidor MCP de las tools de PublicCode.
+pub struct McpServer {
+    tools: Vec<Arc<dyn Tool>>,
+    policy: Policy,
+    ctx: ToolContext,
+}
+
+impl McpServer {
+    /// Servidor con las tools del registro que la política deja ver.
+    pub fn new(registry: &ToolRegistry, policy: Policy, ctx: ToolContext) -> McpServer;
+    /// Respuesta a un mensaje JSON-RPC (`None` para las notificaciones).
+    pub async fn handle(&self, msg: &Value) -> Option<Value>;
+    /// Atiende mensajes línea a línea hasta el fin de la entrada.
+    pub async fn serve<R, W>(&self, input: R, output: W) -> std::io::Result<()>
+    where
+        R: tokio::io::AsyncBufRead + Unpin,
+        W: tokio::io::AsyncWrite + Unpin;
+}
+'''
+tests = [
+  "mcp_initialize_anuncia_tools: `initialize` con id 1 → `result.protocolVersion == PROTOCOL_VERSION` y `result.capabilities.tools` es un objeto",
+  "mcp_lista_tools: `tools/list` → contiene `leer` y `bash`, y cada tool tiene `inputSchema`",
+  "mcp_oculta_por_politica: política con `hidden_tools = [\"bash\"]` → `tools/list` no trae `bash` y `tools/call` de `bash` da `isError: true`",
+  "mcp_llamada_denegada_por_politica: `deny_write = [\"**\"]` y `tools/call` de `escribir` con `path` `a.txt` → `isError: true`, texto con `denegado` y el archivo no existe",
+  "mcp_leer_devuelve_el_contenido: archivo `a.txt` con `hola` y `tools/call` de `leer` → `isError: false` y el texto contiene `hola`",
+  "mcp_notificacion_sin_respuesta: `{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}` → `None`",
+  "mcp_serve_linea_a_linea: entrada con dos líneas (initialize id 1 y tools/list id 2) → dos líneas de salida con ids 1 y 2",
+]
+no_hagas = ["no añadas `rmcp` ni otras dependencias", "no anuncies tools que la política oculta"]
+
+[[tarea]]
+id = "F2.16b"
+nombre = "mcp-servidor-cli"
+titulo = "`pcode mcp --servir [--politica <toml>]`: arrancar el servidor MCP por stdio"
+fase = "F2"
+hito = "1.8"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F2.16a"]
+toca = ["crates/pcode-cli/Cargo.toml", "crates/pcode-cli/src/main.rs", "crates/pcode-cli/src/mcp_serve.rs", "crates/pcode-cli/tests/mcp_servir.rs"]
+acepta = "cargo test -p pcode-cli --test mcp_servir"
+contexto = [
+  "crates/pcode-cli/src/main.rs (variante `Mcp { config }` y su brazo en el `match`)",
+  "crates/pcode-cli/src/run.rs (`load_capabilities`: lee la sección `[politica]` de un TOML)",
+  "crates/pcode-mcp/src/lib.rs (`McpServer::new` y `serve`, de F2.16a)",
+  "crates/pcode-cli/tests/run.rs (estilo de un test con `assert_cmd`)",
+]
+objetivo = '''
+Hoy `pcode mcp` lista los servidores MCP configurados. Se le añade una opción para hacer lo contrario: servir las
+tools de PublicCode a otro agente. Sin `--servir`, todo sigue igual.
+1. `Cargo.toml` de pcode-cli: añade `pcode-mcp = { path = "../pcode-mcp" }` en `[dependencies]`.
+2. `main.rs`: en la variante `Mcp` añade `#[arg(long = "servir")] serve: bool` (doc: «Sirve las tools de PublicCode
+   por MCP en stdio») y `#[arg(long = "politica")] policy: Option<std::path::PathBuf>` (doc: «TOML con una sección
+   `[politica]` que restringe las tools»). Declara `mod mcp_serve;`. En el `match`: si `serve`,
+   `std::process::exit(mcp_serve::run(policy.as_deref()).await?)`; si no, lo de ahora.
+3. `mcp_serve.rs` con la función de *Firmas*: `root = std::env::current_dir()?`; política
+   `Policy::new(Capabilities::interactive_defaults())` y, si hay `--politica`, `.child(crate::run::load_capabilities(p))`;
+   `McpServer::new(&pcode_tools::native_registry(), policy, ToolContext { root, timeout: Duration::from_secs(120) })`;
+   `serve(tokio::io::BufReader::new(tokio::io::stdin()), tokio::io::stdout())`; devuelve `Ok(0)`. Nada de `println!`
+   (stdout es el canal del protocolo).
+4. Test de integración `tests/mcp_servir.rs` con `assert_cmd` (`current_dir` en un tempdir, `write_stdin` con las
+   líneas JSON terminadas en `\n`, `timeout` de 30 s).
+'''
+firmas = '''
+// crates/pcode-cli/src/mcp_serve.rs
+//! `pcode mcp --servir`: las tools de PublicCode como servidor MCP por stdio.
+use pcode_mcp::McpServer;
+use pcode_policy::{Capabilities, Policy};
+use pcode_tools::ToolContext;
+use std::time::Duration;
+
+/// Sirve hasta que se cierra stdin; devuelve el código de salida.
+pub async fn run(policy: Option<&std::path::Path>) -> anyhow::Result<i32>;
+'''
+tests = [
+  "mcp_servir_responde_initialize_y_lista: stdin con initialize (id 1) y tools/list (id 2) → éxito y stdout contiene `protocolVersion` y `\"leer\"`",
+  "mcp_servir_respeta_la_politica: `--politica p.toml` con `[politica]` y `tools_ocultas = [\"bash\"]` → stdout de tools/list no contiene `\"bash\"`",
+]

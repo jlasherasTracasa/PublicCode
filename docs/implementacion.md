@@ -132,31 +132,31 @@ tools/tareas/generar.py --comprobar
 |---|---|---|---|---|---|---|---|
 | F0 Fundaciones | 6 | 0 | 0 | 2 | 3 | 0 | 11 |
 | F1 Núcleo | 26 | 0 | 0 | 0 | 0 | 0 | 26 |
-| F2 Backends, sandbox, skills y MCP | 15 | 0 | 0 | 5 | 20 | 1 | 41 |
+| F2 Backends, sandbox, skills y MCP | 15 | 0 | 0 | 6 | 22 | 0 | 43 |
 | F3 Flujos | 9 | 0 | 0 | 0 | 10 | 0 | 19 |
 | F4 Contexto, memoria y router | 10 | 0 | 0 | 8 | 26 | 0 | 44 |
-| F5 Interfaces | 11 | 11 | 1 | 5 | 31 | 4 | 63 |
+| F5 Interfaces | 11 | 11 | 1 | 10 | 35 | 1 | 69 |
 | F6 Aprendizaje | 0 | 0 | 0 | 3 | 13 | 0 | 16 |
 | F7 Endurecimiento | 2 | 0 | 0 | 1 | 3 | 0 | 6 |
-| F8 1.x: editor, agente y plataforma | 17 | 0 | 0 | 32 | 148 | 6 | 203 |
-| F9 Equipos modestos, remoto e IDE nativo | 25 | 0 | 0 | 19 | 32 | 3 | 79 |
+| F8 1.x: editor, agente y plataforma | 17 | 0 | 0 | 37 | 164 | 0 | 218 |
+| F9 Equipos modestos, remoto e IDE nativo | 32 | 0 | 0 | 18 | 26 | 3 | 79 |
 | F10 Agente al nivel de los mejores | 0 | 0 | 0 | 6 | 23 | 0 | 29 |
 | F11 Planificación y flujos para modelos pequeños | 0 | 0 | 0 | 1 | 34 | 0 | 35 |
 | F12 Seguridad, gobierno y operación | 0 | 0 | 0 | 6 | 18 | 0 | 24 |
-| **Total** | 121 | 11 | 1 | 88 | 361 | 14 | 596 |
+| **Total** | 128 | 11 | 1 | 98 | 377 | 4 | 619 |
 
 ### Por hito (solo tareas abiertas)
 
 | Hito | Qué entrega | Listas | Bloqueadas | Esbozos | Para haiku | Para coordinador |
 |---|---|---|---|---|---|---|
-| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 9 | 12 | 0 | 20 | 1 |
-| **1.3** | Agente al nivel de los mejores: hooks, pendientes, segundo plano, permisos, órdenes y agentes propios, TUI | 13 | 49 | 0 | 62 | 0 |
+| **1.2** | Cerrar lo empezado: IDE nativo, depurador, remoto y modo opencode | 8 | 6 | 0 | 13 | 1 |
+| **1.3** | Agente al nivel de los mejores: hooks, pendientes, segundo plano, permisos, órdenes y agentes propios, TUI | 19 | 63 | 0 | 82 | 0 |
 | **1.4** | Planificación y flujos medidos: banco, lint y desglose de tareas, revisión cruzada, GitHub | 7 | 64 | 0 | 68 | 3 |
-| **1.5** | Seguridad: Landlock, seccomp, red filtrada, secretos y política gestionada | 11 | 38 | 0 | 49 | 0 |
+| **1.5** | Seguridad: Landlock, seccomp, red filtrada, secretos y política gestionada | 12 | 40 | 0 | 52 | 0 |
 | **1.6** | Studio e IDE completos: editor, LSP, git, tests y depurador | 31 | 138 | 0 | 169 | 0 |
-| **1.7** | Contexto, memoria y aprendizaje: compactación, facetas, búsqueda híbrida, router y skills aprendidas | 9 | 35 | 0 | 44 | 0 |
-| **1.8** | Plataformas e integraciones: instaladores, ARM64, APK, ACP, extensiones y servidor MCP | 8 | 25 | 0 | 27 | 6 |
-| **despues** | Sin fecha: esbozos que hay que desgranar antes de empezarlos | 0 | 0 | 14 | 12 | 2 |
+| **1.7** | Contexto, memoria y aprendizaje: compactación, facetas, búsqueda híbrida, router y skills aprendidas | 10 | 35 | 0 | 45 | 0 |
+| **1.8** | Plataformas e integraciones: instaladores, ARM64, APK, ACP, extensiones y servidor MCP | 11 | 31 | 0 | 36 | 6 |
+| **despues** | Sin fecha: esbozos que hay que desgranar antes de empezarlos | 0 | 0 | 4 | 3 | 1 |
 
 ### Qué se puede empezar ahora
 
@@ -164,8 +164,7 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 
 | Tarea | Qué | Ejecutor | Talla | Hito | Desbloquea |
 |---|---|---|---|---|---|
-| [F9.29a-opencode-catalogo-ordenes](../tareas/F9.29a-opencode-catalogo-ordenes.md) | TUI: catálogo de órdenes `/` (tabla única con nombre, alias y ayuda) | haiku | S | 1.2 | 45 |
-| [F9.29d-opencode-tema](../tareas/F9.29d-opencode-tema.md) | TUI: tema `opencode`, lista de temas y opción `pcode tui --tema <nombre>` | haiku | S | 1.2 | 44 |
+| [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | 6 |
 | [F9.19a-openvsx-nucleo](../tareas/F9.19a-openvsx-nucleo.md) | Extensiones: URL de Open VSX y lectura de su respuesta (lógica pura) | haiku | S | 1.2 | 5 |
 | [F9.40a-ide-tema-de-extension-nucleo](../tareas/F9.40a-ide-tema-de-extension-nucleo.md) | IDE: convertir un tema de color de VS Code en la paleta del IDE (lógica pura) | haiku | S | 1.2 | 2 |
 | [F9.45-instalar-desde-codigo](../tareas/F9.45-instalar-desde-codigo.md) | `install.sh --local [carpeta]`: instalar pcode y pcode-ide compilados en este equipo | haiku | S | 1.2 | 1 |
@@ -173,6 +172,8 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 | [F8.34-rendimiento](../tareas/F8.34-rendimiento.md) | Rendimiento medido: arranque, memoria y latencia, con presupuesto en la CI | haiku | S | 1.2 | 0 |
 | [F9.25-releases-periodicas](../tareas/F9.25-releases-periodicas.md) | Releases periódicas: versión, CHANGELOG y etiqueta tras cada bloque de tareas aceptadas | coordinador | S | 1.2 | 0 |
 | [F9.48-plan-hook-precommit](../tareas/F9.48-plan-hook-precommit.md) | Hook `pre-commit` que valida el plan cuando el commit toca `tareas/plan*` (que la CI no se rompa) | haiku | S | 1.2 | 0 |
+| [F5.10a-tui-arbol-sesiones](../tareas/F5.10a-tui-arbol-sesiones.md) | TUI: árbol de sesiones y subagentes para la barra lateral (lógica pura) | haiku | S | 1.3 | 37 |
+| [F5.11a-tui-atajos-mapa](../tareas/F5.11a-tui-atajos-mapa.md) | TUI: mapa de atajos y `keybindings.toml` (lógica pura) | haiku | M | 1.3 | 35 |
 | [F8.24a-tui-selector-nucleo](../tareas/F8.24a-tui-selector-nucleo.md) | TUI: lista seleccionable con búsqueda difusa (lógica pura) | haiku | S | 1.3 | 32 |
 | [F8.25a-checkpoint-diff-archivo](../tareas/F8.25a-checkpoint-diff-archivo.md) | Puntos de control: diff de un archivo de un turno y revertir solo ese archivo | haiku | S | 1.3 | 29 |
 | [F8.26a-tui-osc52](../tareas/F8.26a-tui-osc52.md) | TUI: secuencia OSC 52 para copiar al portapapeles (lógica pura) | haiku | S | 1.3 | 26 |
@@ -180,17 +181,16 @@ Tareas **listas** (dependencias cerradas), por orden de hito y de cuántas desbl
 | [F5.06a-cli-formato-salida](../tareas/F5.06a-cli-formato-salida.md) | CLI: formatos de salida de `pcode run` (`texto`, `json`, `stream-json`), lógica pura | haiku | S | 1.3 | 14 |
 | [F10.35a-tui-editor-lanzar](../tareas/F10.35a-tui-editor-lanzar.md) | TUI: elegir el editor (`$VISUAL`, `$EDITOR`) y editar un texto en un archivo temporal | haiku | S | 1.3 | 14 |
 | [F10.36a-tui-edicion-cursor](../tareas/F10.36a-tui-edicion-cursor.md) | TUI: operaciones de edición de texto con cursor (lógica pura) | haiku | M | 1.3 | 13 |
+| [F8.16a-ordenes-propias-nucleo](../tareas/F8.16a-ordenes-propias-nucleo.md) | `pcode-skills`: leer órdenes propias (`*.md` con frontmatter y `$ARGUMENTOS`) de varias carpetas | haiku | S | 1.3 | 7 |
 | [F10.39a-tui-estado-nucleo](../tareas/F10.39a-tui-estado-nucleo.md) | TUI: elementos de la línea de estado y su texto (lógica pura) | haiku | S | 1.3 | 5 |
 | [F10.40a-store-buscar-bifurcar](../tareas/F10.40a-store-buscar-bifurcar.md) | `pcode-store`: sesión por id, número de mensajes, búsqueda de texto y bifurcación | haiku | M | 1.3 | 5 |
+| [F8.18a-coste-calculo](../tareas/F8.18a-coste-calculo.md) | `pcode-models`: precio por millón de tokens con caché y estado del presupuesto (lógica pura) | haiku | S | 1.3 | 4 |
+| [F8.21a-imagenes-tipo](../tareas/F8.21a-imagenes-tipo.md) | `Message` con imágenes (base64 propio, sin dependencias) y su envío a Anthropic | haiku | M | 1.3 | 3 |
+| [F8.20a-web-tool](../tareas/F8.20a-web-tool.md) | `pcode-tools`: tool `web` (GET con tiempo y tamaño máximos, HTML a texto sin scripts ni estilos) | haiku | M | 1.3 | 2 |
 | [F10.41a-revisar-objetivo](../tareas/F10.41a-revisar-objetivo.md) | Revisión: prompt para los cambios preparados (staged) o respecto a una rama | haiku | S | 1.3 | 2 |
 | [F4.12c-guion-cableado](../tareas/F4.12c-guion-cableado.md) | Bucle del agente: ofrecer e interceptar la tool `guion` | haiku | M | 1.3 | 1 |
-| [F8.09c-lsp-tools-chat](../tareas/F8.09c-lsp-tools-chat.md) | Registrar las tools del LSP en el agente del chat y de la TUI | haiku | S | 1.3 | 1 |
-| [F4.10-busqueda-tools](../tareas/F4.10-busqueda-tools.md) | Búsqueda y deduplicación de tools: anunciar solo las relevantes | haiku | S | 1.3 | 0 |
-| [F11.01a-tarea-secciones](../tareas/F11.01a-tarea-secciones.md) | Flujos: leer las secciones de una tarea (`Brief`) desde su Markdown | haiku | M | 1.4 | 64 |
-| [F5.04a-api-flujo-protocolo](../tareas/F5.04a-api-flujo-protocolo.md) | Protocolo: métodos `flow.run` y `flow.stop` y tipo `FlowStatusResult` | haiku | S | 1.4 | 6 |
-| [F5.17a-skills-api-nucleo](../tareas/F5.17a-skills-api-nucleo.md) | Demonio: listar skills (activas, en cuarentena, retiradas) y exportarlas | haiku | M | 1.4 | 4 |
 
-…y 63 más.
+…y 73 más.
 <!-- resumen:fin -->
 
 ## Tabla de tareas
@@ -274,7 +274,9 @@ El estado se calcula solo (ver «Estados»).
 | [F2.13-skills-registro](../tareas/F2.13-skills-registro.md) | `pcode-skills`: leer `SKILL.md`, registro, índice y cierre de dependencias | haiku | — | — | F0.01 | hecha |
 | [F2.14-skills-exportar](../tareas/F2.14-skills-exportar.md) | Exportar skills a Claude Code, Copilot, Gemini y opencode | haiku | — | — | F2.13, F0.03 | hecha |
 | [F2.15-skills-contrato](../tareas/F2.15-skills-contrato.md) | Sección `## Contrato` y checkpoints de estado en las skills | haiku | — | — | F2.13 | hecha |
-| [F2.16-mcp-servidor](../tareas/F2.16-mcp-servidor.md) | `pcode-mcp`: servidor MCP (stdio) con las tools de PublicCode filtradas por política | haiku | — | despues | F2.03, F1.18, F1.11 | esbozo |
+| [F2.16-mcp-servidor](../tareas/F2.16-mcp-servidor.md) | Servidor MCP (stdio) con las tools de PublicCode filtradas por la política: `pcode mcp --servir` | haiku | S | 1.8 | F2.03, F1.18, F1.11, F2.16a, F2.16b | bloqueada |
+| [F2.16a-mcp-servidor-nucleo](../tareas/F2.16a-mcp-servidor-nucleo.md) | Crate `pcode-mcp`: `McpServer` responde initialize, tools/list y tools/call aplicando la política | haiku | M | 1.8 | F1.11, F1.13 | lista |
+| [F2.16b-mcp-servidor-cli](../tareas/F2.16b-mcp-servidor-cli.md) | `pcode mcp --servir [--politica <toml>]`: arrancar el servidor MCP por stdio | haiku | S | 1.8 | F2.16a | bloqueada |
 | [F2.17-sincronizar-instrucciones](../tareas/F2.17-sincronizar-instrucciones.md) | `pcode instrucciones sincronizar`: AGENTS.md → CLAUDE.md, GEMINI.md, copilot-instructions | haiku | S | 1.4 | F2.17a, F2.17b | bloqueada |
 | [F2.17a-instrucciones-nucleo](../tareas/F2.17a-instrucciones-nucleo.md) | Instrucciones derivadas de AGENTS.md: generar y comprobar (núcleo) | haiku | M | 1.4 | F2.14 | lista |
 | [F2.17b-instrucciones-cli](../tareas/F2.17b-instrucciones-cli.md) | CLI: `pcode instrucciones sincronizar [--comprobar]` | haiku | S | 1.4 | F2.17a | bloqueada |
@@ -384,10 +386,10 @@ El estado se calcula solo (ver «Estados»).
 | [F5.08-tui-chat](../tareas/F5.08-tui-chat.md) | TUI: chat interactivo con transcripción en vivo, tools plegables y entrada multilínea | haiku | — | — | F5.07 | sustituida |
 | [F5.09-tui-ordenes](../tareas/F5.09-tui-ordenes.md) | TUI: órdenes `/…`, menciones `@archivo` con autocompletado difuso y `!orden` | haiku | — | — | F5.08 | sustituida |
 | [F5.10-tui-multiagente](../tareas/F5.10-tui-multiagente.md) | TUI: árbol de agentes y subagentes, aprobaciones en línea y revisión de cambios | haiku | S | 1.3 | F5.03, F9.29, F5.10a, F5.10b | bloqueada |
-| [F5.10a-tui-arbol-sesiones](../tareas/F5.10a-tui-arbol-sesiones.md) | TUI: árbol de sesiones y subagentes para la barra lateral (lógica pura) | haiku | S | 1.3 | F9.29g | bloqueada |
+| [F5.10a-tui-arbol-sesiones](../tareas/F5.10a-tui-arbol-sesiones.md) | TUI: árbol de sesiones y subagentes para la barra lateral (lógica pura) | haiku | S | 1.3 | F9.29g | lista |
 | [F5.10b-tui-arbol-cableado](../tareas/F5.10b-tui-arbol-cableado.md) | TUI: sesiones del proyecto y subagentes en la barra lateral | haiku | M | 1.3 | F5.10a | bloqueada |
 | [F5.11-tui-atajos-temas](../tareas/F5.11-tui-atajos-temas.md) | TUI: atajos configurables, temas claro, oscuro y alto contraste | haiku | S | 1.3 | F9.29, F5.11a, F5.11b, F5.11c | bloqueada |
-| [F5.11a-tui-atajos-mapa](../tareas/F5.11a-tui-atajos-mapa.md) | TUI: mapa de atajos y `keybindings.toml` (lógica pura) | haiku | M | 1.3 | F9.29g | bloqueada |
+| [F5.11a-tui-atajos-mapa](../tareas/F5.11a-tui-atajos-mapa.md) | TUI: mapa de atajos y `keybindings.toml` (lógica pura) | haiku | M | 1.3 | F9.29g | lista |
 | [F5.11b-tui-atajos-cableado](../tareas/F5.11b-tui-atajos-cableado.md) | TUI: usar el mapa de atajos en `App` y cargar `keybindings.toml` | haiku | M | 1.3 | F5.10b, F5.11a | bloqueada |
 | [F5.11c-tui-ayuda-atajos](../tareas/F5.11c-tui-ayuda-atajos.md) | TUI: F1 muestra la ayuda de atajos | haiku | S | 1.3 | F5.11b | bloqueada |
 | [F5.12-ui-base](../tareas/F5.12-ui-base.md) | `apps/ui`: base React + TypeScript + Vite, tema, i18n y `Transport` (http y mock) | haiku | — | — | F5.01 | sustituida |
@@ -412,17 +414,23 @@ El estado se calcula solo (ver «Estados»).
 | [F5.17f-banco-studio](../tareas/F5.17f-banco-studio.md) | Studio: pestaña «Banco» con tabla y barras SVG por backend | haiku | M | 1.4 | F5.17c, F5.17d | bloqueada |
 | [F5.18-escritorio-base](../tareas/F5.18-escritorio-base.md) | `apps/desktop`: Tauri 2 con `apps/ui`, `pcoded` como sidecar y transporte Tauri | haiku | — | — | F5.12, F5.05 | sustituida |
 | [F5.19-escritorio-sistema](../tareas/F5.19-escritorio-sistema.md) | Escritorio: bandeja con estado, notificaciones nativas, enlaces `pcode://` y arranque con el sistema | haiku | — | — | F5.18, F5.03 | descartada |
-| [F5.20-escritorio-credenciales](../tareas/F5.20-escritorio-credenciales.md) | Credenciales en el llavero del sistema y referencias `{llavero:…}` en la configuración | haiku | — | despues | F5.18, F1.01 | esbozo |
+| [F5.20-escritorio-credenciales](../tareas/F5.20-escritorio-credenciales.md) | Claves en el llavero del sistema: `{llavero:nombre}` en la configuración y `pcode secreto` | haiku | S | 1.5 | F5.18, F1.01, F5.20a, F5.20b | bloqueada |
+| [F5.20a-llavero-referencias](../tareas/F5.20a-llavero-referencias.md) | `pcode-config`: trait `SecretStore`, almacén en memoria y sustitución de `{llavero:nombre}` | haiku | S | 1.5 | F1.01 | lista |
+| [F5.20b-llavero-cli](../tareas/F5.20b-llavero-cli.md) | Llavero real (`keyring`) al cargar la configuración y `pcode secreto poner|quitar|listar` | haiku | M | 1.5 | F5.20a | bloqueada |
 | [F5.21-escritorio-empaquetado](../tareas/F5.21-escritorio-empaquetado.md) | Empaquetado del escritorio para Linux y Windows, y actualizaciones firmadas | coordinador | — | — | F5.19, F5.20 | sustituida |
 | [F5.22-web-servida](../tareas/F5.22-web-servida.md) | El demonio sirve `apps/ui` con token de un solo uso y CSP estricta | haiku | — | — | F5.13 | sustituida |
 | [F5.23-pwa-movil](../tareas/F5.23-pwa-movil.md) | PWA para el móvil: estado y aprobaciones | haiku | — | — | F5.22, F5.14 | sustituida |
-| [F5.24-acp](../tareas/F5.24-acp.md) | Servidor ACP (Agent Client Protocol) para editores | haiku | — | despues | F5.03, F5.05 | esbozo |
+| [F5.24-acp](../tareas/F5.24-acp.md) | Servidor ACP (Agent Client Protocol) para editores: `pcode acp` | haiku | S | 1.8 | F5.03, F5.05, F5.24a, F5.24b | bloqueada |
+| [F5.24a-acp-mensajes](../tareas/F5.24a-acp-mensajes.md) | Crate `pcode-acp`: leer los mensajes del editor y construir las respuestas y avisos ACP (lógica pura) | haiku | M | 1.8 | F5.03 | lista |
+| [F5.24b-acp-orden](../tareas/F5.24b-acp-orden.md) | `pcode acp`: sesión ACP por stdio con el agente en proceso, avisos en vivo y permisos | haiku | M | 1.8 | F5.24a | bloqueada |
 | [F5.25-vscode](../tareas/F5.25-vscode.md) | Extensión fina de VS Code: webview con `apps/ui` y órdenes contextuales | haiku | — | despues | F5.22 | esbozo |
 | [F5.26-github](../tareas/F5.26-github.md) | GitHub: PR del trabajo integrado, comentarios con resultados y checks | haiku | S | 1.8 | F3.10, F2.11c, F5.26a, F5.26b, F5.26c | bloqueada |
 | [F5.26a-github-pr-y-checks-api](../tareas/F5.26a-github-pr-y-checks-api.md) | GitHub: `create_pr` y `create_check_run` en `GitHubApi` (falsa y HTTP) | haiku | M | 1.8 | F2.11c | bloqueada |
 | [F5.26b-github-pr-de-tarea](../tareas/F5.26b-github-pr-de-tarea.md) | Flujos: PR de una tarea con informe, salida de `acepta`, check y comentario de revisión | haiku | M | 1.8 | F5.26a, F4.07 | bloqueada |
 | [F5.26c-github-rama-de-tarea](../tareas/F5.26c-github-rama-de-tarea.md) | Flujos: integrar una tarea en su propia rama y subirla (sin forzar) | haiku | M | 1.8 | F5.26b | bloqueada |
-| [F5.27-windows-wsl](../tareas/F5.27-windows-wsl.md) | Windows: detectar WSL2 y ejecutar el demonio con sandbox N1 dentro de WSL | haiku | — | despues | F5.18 | esbozo |
+| [F5.27-windows-wsl](../tareas/F5.27-windows-wsl.md) | Windows: detectar WSL2 y trabajar dentro de él con la sandbox N1 (`pcode wsl`) | haiku | S | 1.8 | F5.18, F5.27a, F5.27b | bloqueada |
+| [F5.27a-wsl-nucleo](../tareas/F5.27a-wsl-nucleo.md) | WSL: leer `wsl.exe -l -v` (UTF-16LE), traducir rutas de Windows y montar la orden (lógica pura) | haiku | S | 1.8 | F2.21 | lista |
+| [F5.27b-wsl-orden](../tareas/F5.27b-wsl-orden.md) | `pcode wsl [--distro D] [-- args]` en Windows y línea de WSL2 en `pcode doctor` | haiku | S | 1.8 | F5.27a | bloqueada |
 | [F5.28-apk-android](../tareas/F5.28-apk-android.md) | APK de Android: cliente fino de pcoded (WebView) y demonio accesible desde la red | coordinador | — | — | F5.02, F0.07 | hecha |
 | [F5.29-chat](../tareas/F5.29-chat.md) | `pcode chat`: conversación interactiva con el agente (sustituto de Claude Code y opencode) | coordinador | — | — | F1.16, F1.22, F1.23, F5.28 | hecha |
 | [F5.30-tui-local](../tareas/F5.30-tui-local.md) | TUI a pantalla completa con el agente en proceso (`pcode`, `pcode tui`) | coordinador | — | — | F5.29, F1.25 | hecha |
@@ -544,13 +552,28 @@ El estado se calcula solo (ver «Estados»).
 | [F8.14e-tests-js](../tareas/F8.14e-tests-js.md) | Studio: módulo `pruebas.js` (agrupar tests, aplicar resultados y contar, puro) | haiku | S | 1.6 | F8.01 | bloqueada |
 | [F8.14f-tests-studio](../tareas/F8.14f-tests-studio.md) | Studio: panel «Tests» que descubre, ejecuta y marca ✓ ✗ | haiku | M | 1.6 | F8.14d, F8.14e | bloqueada |
 | [F8.15-checkpoints](../tareas/F8.15-checkpoints.md) | Puntos de control y deshacer del agente (`/deshacer`, `/rehacer`) | haiku | — | — | F5.34 | hecha |
-| [F8.16-ordenes-propias](../tareas/F8.16-ordenes-propias.md) | Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre` | haiku | — | despues | F5.34 | esbozo |
-| [F8.17-agentes-propios](../tareas/F8.17-agentes-propios.md) | Agentes propios y subagentes: `.pcode/agentes/*.md` invocables con `@agente` | coordinador | — | despues | F8.16, F2.22 | esbozo |
-| [F8.18-coste](../tareas/F8.18-coste.md) | Coste por sesión y presupuesto en euros | haiku | — | despues | F1.26 | esbozo |
+| [F8.16-ordenes-propias](../tareas/F8.16-ordenes-propias.md) | Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre` | haiku | S | 1.3 | F5.34, F8.16a, F8.16b, F8.16c | bloqueada |
+| [F8.16a-ordenes-propias-nucleo](../tareas/F8.16a-ordenes-propias-nucleo.md) | `pcode-skills`: leer órdenes propias (`*.md` con frontmatter y `$ARGUMENTOS`) de varias carpetas | haiku | S | 1.3 | F5.34 | lista |
+| [F8.16b-ordenes-propias-chat](../tareas/F8.16b-ordenes-propias-chat.md) | Chat de línea: `/nombre args` ejecuta una orden propia y `/ayuda` las lista | haiku | S | 1.3 | F8.16a | bloqueada |
+| [F8.16c-ordenes-propias-tui](../tareas/F8.16c-ordenes-propias-tui.md) | TUI: las órdenes propias aparecen al escribir `/` y se ejecutan como un mensaje | haiku | M | 1.3 | F8.16a, F9.29b | bloqueada |
+| [F8.17-agentes-propios](../tareas/F8.17-agentes-propios.md) | Agentes propios y subagentes: `.pcode/agentes/*.md` y la tool `delegar` | haiku | S | 1.3 | F8.16, F2.22, F8.17a, F8.17b, F8.17c | bloqueada |
+| [F8.17a-agentes-propios-definiciones](../tareas/F8.17a-agentes-propios-definiciones.md) | `pcode-skills`: leer agentes propios (`*.md` con prompt, modelo, tools y solo lectura) | haiku | S | 1.3 | F8.16a | bloqueada |
+| [F8.17b-subagente-delegar](../tareas/F8.17b-subagente-delegar.md) | `pcode-core`: tool `delegar` que lanza un subagente con capacidades atenuadas y devuelve su informe | haiku | M | 1.3 | F8.17a | bloqueada |
+| [F8.17c-agentes-propios-chat](../tareas/F8.17c-agentes-propios-chat.md) | Chat y TUI: registrar `delegar` con los agentes de `.pcode/agentes` y `@agente tarea` | haiku | S | 1.3 | F8.17b, F8.16b | bloqueada |
+| [F8.18-coste](../tareas/F8.18-coste.md) | Coste por sesión con precios por modelo y presupuesto que avisa al 80 % y para al 100 % | haiku | S | 1.3 | F1.26, F8.18a, F8.18b, F8.18c, F8.18d | bloqueada |
+| [F8.18a-coste-calculo](../tareas/F8.18a-coste-calculo.md) | `pcode-models`: precio por millón de tokens con caché y estado del presupuesto (lógica pura) | haiku | S | 1.3 | F1.26 | lista |
+| [F8.18b-coste-config](../tareas/F8.18b-coste-config.md) | Configuración: `[precios.<modelo>]` y `[preferencias] presupuesto` (dólares por sesión) | haiku | S | 1.3 | F8.18a | bloqueada |
+| [F8.18c-coste-corte-agente](../tareas/F8.18c-coste-corte-agente.md) | Agente: `Budget` con precio y tope en dólares; para con `BudgetExhausted` al superarlo | haiku | S | 1.3 | F8.18a | bloqueada |
+| [F8.18d-coste-chat](../tareas/F8.18d-coste-chat.md) | Chat: coste acumulado de la sesión, `/coste`, aviso al 80 % y corte al 100 % del presupuesto | haiku | M | 1.3 | F8.18b, F8.18c | bloqueada |
 | [F8.19-memoria-proyecto](../tareas/F8.19-memoria-proyecto.md) | Memoria del proyecto: `/recuerda` y `.pcode/memoria.md` en el prompt | haiku | — | — | F5.34 | hecha |
-| [F8.20-web-fetch](../tareas/F8.20-web-fetch.md) | Tool `web`: leer una URL como texto con dominios permitidos | haiku | — | despues | F1.13 | esbozo |
-| [F8.21-imagenes](../tareas/F8.21-imagenes.md) | Imágenes en el chat: pegar una captura para modelos con visión | haiku | — | despues | F1.25 | esbozo |
-| [F8.22-modelos-locales](../tareas/F8.22-modelos-locales.md) | Modelos locales: detectar Ollama y LM Studio y elegir con `/modelos` | haiku | — | despues | F1.26 | esbozo |
+| [F8.20-web-fetch](../tareas/F8.20-web-fetch.md) | Tool `web`: leer una URL como texto, con dominios permitidos o aprobación | haiku | S | 1.3 | F1.13, F8.20a, F8.20b | bloqueada |
+| [F8.20a-web-tool](../tareas/F8.20a-web-tool.md) | `pcode-tools`: tool `web` (GET con tiempo y tamaño máximos, HTML a texto sin scripts ni estilos) | haiku | M | 1.3 | F1.13 | lista |
+| [F8.20b-web-politica](../tareas/F8.20b-web-politica.md) | Agente: la tool `web` pide aprobación fuera de `red_permitir`; el chat la registra | haiku | S | 1.3 | F8.20a | bloqueada |
+| [F8.21-imagenes](../tareas/F8.21-imagenes.md) | Imágenes en el chat para modelos con visión (`@captura.png`) | haiku | S | 1.3 | F1.25, F8.21a, F8.21b, F8.21c | bloqueada |
+| [F8.21a-imagenes-tipo](../tareas/F8.21a-imagenes-tipo.md) | `Message` con imágenes (base64 propio, sin dependencias) y su envío a Anthropic | haiku | M | 1.3 | F1.25 | lista |
+| [F8.21b-imagenes-gemini-openai](../tareas/F8.21b-imagenes-gemini-openai.md) | Imágenes en Gemini (`inline_data`) y en OpenAI-compatible (`image_url` con data URL) | haiku | S | 1.3 | F8.21a | bloqueada |
+| [F8.21c-imagenes-adjuntar](../tareas/F8.21c-imagenes-adjuntar.md) | Agente con imágenes y `@captura.png` en la TUI y el chat | haiku | M | 1.3 | F8.21a | bloqueada |
+| [F8.22-modelos-locales](../tareas/F8.22-modelos-locales.md) | Modelos locales: sin clave, usar Ollama o LM Studio si están en marcha | haiku | S | 1.7 | F1.26 | lista |
 | [F8.23-exportar-sesion](../tareas/F8.23-exportar-sesion.md) | Exportar y compartir una sesión (Markdown y HTML autocontenido) | haiku | S | 1.3 | F5.29, F8.23a, F8.23b, F8.23c | bloqueada |
 | [F8.23a-exportar-markdown](../tareas/F8.23a-exportar-markdown.md) | Exportar: conversación a Markdown y enmascarado de claves y rutas (lógica pura) | haiku | M | 1.3 | F5.29, F5.06 | bloqueada |
 | [F8.23b-exportar-html](../tareas/F8.23b-exportar-html.md) | Exportar: conversación a HTML autocontenido (lógica pura) | haiku | S | 1.3 | F8.23a | bloqueada |
@@ -707,14 +730,14 @@ El estado se calcula solo (ver «Estados»).
 | [F9.27-medir-ide](../tareas/F9.27-medir-ide.md) | Medir el IDE nativo: arranque hasta la primera ventana y memoria en reposo, con Xvfb si no hay pantalla | haiku | — | — | F9.17 | hecha |
 | [F9.28-ide-pulido-visual](../tareas/F9.28-ide-pulido-visual.md) | IDE: pulido visual pendiente (command center, iconos con glifos que existen, bienvenida centrada) | haiku | — | — | F9.05 | hecha |
 | [F9.29-modo-opencode](../tareas/F9.29-modo-opencode.md) | Modo opencode: la TUI con el aspecto y los atajos de opencode, más ligera (`pcode` en la terminal) | haiku | S | 1.2 | F5.34, F9.29a, F9.29b, F9.29c, F9.29d, F9.29e, F9.29f, F9.29g, F9.29h | bloqueada |
-| [F9.29a-opencode-catalogo-ordenes](../tareas/F9.29a-opencode-catalogo-ordenes.md) | TUI: catálogo de órdenes `/` (tabla única con nombre, alias y ayuda) | haiku | S | 1.2 | F5.34 | lista |
-| [F9.29b-opencode-paleta-ordenes](../tareas/F9.29b-opencode-paleta-ordenes.md) | TUI: al escribir `/` se abre la lista de órdenes (↑/↓, Tab completa, Intro ejecuta) | haiku | M | 1.2 | F9.29a | bloqueada |
-| [F9.29c-opencode-tab-build-plan](../tareas/F9.29c-opencode-tab-build-plan.md) | TUI: Tab con la entrada vacía cambia entre Build y Plan, y el modo se ve en el borde de la entrada | haiku | S | 1.2 | F9.29b | bloqueada |
-| [F9.29d-opencode-tema](../tareas/F9.29d-opencode-tema.md) | TUI: tema `opencode`, lista de temas y opción `pcode tui --tema <nombre>` | haiku | S | 1.2 | F5.34 | lista |
-| [F9.29e-opencode-tecla-lider](../tareas/F9.29e-opencode-tecla-lider.md) | TUI: tecla líder Ctrl+X (n nueva, m modelo, t tema, u/r deshacer y rehacer, c compactar, q salir) | haiku | M | 1.2 | F9.29c, F9.29d | bloqueada |
-| [F9.29f-opencode-barra-lateral](../tareas/F9.29f-opencode-barra-lateral.md) | TUI: contenido de la barra lateral (sesión, contexto y archivos tocados), lógica pura | haiku | M | 1.2 | F9.29e | bloqueada |
-| [F9.29g-opencode-cabecera-lateral](../tareas/F9.29g-opencode-cabecera-lateral.md) | TUI: dibujar la barra lateral (Ctrl+X b) y el título de la sesión en la cabecera | haiku | M | 1.2 | F9.29f | bloqueada |
-| [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | F9.29d | bloqueada |
+| [F9.29a-opencode-catalogo-ordenes](../tareas/F9.29a-opencode-catalogo-ordenes.md) | TUI: catálogo de órdenes `/` (tabla única con nombre, alias y ayuda) | haiku | S | 1.2 | F5.34 | hecha |
+| [F9.29b-opencode-paleta-ordenes](../tareas/F9.29b-opencode-paleta-ordenes.md) | TUI: al escribir `/` se abre la lista de órdenes (↑/↓, Tab completa, Intro ejecuta) | haiku | M | 1.2 | F9.29a | hecha |
+| [F9.29c-opencode-tab-build-plan](../tareas/F9.29c-opencode-tab-build-plan.md) | TUI: Tab con la entrada vacía cambia entre Build y Plan, y el modo se ve en el borde de la entrada | haiku | S | 1.2 | F9.29b | hecha |
+| [F9.29d-opencode-tema](../tareas/F9.29d-opencode-tema.md) | TUI: tema `opencode`, lista de temas y opción `pcode tui --tema <nombre>` | haiku | S | 1.2 | F5.34 | hecha |
+| [F9.29e-opencode-tecla-lider](../tareas/F9.29e-opencode-tecla-lider.md) | TUI: tecla líder Ctrl+X (n nueva, m modelo, t tema, u/r deshacer y rehacer, c compactar, q salir) | haiku | M | 1.2 | F9.29c, F9.29d | hecha |
+| [F9.29f-opencode-barra-lateral](../tareas/F9.29f-opencode-barra-lateral.md) | TUI: contenido de la barra lateral (sesión, contexto y archivos tocados), lógica pura | haiku | M | 1.2 | F9.29e | hecha |
+| [F9.29g-opencode-cabecera-lateral](../tareas/F9.29g-opencode-cabecera-lateral.md) | TUI: dibujar la barra lateral (Ctrl+X b) y el título de la sesión en la cabecera | haiku | M | 1.2 | F9.29f | hecha |
+| [F9.29h-opencode-lanzador](../tareas/F9.29h-opencode-lanzador.md) | Lanzador: acción «Modo terminal (como opencode)» en el menú de aplicaciones | haiku | S | 1.2 | F9.29d | lista |
 | [F9.30-ide-cambios-sin-guardar](../tareas/F9.30-ide-cambios-sin-guardar.md) | IDE: preguntar antes de cerrar una pestaña o la ventana con cambios sin guardar (cierre) | haiku | S | 1.6 | F9.05, F9.30a, F9.30b | bloqueada |
 | [F9.30a-ide-cierre-nucleo](../tareas/F9.30a-ide-cierre-nucleo.md) | IDE: qué pestañas con cambios afecta un cierre (lógica pura) | haiku | S | 1.6 | F9.05 | lista |
 | [F9.30b-ide-cierre-dialogo](../tareas/F9.30b-ide-cierre-dialogo.md) | IDE: diálogo «¿Guardar los cambios?» al cerrar una pestaña, al salir y al cerrar la ventana | haiku | M | 1.6 | F9.30a | bloqueada |

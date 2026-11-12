@@ -3807,63 +3807,6 @@ Antes de que una tool escriba, guardar el contenido previo del archivo en `.pcod
 tests = ["deshacer_restaura_y_borra_creados", "rehacer_vuelve_a_aplicar", "limite_de_50_turnos"]
 
 [[tarea]]
-id = "F8.16"
-nombre = "ordenes-propias"
-titulo = "Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre`"
-fase = "F8"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "haiku"
-depende = ["F5.34"]
-toca = ["crates/pcode-skills/src/ordenes.rs", "crates/pcode-skills/src/lib.rs", "crates/pcode-tui/src/app.rs", "crates/pcode-cli/src/chat.rs"]
-acepta = "cargo test -p pcode-skills ordenes"
-contexto = ["crates/pcode-skills/src/registry.rs"]
-objetivo = '''
-Cada archivo es una plantilla de mensaje con frontmatter (`descripcion`, `modelo`, `plan: true`) y `$ARGUMENTOS`;
-aparecen en `/ayuda`, en la paleta de Studio y con autocompletado tras `/`. Globales en la carpeta de configuración.
-'''
-tests = ["plantilla_con_argumentos", "frontmatter_activa_modo_plan", "proyecto_manda_sobre_global"]
-
-[[tarea]]
-id = "F8.17"
-nombre = "agentes-propios"
-titulo = "Agentes propios y subagentes: `.pcode/agentes/*.md` invocables con `@agente`"
-fase = "F8"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "coordinador"
-depende = ["F8.16", "F2.22"]
-toca = ["crates/pcode-core/src/subagente.rs", "crates/pcode-skills/src/agentes.rs", "crates/pcode-tools/src/delegar.rs", "docs/arquitectura.md"]
-acepta = "cargo test -p pcode-core subagente && cargo test -p pcode-skills agentes"
-contexto = ["docs/arquitectura.md (delegación y capacidades atenuadas)"]
-objetivo = '''
-Definición con prompt, modelo, tools permitidas y capacidades; tool `delegar` para que el agente principal lance uno con
-capacidades atenuadas (nunca más que el padre) y reciba su informe; en la TUI, árbol de subagentes en marcha.
-'''
-tests = ["subagente_no_amplia_capacidades", "informe_vuelve_al_padre", "agente_de_solo_lectura"]
-
-[[tarea]]
-id = "F8.18"
-nombre = "coste"
-titulo = "Coste por sesión y presupuesto en euros"
-fase = "F8"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "haiku"
-depende = ["F1.26"]
-toca = ["crates/pcode-models/src/precios.rs", "crates/pcode-config/src/lib.rs", "crates/pcode-tui/src/render.rs", "crates/pcode-cli/src/chat.rs"]
-acepta = "cargo test -p pcode-models precios && cargo test -p pcode-config precios"
-contexto = ["crates/pcode-models/src/types.rs (Usage)"]
-objetivo = '''
-Tabla de precios por modelo (entrada, salida, caché) en `[precios.<modelo>]` con valores por defecto editables; coste
-acumulado en la barra de la TUI y de Studio, `/coste` y `[preferencias] presupuesto_eur` que avisa al 80 % y para al 100 %.
-'''
-tests = ["coste_con_cache", "modelo_sin_precio_no_suma", "presupuesto_para_al_100"]
-
-[[tarea]]
 id = "F8.19"
 nombre = "memoria-proyecto"
 titulo = "Memoria del proyecto: `/recuerda` y `.pcode/memoria.md` en el prompt"
@@ -3878,63 +3821,6 @@ objetivo = '''
 se incluye en el prompt de sistema (máx. 8 KB, lo más reciente primero) y se edita a mano en Studio.
 '''
 tests = ["recuerda_añade_nota", "prompt_incluye_memoria_recortada", "sin_memoria_no_añade_nada"]
-
-[[tarea]]
-id = "F8.20"
-nombre = "web-fetch"
-titulo = "Tool `web`: leer una URL como texto con dominios permitidos"
-fase = "F8"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "haiku"
-depende = ["F1.13"]
-toca = ["crates/pcode-tools/src/web.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-policy/src/caps.rs", "crates/pcode-tools/tests/web.rs"]
-acepta = "cargo test -p pcode-tools --test web"
-contexto = ["crates/pcode-policy/src/caps.rs (check_domain)"]
-objetivo = '''
-GET con tiempo máximo y límite de tamaño, HTML convertido a texto (sin scripts ni estilos), solo dominios de
-`red_permitir` o con aprobación; efecto `Network`. Los tests usan un servidor falso en 127.0.0.1.
-'''
-tests = ["html_a_texto_sin_scripts", "dominio_no_permitido_pide_aprobacion", "limite_de_tamaño"]
-
-[[tarea]]
-id = "F8.21"
-nombre = "imagenes"
-titulo = "Imágenes en el chat: pegar una captura para modelos con visión"
-fase = "F8"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "haiku"
-depende = ["F1.25"]
-toca = ["crates/pcode-models/src/types.rs", "crates/pcode-models/src/anthropic.rs", "crates/pcode-models/src/gemini.rs", "crates/pcode-models/src/openai.rs"]
-acepta = "cargo test -p pcode-models imagen"
-contexto = ["crates/pcode-models/src/types.rs (Message)"]
-objetivo = '''
-`Message` con partes de imagen (base64 + tipo); conversión a cada proveedor; en Studio pegar o arrastrar una imagen al
-mensaje; en la TUI `@captura.png`.
-'''
-tests = ["anthropic_con_imagen", "gemini_inline_data", "openai_image_url_base64"]
-
-[[tarea]]
-id = "F8.22"
-nombre = "modelos-locales"
-titulo = "Modelos locales: detectar Ollama y LM Studio y elegir con `/modelos`"
-fase = "F8"
-hito = "despues"
-estado = "esbozo"
-motivo = "Formato antiguo (sin talla, firmas ni tests descritos): hay que desgranarla para un modelo pequeño antes de empezarla."
-ejecutor = "haiku"
-depende = ["F1.26"]
-toca = ["crates/pcode-models/src/locales.rs", "crates/pcode-models/src/lib.rs", "crates/pcode-cli/src/provider.rs", "crates/pcode-models/tests/locales.rs"]
-acepta = "cargo test -p pcode-models --test locales"
-contexto = ["crates/pcode-cli/src/provider.rs"]
-objetivo = '''
-Sondear `127.0.0.1:11434/api/tags` (Ollama) y `:1234/v1/models` (LM Studio) con 300 ms de tiempo máximo; si no hay clave en
-el entorno, usar el primero; `/modelos` lista todos los disponibles (también los de LiteLLM) para elegir.
-'''
-tests = ["detecta_ollama_falso", "sin_servidor_no_espera", "lista_de_lm_studio"]
 
 [[tarea]]
 id = "F8.23"
@@ -9872,3 +9758,889 @@ function quitaFantasma() {}        // descarta la sugerencia y cualquier respues
 lenguaje = "javascript"
 tests = ["(sin tests nuevos): la lógica está probada en `fantasma.test.js` y en el demonio; `acepta` comprueba el cableado y que el demonio compila con el módulo nuevo"]
 no_hagas = ["No lo actives por defecto ni pidas sugerencias sin que el usuario lo haya activado", "No pidas en cada pulsación: solo tras 900 ms sin escribir", "No cambies el comportamiento de `Tab` cuando no hay sugerencia a la vista"]
+
+[[tarea]]
+id = "F8.16"
+nombre = "ordenes-propias"
+titulo = "Órdenes propias del proyecto: `.pcode/ordenes/*.md` como `/nombre`"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.34"]
+toca = []
+acepta = "cargo test -p pcode-skills custom_commands && cargo test -p pcode-cli custom && cargo test -p pcode-tui custom"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.16a (lectura de las órdenes), F8.16b (chat de línea) y F8.16c (TUI).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.16a"
+nombre = "ordenes-propias-nucleo"
+titulo = "`pcode-skills`: leer órdenes propias (`*.md` con frontmatter y `$ARGUMENTOS`) de varias carpetas"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F5.34"]
+toca = ["crates/pcode-skills/src/custom_commands.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills custom_commands"
+contexto = [
+  "crates/pcode-skills/src/registry.rs (`parse_skill_md`: cómo se separa el frontmatter `---` y se quita el CRLF)",
+]
+objetivo = '''
+Una orden propia es un archivo Markdown: el nombre del archivo sin `.md` es la orden (`/revisar` ← `revisar.md`) y
+el cuerpo es la plantilla del mensaje. El frontmatter es opcional.
+1. Crea `custom_commands.rs` con lo de *Firmas* y sus tests; en `lib.rs`, `pub mod custom_commands;` y
+   `pub use custom_commands::{CustomCommand, load_commands};`.
+2. `split_frontmatter(text)`: quita el CRLF; si empieza por `---\n` y hay un `\n---` después, devuelve las líneas
+   `clave: valor` del frontmatter (clave y valor recortados, sin comillas alrededor del valor) y el cuerpo sin los
+   saltos de línea iniciales; si no, `(vacío, texto entero)`. Lo usarán también los agentes propios (F8.17a).
+3. `parse_command(name, text)`: claves `descripcion` (si falta, la primera línea no vacía del cuerpo, recortada a 80
+   caracteres), `modelo` (opcional) y `plan` (`true` → modo plan). Cuerpo vacío → `Err("la orden <name> está vacía")`.
+4. `expand(args)`: sustituye cada `$ARGUMENTOS` por `args` recortado; si la plantilla no tiene `$ARGUMENTOS` y `args`
+   no está vacío, añade `"\n\n"` y los argumentos al final.
+5. `load_commands(dirs)`: lee cada carpeta en orden (las que no existen se saltan); solo archivos `.md` con nombre en
+   minúsculas, cifras y guiones; una carpeta posterior sustituye las órdenes con el mismo nombre (pásale la global
+   primero y la del proyecto después). Las que no se pueden leer o dan error se saltan. Resultado ordenado por nombre.
+'''
+firmas = '''
+// crates/pcode-skills/src/custom_commands.rs
+//! Órdenes propias: `.pcode/ordenes/<nombre>.md` → `/nombre`.
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+/// Una orden propia.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomCommand {
+    pub name: String,
+    pub description: String,
+    pub model: Option<String>,
+    pub plan: bool,
+    pub template: String,
+}
+
+/// Frontmatter `clave: valor` y cuerpo de un Markdown.
+pub fn split_frontmatter(text: &str) -> (BTreeMap<String, String>, String);
+
+/// Lee una orden a partir de su nombre y su texto.
+pub fn parse_command(name: &str, text: &str) -> Result<CustomCommand, String>;
+
+impl CustomCommand {
+    /// El mensaje para el agente con estos argumentos.
+    pub fn expand(&self, args: &str) -> String;
+}
+
+/// Órdenes de varias carpetas; las posteriores mandan.
+pub fn load_commands(dirs: &[PathBuf]) -> Vec<CustomCommand>;
+'''
+tests = [
+  "custom_commands_plantilla_con_argumentos: plantilla `Revisa $ARGUMENTOS` y args ` src/a.rs ` → `Revisa src/a.rs`",
+  "custom_commands_sin_marcador_anade_al_final: plantilla `Explica` y args `x` → `Explica\\n\\nx`",
+  "custom_commands_frontmatter_activa_modo_plan: frontmatter con `plan: true` y `modelo: m1` → `plan` y `model == Some(\"m1\")`",
+  "custom_commands_descripcion_por_defecto: sin frontmatter y cuerpo `Haz X\\nmás` → descripción `Haz X`",
+  "custom_commands_proyecto_manda_sobre_global: `a.md` en las dos carpetas → gana la segunda; `B.md` y `c.txt` se ignoran",
+]
+
+[[tarea]]
+id = "F8.16b"
+nombre = "ordenes-propias-chat"
+titulo = "Chat de línea: `/nombre args` ejecuta una orden propia y `/ayuda` las lista"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.16a"]
+toca = ["crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-cli custom"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (función `chat`: el bloque `if let Some(cmd) = input.strip_prefix('/')` y el brazo `_ =>`)",
+  "crates/pcode-skills/src/custom_commands.rs (de F8.16a)",
+  "crates/pcode-config/src/lib.rs (`user_config_path`)",
+]
+objetivo = '''
+1. Añade a `chat.rs` la función privada `command_dirs(root)` de *Firmas*: la carpeta `ordenes` junto al archivo de
+   `pcode_config::user_config_path()` (si hay) y después `<root>/.pcode/ordenes`.
+2. En `chat`, antes del bucle, `let custom = pcode_skills::load_commands(&command_dirs(&root));`.
+3. Añade la función pura `custom_help(custom)`: vacía si no hay órdenes; si hay, `"Órdenes del proyecto:\n"` y una
+   línea `"  /<nombre>  <descripción>"` por orden.
+4. Brazo `"ayuda" | "help"`: después de `AYUDA`, imprime `custom_help(&custom)` si no está vacío.
+5. Brazo `_ =>`: si `custom` tiene una orden con ese `name`, en vez del mensaje de desconocido: si `plan`, llama a
+   `agent.set_read_only(true)` y avisa como `/plan`; si trae `model`, `agent.set_model(m)` solo para esta vuelta
+   (guarda el actual y lo restaura tras la vuelta); y envía `c.expand(arg)` como el texto del usuario. Para eso
+   convierte ese brazo en algo que deje seguir el flujo normal (p. ej. una variable `input` nueva antes de
+   `expand_message`) en vez de `continue`.
+6. Tests unitarios en `chat.rs` para `custom_help` (función pura).
+'''
+firmas = '''
+// crates/pcode-cli/src/chat.rs (privadas)
+/// Carpetas de órdenes propias: la global y la del proyecto (la del proyecto manda).
+fn command_dirs(root: &std::path::Path) -> Vec<std::path::PathBuf>;
+/// Texto de `/ayuda` con las órdenes propias.
+fn custom_help(custom: &[pcode_skills::CustomCommand]) -> String;
+'''
+tests = [
+  "custom_help_vacia_sin_ordenes: lista vacía → cadena vacía",
+  "custom_help_lista_las_ordenes: orden `revisar` con descripción `Revisa` → contiene `/revisar  Revisa`",
+]
+notas = "Si `pcode-cli` no depende aún de `pcode-skills`, la dependencia va en *Pendiente*: el Cargo.toml no está en *Toca* (compruébalo antes; lo normal es que ya dependa)."
+
+[[tarea]]
+id = "F8.16c"
+nombre = "ordenes-propias-tui"
+titulo = "TUI: las órdenes propias aparecen al escribir `/` y se ejecutan como un mensaje"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.16a", "F9.29b"]
+toca = ["crates/pcode-tui/src/app.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-tui custom"
+contexto = [
+  "crates/pcode-tui/src/app.rs (`refresh_suggestions` tras F9.29b, `submit` y su brazo `_ =>`, enum `Command`)",
+  "crates/pcode-tui/src/run.rs (`TuiOptions` y el `match cmd` que atiende `Command::Send`)",
+  "crates/pcode-skills/src/custom_commands.rs (de F8.16a)",
+]
+objetivo = '''
+1. `app.rs`: añade a `App` `pub custom: Vec<pcode_skills::CustomCommand>` (vacío en `App::new`) y la variante
+   `Command::Custom { name: String, args: String }`.
+2. `app.rs`, `refresh_suggestions`: en la rama de `/` que añadió F9.29b, después de las órdenes del catálogo añade
+   `"/<nombre>"` de cada orden propia cuyo nombre empieza por lo escrito, sin pasar de 8 sugerencias en total.
+3. `app.rs`, `submit`, brazo `_ =>`: si hay una orden propia con ese nombre y no estás ocupado → añade
+   `Entry::User(text)`, `busy = true` y devuelve `vec![Command::Custom { name, args: arg.to_string() }]`; si estás
+   ocupado, el aviso `wait`. Si no existe, lo de ahora.
+4. `run.rs`: `TuiOptions` gana `pub custom: Vec<pcode_skills::CustomCommand>` (doc «Órdenes propias del proyecto»);
+   cópialo a `app.custom`. En el `match cmd`, `Command::Custom { name, args }`: busca la orden; si `plan`, haz lo mismo
+   que `Command::SetPlan(true)`; y lanza la vuelta exactamente como `Command::Send` con el texto `c.expand(&args)`.
+5. `chat.rs`, función `tui`: rellena `custom` con `pcode_skills::load_commands(&command_dirs(&root))` (la función de
+   F8.16b).
+6. Tests de estado en `app.rs` (con `typed`, como los demás).
+'''
+sin_firmas = "solo añade un campo y una variante; las firmas exactas están en el objetivo"
+tests = [
+  "custom_tui_sugiere_orden_propia: `app.custom` con `revisar` y entrada `/rev` → las sugerencias contienen `/revisar`",
+  "custom_tui_envia_orden_propia: `/revisar a.rs` + Intro → devuelve `Command::Custom { name: \"revisar\", args: \"a.rs\" }` y `busy`",
+  "custom_tui_desconocida_sigue_igual: `/nada` sin órdenes propias → aviso `unknown` y ningún comando",
+]
+
+[[tarea]]
+id = "F8.17"
+nombre = "agentes-propios"
+titulo = "Agentes propios y subagentes: `.pcode/agentes/*.md` y la tool `delegar`"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.16", "F2.22"]
+toca = []
+acepta = "cargo test -p pcode-skills agent_defs && cargo test -p pcode-core subagent && cargo test -p pcode-cli agent_mention"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.17a (definiciones), F8.17b (tool `delegar` con capacidades atenuadas) y F8.17c (chat y TUI).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.17a"
+nombre = "agentes-propios-definiciones"
+titulo = "`pcode-skills`: leer agentes propios (`*.md` con prompt, modelo, tools y solo lectura)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.16a"]
+toca = ["crates/pcode-skills/src/agent_defs.rs", "crates/pcode-skills/src/lib.rs"]
+acepta = "cargo test -p pcode-skills agent_defs"
+contexto = [
+  "crates/pcode-skills/src/custom_commands.rs (`split_frontmatter` y `load_commands`, de F8.16a: copia su forma)",
+]
+objetivo = '''
+Un agente propio es `.pcode/agentes/<nombre>.md`: frontmatter con `descripcion` (obligatoria), `modelo`, `tools`
+(lista separada por comas; vacía = todas) y `solo_lectura` (`true`/`false`, por defecto `false`); el cuerpo es su
+prompt de sistema.
+1. Crea `agent_defs.rs` con lo de *Firmas* y sus tests; en `lib.rs`, `pub mod agent_defs;` y
+   `pub use agent_defs::{AgentDef, load_agents};`.
+2. `parse_agent(name, text)` usa `custom_commands::split_frontmatter`. Sin `descripcion` →
+   `Err("el agente <name> no tiene descripcion")`; cuerpo vacío → `Err("el agente <name> no tiene prompt")`.
+   `tools`: separa por comas, recorta y quita vacíos (admite también `[a, b]`: quita los corchetes).
+3. `load_agents(dirs)`: igual que `load_commands` (solo `.md` con nombre en minúsculas, cifras y guiones; la carpeta
+   posterior manda; los que dan error se saltan; ordenados por nombre).
+'''
+firmas = '''
+// crates/pcode-skills/src/agent_defs.rs
+//! Agentes propios: `.pcode/agentes/<nombre>.md`.
+use std::path::PathBuf;
+
+/// Un agente propio.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentDef {
+    pub name: String,
+    pub description: String,
+    pub model: Option<String>,
+    pub tools: Vec<String>,
+    pub read_only: bool,
+    pub prompt: String,
+}
+
+/// Lee un agente a partir de su nombre y su texto.
+pub fn parse_agent(name: &str, text: &str) -> Result<AgentDef, String>;
+
+/// Agentes de varias carpetas; las posteriores mandan.
+pub fn load_agents(dirs: &[PathBuf]) -> Vec<AgentDef>;
+'''
+tests = [
+  "agent_defs_lee_todo: frontmatter con descripcion, `modelo: m`, `tools: leer, buscar` y `solo_lectura: true` → los campos y el prompt",
+  "agent_defs_tools_con_corchetes: `tools: [leer, buscar]` → `[\"leer\", \"buscar\"]`",
+  "agent_defs_sin_descripcion_es_error: sin `descripcion` → Err con `descripcion`",
+  "agent_defs_proyecto_manda: `rev.md` en dos carpetas → gana la segunda",
+]
+
+[[tarea]]
+id = "F8.17b"
+nombre = "subagente-delegar"
+titulo = "`pcode-core`: tool `delegar` que lanza un subagente con capacidades atenuadas y devuelve su informe"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.17a"]
+toca = ["crates/pcode-core/src/subagent.rs", "crates/pcode-core/src/lib.rs"]
+acepta = "cargo test -p pcode-core subagent"
+contexto = [
+  "crates/pcode-core/src/agent.rs (`Agent::new`, `AgentConfig`, `Budget`, `set_read_only`, `run`, `Outcome`, `RunReport`)",
+  "crates/pcode-core/src/agent.rs (módulo de tests: la función `agent` y `MockProvider` con guion)",
+  "crates/pcode-tools/src/registry.rs (`Tool`, `ToolRegistry::specs_filtered` y `get`)",
+  "crates/pcode-policy/src/caps.rs (`Policy`: una capa más nunca amplía)",
+]
+objetivo = '''
+`pcode-core` no depende de `pcode-skills`: la definición que recibe es `SubagentSpec` (la CLI convierte cada
+`AgentDef` en uno). El subagente usa el mismo proveedor, la misma política que el padre (nunca más), solo las tools
+de su lista y su propio prompt; no tiene aprobador (lo que pida aprobación se deniega).
+1. Crea `subagent.rs` con lo de *Firmas* y sus tests; en `lib.rs`, `pub mod subagent;` y
+   `pub use subagent::{DelegateTool, SubagentSpec};`.
+2. `DelegateTool::new`: guarda las tools del registro (con `specs_filtered(|_, _| true)` + `get`) y el resto.
+3. `spec()`: nombre `delegar`; descripción «Encarga una tarea a un agente especializado y devuelve su informe.
+   Agentes: <nombre>: <descripción>; …»; parámetros `{"type":"object","properties":{"agente":{"type":"string"},
+   "tarea":{"type":"string"}},"required":["agente","tarea"]}`. `effects()`: `&[Effect::Write]` (así el modo plan del
+   padre no puede delegar en un agente que escribe).
+4. `call(args, ctx)`: agente desconocido → `ToolOutput::error("agente desconocido: <x>; hay: <lista>")`. Si no:
+   registro nuevo solo con las tools de `spec.tools` (todas si está vacía; nunca `delegar`, para que no haya
+   recursión); `Agent::new(provider, registro, policy.clone(), None, AgentConfig { agent_id: "sub:<nombre>",
+   model: spec.model o el modelo por defecto, system_prompt: spec.prompt, budget: Budget { max_steps: 20, ..Default::default() },
+   stop_hook: None }, ctx.clone())`; `set_read_only(spec.read_only)`; `run(tarea)`. `Done { final_message }` →
+   `ToolOutput::ok("Informe de <nombre>:\n<final_message>")`; cualquier otro resultado → `ToolOutput::error` con
+   `"<nombre> no terminó: <outcome:?>"`.
+'''
+firmas = '''
+// crates/pcode-core/src/subagent.rs
+//! Subagentes: la tool `delegar` lanza un agente propio con capacidades atenuadas.
+use crate::agent::{Agent, AgentConfig, Budget, Outcome};
+use pcode_models::{Provider, ToolSpec};
+use pcode_policy::Policy;
+use pcode_tools::{Effect, Tool, ToolContext, ToolOutput, ToolRegistry};
+use std::sync::Arc;
+
+/// Lo que necesita saber `delegar` de un agente propio.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubagentSpec {
+    pub name: String,
+    pub description: String,
+    pub model: Option<String>,
+    pub tools: Vec<String>,
+    pub read_only: bool,
+    pub prompt: String,
+}
+
+/// Tool `delegar`.
+pub struct DelegateTool {
+    provider: Arc<dyn Provider>,
+    tools: Vec<Arc<dyn Tool>>,
+    policy: Policy,
+    default_model: String,
+    agents: Vec<SubagentSpec>,
+}
+
+impl DelegateTool {
+    pub fn new(provider: Arc<dyn Provider>, registry: &ToolRegistry, policy: Policy, default_model: String, agents: Vec<SubagentSpec>) -> DelegateTool;
+}
+
+#[async_trait::async_trait]
+impl Tool for DelegateTool { /* spec, effects, call */ }
+'''
+tests = [
+  "subagent_informe_vuelve_al_padre: guion del proveedor con una respuesta de texto `listo` → `call` da `is_error == false` y contiene `listo`",
+  "subagent_no_amplia_capacidades: política con `deny_write = [\"**\"]` y guion que llama a `escribir` y luego responde → el archivo no existe",
+  "subagent_agente_de_solo_lectura: spec con `read_only: true` y guion que llama a `escribir` → el archivo no existe",
+  "subagent_solo_sus_tools: spec con `tools = [\"leer\"]` → la primera petición al MockProvider solo anuncia `leer`",
+  "subagent_desconocido: `agente: \"x\"` → error que contiene `agente desconocido`",
+]
+notas = "Si `pcode-core` no tiene `async-trait` en su Cargo.toml (no está en *Toca*), usa la misma forma que las tools de prueba de `agent.rs`; lo normal es que ya esté."
+
+[[tarea]]
+id = "F8.17c"
+nombre = "agentes-propios-chat"
+titulo = "Chat y TUI: registrar `delegar` con los agentes de `.pcode/agentes` y `@agente tarea`"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.17b", "F8.16b"]
+toca = ["crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-cli agent_mention"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (`prepare`: dónde se crea `tools` con `native_registry`; `command_dirs` de F8.16b)",
+  "crates/pcode-core/src/subagent.rs (`DelegateTool`, `SubagentSpec`, de F8.17b)",
+]
+objetivo = '''
+1. Añade `agent_dirs(root)` (como `command_dirs` pero con `agentes`). En `prepare`, tras crear `tools`: carga
+   `pcode_skills::load_agents(&agent_dirs(&root))`; si hay alguno, conviértelos a `SubagentSpec` (mismos campos) y
+   registra `DelegateTool::new(sel.provider.clone(), &tools, interactive_policy(&a.config), model.clone(), specs)`.
+   Añade a `notices` `"<n> agentes propios: <nombres separados por coma>"`. Guarda los nombres en `Prepared` en un
+   campo nuevo `agents: Vec<String>`.
+2. Función pura `agent_mention(msg, names)`: si `msg` empieza por `@<nombre>` seguido de espacio y `<nombre>` está en
+   `names`, devuelve `Some((nombre, resto recortado))`; si no, `None`.
+3. En `chat` y en la vuelta de `chat_jsonl`: si `agent_mention` da `Some((n, t))`, el texto que se envía al agente es
+   `"Delega esta tarea en el agente «<n>» con la tool `delegar`: <t>"`. La TUI usa `prepare` y recibe la tool igual.
+'''
+firmas = '''
+// crates/pcode-cli/src/chat.rs (privadas)
+fn agent_dirs(root: &std::path::Path) -> Vec<std::path::PathBuf>;
+/// `@agente tarea` al principio del mensaje.
+fn agent_mention(msg: &str, names: &[String]) -> Option<(String, String)>;
+'''
+tests = [
+  "agent_mention_reconoce_el_agente: `@rev mira a.rs` con `[\"rev\"]` → `Some((\"rev\", \"mira a.rs\"))`",
+  "agent_mention_ignora_archivos: `@src/a.rs explica` con `[\"rev\"]` → None",
+  "agent_mention_sin_tarea: `@rev` sin espacio → None",
+]
+
+[[tarea]]
+id = "F8.18"
+nombre = "coste"
+titulo = "Coste por sesión con precios por modelo y presupuesto que avisa al 80 % y para al 100 %"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.26"]
+toca = []
+acepta = "cargo test -p pcode-models pricing && cargo test -p pcode-config precios && cargo test -p pcode-core budget_cost && cargo test -p pcode-cli coste"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.18a (cálculo), F8.18b (configuración), F8.18c (corte en el agente) y F8.18d (chat).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+notas = '''
+Moneda: dólares, como las listas de precios de los proveedores y F10.39 (línea de estado). F10.39c añade un precio
+global en `[preferencias]`; esta tarea añade precios por modelo y el presupuesto. No se inventan precios por defecto:
+sin `[precios.<modelo>]`, no hay coste ni corte.
+'''
+
+[[tarea]]
+id = "F8.18a"
+nombre = "coste-calculo"
+titulo = "`pcode-models`: precio por millón de tokens con caché y estado del presupuesto (lógica pura)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.26"]
+toca = ["crates/pcode-models/src/pricing.rs", "crates/pcode-models/src/lib.rs"]
+acepta = "cargo test -p pcode-models pricing"
+contexto = ["crates/pcode-models/src/types.rs (`Usage`: `input_tokens` ya incluye los `cached_input_tokens`)"]
+objetivo = '''
+1. Crea `pricing.rs` con lo de *Firmas* y sus tests; en `lib.rs`, `pub mod pricing;` y `pub use pricing::{Price, cost_usd};`.
+2. `cost_usd(usage, price)`: precios en dólares por MILLÓN de tokens. Entrada sin caché =
+   `input_tokens - cached_input_tokens` (con `saturating_sub`); la cacheada se cobra a `price.cache_read` si es
+   `Some`, o a `price.input` si es `None`. Resultado: `(sin_caché * input + cacheada * cache + output_tokens * output) / 1e6`.
+3. `budget_state(spent, limit)`: `limit <= 0` → `Ok`; `spent >= limit` → `Stop`; `spent >= 0.8 * limit` → `Warn`;
+   si no, `Ok`.
+'''
+firmas = '''
+// crates/pcode-models/src/pricing.rs
+//! Precios por millón de tokens y presupuesto en dólares.
+use crate::types::Usage;
+
+/// Precio de un modelo en dólares por millón de tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Price { pub input: f64, pub output: f64, pub cache_read: Option<f64> }
+
+/// Estado del presupuesto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetState { Ok, Warn, Stop }
+
+/// Coste en dólares de un uso.
+pub fn cost_usd(usage: &Usage, price: &Price) -> f64;
+
+/// Avisa al 80 % y para al 100 %.
+pub fn budget_state(spent: f64, limit: f64) -> BudgetState;
+'''
+tests = [
+  "pricing_coste_con_cache: 1 000 000 de entrada (400 000 en caché), 100 000 de salida, precios 3 / 15 / caché 0,3 → 1,8 + 0,12 + 1,5 = 3,42 (con margen 1e-9)",
+  "pricing_cache_sin_precio_usa_entrada: `cache_read: None` → la entrada cacheada se cobra a `input`",
+  "pricing_presupuesto_para_al_100: `budget_state(0.79, 1.0)` Ok, `(0.8, 1.0)` Warn, `(1.0, 1.0)` Stop, `(5.0, 0.0)` Ok",
+]
+
+[[tarea]]
+id = "F8.18b"
+nombre = "coste-config"
+titulo = "Configuración: `[precios.<modelo>]` y `[preferencias] presupuesto` (dólares por sesión)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.18a"]
+toca = ["crates/pcode-config/src/lib.rs"]
+acepta = "cargo test -p pcode-config precios"
+contexto = ["crates/pcode-config/src/lib.rs (`Config`, `PrefsCfg` y `Config::merge`)"]
+objetivo = '''
+1. Añade `PriceCfg` y los campos de *Firmas*: `Config.prices` (TOML `[precios."claude-sonnet-5-5"]` con `entrada`,
+   `salida`, `cache`) y `PrefsCfg.budget_usd` (TOML `presupuesto`).
+2. `Config::merge`: `c.prices.extend(project.prices)` (el proyecto manda por modelo) y
+   `c.preferences.budget_usd = p.budget_usd.or(c.preferences.budget_usd)`.
+3. `Config::price_for(model)`: el `PriceCfg` de ese modelo exacto; si no hay, el de la clave más larga que sea
+   prefijo del modelo (así `[precios.claude-sonnet]` vale para `claude-sonnet-5-5`); si no, `None`.
+4. Tests en el módulo de tests de `lib.rs`.
+'''
+firmas = '''
+// crates/pcode-config/src/lib.rs
+/// Precio de un modelo en dólares por millón de tokens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize)]
+#[serde(default)]
+pub struct PriceCfg {
+    #[serde(rename = "entrada")]
+    pub input: f64,
+    #[serde(rename = "salida")]
+    pub output: f64,
+    #[serde(rename = "cache")]
+    pub cache_read: Option<f64>,
+}
+
+// en `pub struct Config`
+    /// Precios por modelo (`[precios.<modelo>]`).
+    #[serde(rename = "precios")]
+    pub prices: BTreeMap<String, PriceCfg>,
+
+// en `pub struct PrefsCfg`
+    /// Presupuesto de una sesión en dólares: avisa al 80 % y para al 100 %.
+    #[serde(rename = "presupuesto")]
+    pub budget_usd: Option<f64>,
+
+impl Config {
+    /// Precio del modelo (exacto o por el prefijo más largo).
+    pub fn price_for(&self, model: &str) -> Option<PriceCfg>;
+}
+'''
+tests = [
+  "precios_se_leen: `[precios.m1]` con entrada 3, salida 15 y cache 0.3 → `price_for(\"m1\")` con esos valores",
+  "precios_por_prefijo_mas_largo: claves `claude` y `claude-sonnet` → `price_for(\"claude-sonnet-5-5\")` da el de `claude-sonnet`",
+  "precios_proyecto_manda_y_presupuesto: global `presupuesto = 5` y proyecto `presupuesto = 2` → 2.0",
+]
+
+[[tarea]]
+id = "F8.18c"
+nombre = "coste-corte-agente"
+titulo = "Agente: `Budget` con precio y tope en dólares; para con `BudgetExhausted` al superarlo"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.18a"]
+toca = ["crates/pcode-core/src/agent.rs"]
+acepta = "cargo test -p pcode-core budget_cost"
+contexto = [
+  "crates/pcode-core/src/agent.rs (`Budget` y la comprobación `if steps >= self.cfg.budget.max_steps …` de `run_messages`)",
+  "crates/pcode-models/src/pricing.rs (de F8.18a)",
+]
+objetivo = '''
+1. Añade a `Budget` los dos campos de *Firmas*; `Default` los deja en `None`. Todos los usos de `Budget { … }` ya
+   terminan en `..Default::default()`, así que no hay que tocar otros archivos.
+2. En `run_messages`, en la misma condición que corta por pasos y tokens, añade: si `price` y `max_cost_usd` son
+   `Some` y `cost_usd(&usage, &price) >= max_cost_usd` → `finish!(Outcome::BudgetExhausted)`.
+3. Tests en el módulo de tests de `agent.rs` con el guion de siempre: respuestas con `usage` conocido.
+'''
+firmas = '''
+// crates/pcode-core/src/agent.rs, en `pub struct Budget`
+    /// Precio del modelo, para calcular el coste de la vuelta.
+    pub price: Option<pcode_models::Price>,
+    /// Tope de coste de la vuelta en dólares.
+    pub max_cost_usd: Option<f64>,
+'''
+tests = [
+  "budget_cost_para_al_superar_el_tope: dos respuestas con tool y 1 000 000 de entrada cada una, precio 1 $/M y tope 1,5 → `BudgetExhausted` antes de la tercera petición",
+  "budget_cost_sin_precio_no_corta: mismo guion sin `price` → termina con `Done`",
+]
+
+[[tarea]]
+id = "F8.18d"
+nombre = "coste-chat"
+titulo = "Chat: coste acumulado de la sesión, `/coste`, aviso al 80 % y corte al 100 % del presupuesto"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.18b", "F8.18c"]
+toca = ["crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-cli coste"
+contexto = [
+  "crates/pcode-cli/src/chat.rs (`prepare`, `Budget { … }`, el bucle de `chat` y el brazo `\"uso\" | \"usage\"`)",
+  "crates/pcode-config/src/lib.rs (`Config::price_for`, `PrefsCfg::budget_usd`, de F8.18b)",
+  "crates/pcode-models/src/pricing.rs (`Price`, `cost_usd`, `budget_state`)",
+]
+objetivo = '''
+1. `prepare`: calcula `price = cfg.price_for(&model).map(|p| Price { input: p.input, output: p.output, cache_read: p.cache_read })`
+   y guarda en `Prepared` los campos nuevos `price: Option<Price>` y `budget_usd: Option<f64>`.
+2. Función pura `cost_line(spent, price, budget)` de *Firmas*: sin precio → `"Sin precio para este modelo: añade [precios.<modelo>] (entrada, salida y cache en $ por millón)"`;
+   con precio y sin presupuesto → `"Coste de la sesión: $<spent con 4 decimales>"`; con presupuesto →
+   `"Coste de la sesión: $<spent> de $<budget con 2 decimales> (<pct entero> %)"`.
+3. En `chat`: lleva `spent` (f64) sumando `cost_usd(&report.usage, &price)` tras cada vuelta si hay precio. Antes de
+   cada vuelta, con presupuesto: `budget_state(spent, budget)` `Stop` → imprime «Presupuesto de la sesión agotado
+   ($x de $y): sube `[preferencias] presupuesto` o empieza otra sesión» y no envía la vuelta. En `prepare`, al
+   crear el agente, pon `price` y `max_cost_usd: budget_usd` en su `Budget` (corta una vuelta que sola supera el
+   presupuesto; no añadas setters a `Agent`). Tras cada vuelta, si el estado pasa a `Warn` por primera vez, imprime
+   «Llevas el 80 % del presupuesto».
+4. Orden `/coste` (alias `/cost`): imprime `cost_line`. Añade `/coste` a `AYUDA`.
+'''
+firmas = '''
+// crates/pcode-cli/src/chat.rs (privada)
+/// Línea de `/coste`.
+fn cost_line(spent: f64, price: Option<&pcode_models::Price>, budget: Option<f64>) -> String;
+'''
+tests = [
+  "coste_linea_sin_precio: `cost_line(0.0, None, None)` → contiene `[precios.`",
+  "coste_linea_con_presupuesto: `cost_line(1.0, Some(&p), Some(4.0))` → contiene `$1.0000 de $4.00 (25 %)`",
+]
+notas = "El presupuesto es por sesión del chat de línea; la TUI lo mostrará con la línea de estado de F10.39 (coste) y su corte queda para cuando la TUI lleve el coste."
+
+[[tarea]]
+id = "F8.20"
+nombre = "web-fetch"
+titulo = "Tool `web`: leer una URL como texto, con dominios permitidos o aprobación"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = []
+acepta = "cargo test -p pcode-tools --test web && cargo test -p pcode-core web_domain"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.20a (la tool) y F8.20b (dominio en la política y registro en el chat).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+
+[[tarea]]
+id = "F8.20a"
+nombre = "web-tool"
+titulo = "`pcode-tools`: tool `web` (GET con tiempo y tamaño máximos, HTML a texto sin scripts ni estilos)"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F1.13"]
+toca = ["crates/pcode-tools/Cargo.toml", "crates/pcode-tools/src/web.rs", "crates/pcode-tools/src/lib.rs", "crates/pcode-tools/tests/web.rs"]
+acepta = "cargo test -p pcode-tools --test web"
+contexto = [
+  "crates/pcode-tools/src/read.rs (forma de una tool: `spec`, `effects`, `call`)",
+  "crates/pcode-models/src/discover.rs (función `client`: `reqwest` con tiempo máximo y sin proxy para 127.0.0.1; y el servidor HTTP falso de sus tests)",
+]
+objetivo = '''
+1. `Cargo.toml` de pcode-tools: `reqwest.workspace = true` en `[dependencies]`.
+2. `web.rs` con lo de *Firmas*; en `lib.rs`, `pub mod web;`. NO la añadas a `native_registry` (la registra el chat
+   en F8.20b).
+3. `html_to_text(html)`: quita los bloques `<script…>…</script>`, `<style…>…</style>` y los comentarios `<!-- -->`
+   (sin distinguir mayúsculas), cambia `<br>`, `</p>`, `</div>`, `</li>` y `</h1>`…`</h6>` por saltos de línea, quita
+   el resto de etiquetas, decodifica `&amp; &lt; &gt; &quot; &#39; &nbsp;`, recorta cada línea, junta espacios
+   seguidos y deja como mucho una línea vacía seguida. Con `regex` (ya es dependencia).
+4. `host_of(url)`: el host de una URL `http://` o `https://` (sin usuario, puerto ni ruta), en minúsculas; otro
+   esquema → `None`.
+5. `WebTool`: `spec()` nombre `web`, descripción «Lee una página web (GET) y devuelve su texto», parámetros
+   `{"url": string}` obligatorio. `effects()` → `&[Effect::Network]`. `call`: `host_of` None → error «solo URLs
+   http(s)»; GET con `timeout = ctx.timeout.min(30 s)` (sin proxy si el host es `127.0.0.1` o `localhost`); estado
+   no 2xx → error `HTTP <código>`; lee el cuerpo por trozos (`chunk()`) y para al pasar de `self.max_bytes`,
+   añadiendo `\n[… recortado a <max_bytes> bytes]`; si el `content-type` contiene `html`, `html_to_text`; si es
+   `text/` o `json`, el texto tal cual; otro tipo → error «tipo no admitido: <tipo>».
+6. Tests de integración `tests/web.rs` con un servidor HTTP falso en 127.0.0.1 (copia el de `discover.rs`).
+'''
+firmas = '''
+// crates/pcode-tools/src/web.rs
+//! Tool `web`: lee una URL como texto.
+use crate::{Effect, Tool, ToolContext, ToolOutput};
+use pcode_models::ToolSpec;
+
+/// Tamaño máximo por defecto: 200 KB.
+pub const DEFAULT_MAX_BYTES: usize = 200_000;
+
+/// Tool `web`.
+#[derive(Debug, Clone)]
+pub struct WebTool { pub max_bytes: usize }
+
+impl Default for WebTool { fn default() -> Self { WebTool { max_bytes: DEFAULT_MAX_BYTES } } }
+
+/// Texto legible de un HTML.
+pub fn html_to_text(html: &str) -> String;
+
+/// Host de una URL http(s).
+pub fn host_of(url: &str) -> Option<String>;
+
+#[async_trait::async_trait]
+impl Tool for WebTool { /* spec, effects, call */ }
+'''
+tests = [
+  "html_a_texto_sin_scripts: `<p>Hola &amp; adiós</p><script>x()</script><style>p{}</style>` → `Hola & adiós` sin `x()` ni `p{}`",
+  "host_de_la_url: `https://User@Ejemplo.com:8080/a?b` → `ejemplo.com`; `ftp://x` → None",
+  "web_lee_html_del_servidor_falso: servidor con `text/html` → salida sin etiquetas e `is_error == false`",
+  "web_limite_de_tamano: `max_bytes = 100` y cuerpo de 1000 bytes → la salida contiene `recortado`",
+  "web_error_http: servidor que responde 404 → `is_error` y `HTTP 404`",
+]
+
+[[tarea]]
+id = "F8.20b"
+nombre = "web-politica"
+titulo = "Agente: la tool `web` pide aprobación fuera de `red_permitir`; el chat la registra"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.20a"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-core web_domain"
+contexto = [
+  "crates/pcode-core/src/agent.rs (decisión de una llamada: las comprobaciones de `Effect::Write` con `path` y de `Effect::Exec` con `command`)",
+  "crates/pcode-policy/src/caps.rs (`Policy::check_domain`)",
+  "crates/pcode-tools/src/web.rs (`host_of`, `WebTool`, de F8.20a)",
+]
+objetivo = '''
+1. `agent.rs`: tras las comprobaciones de `Write` y `Exec`, añade: si la decisión sigue en `Allow`, la tool tiene
+   `Effect::Network` y `arg("url")` es `Some(u)`: con `pcode_tools::web::host_of(&u)` → `None` →
+   `Decision::Deny("URL no válida")`; `Some(h)` → `self.policy.check_domain(&h)`, y si da `Deny(_)` se convierte en
+   `Decision::Ask(format!("dominio fuera de red_permitir: {h}"))` (el usuario puede aprobarlo; sin aprobador se
+   deniega, como cualquier `Ask`).
+2. `chat.rs`, `prepare`: tras `native_registry()`, registra `pcode_tools::web::WebTool::default()`.
+3. Tests en `agent.rs` con una tool falsa `web` de efecto `Network` (como las tools de prueba del módulo) que
+   devuelve `ok`.
+'''
+sin_firmas = "no añade API pública: cambia una decisión dentro de `Agent` y registra una tool"
+tests = [
+  "web_domain_permitido_se_ejecuta: `net_allow = [\"ejemplo.com\"]` y llamada con `url` `https://ejemplo.com/x` → la tool se ejecuta",
+  "web_domain_no_permitido_pide_aprobacion: sin `net_allow` y sin aprobador → el resultado contiene `requiere aprobación humana`; con el aprobador `Yes` → se ejecuta",
+  "web_domain_url_invalida: `url` `file:///etc/passwd` → `denegado por la política`",
+]
+
+[[tarea]]
+id = "F8.21"
+nombre = "imagenes"
+titulo = "Imágenes en el chat para modelos con visión (`@captura.png`)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.25"]
+toca = []
+acepta = "cargo test -p pcode-models image && cargo test -p pcode-core run_turn_with_images && cargo test -p pcode-tui image"
+contexto = ["los informes de sus subtareas"]
+objetivo = '''
+Tarea de cierre de F8.21a (tipo y Anthropic), F8.21b (Gemini y OpenAI) y F8.21c (agente y `@imagen` en la TUI y el chat).
+1. Ejecuta `acepta`.
+2. Comprueba que cada subtarea tiene su informe.
+3. Escribe el informe de cierre con la salida de `acepta`.
+'''
+tests = ["(sin tests): la aceptación comprueba el conjunto"]
+notas = "Pegar o arrastrar imágenes en Studio queda fuera: necesita su propia tarea de interfaz web."
+
+[[tarea]]
+id = "F8.21a"
+nombre = "imagenes-tipo"
+titulo = "`Message` con imágenes (base64 propio, sin dependencias) y su envío a Anthropic"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F1.25"]
+toca = ["crates/pcode-models/src/image.rs", "crates/pcode-models/src/types.rs", "crates/pcode-models/src/lib.rs", "crates/pcode-models/src/anthropic.rs"]
+acepta = "cargo test -p pcode-models image"
+contexto = [
+  "crates/pcode-models/src/types.rs (`Message` y sus constructores: es el único sitio que lo construye campo a campo)",
+  "crates/pcode-models/src/anthropic.rs (`to_request_body`, brazo `Role::User`)",
+]
+objetivo = '''
+1. Crea `image.rs` con lo de *Firmas*; en `lib.rs`, `pub mod image;` y `pub use image::ImagePart;`.
+2. `base64_encode`: alfabeto estándar con `=` de relleno (no hay crate de base64 permitido: escríbelo, son ~20 líneas).
+3. `media_type_for(path)`: por la extensión en minúsculas: `png` → `image/png`, `jpg`/`jpeg` → `image/jpeg`, `gif` →
+   `image/gif`, `webp` → `image/webp`; otra → `None`.
+4. `ImagePart::from_bytes(media_type, bytes)`: más de `MAX_IMAGE_BYTES` → `Err("imagen demasiado grande (<n> bytes, máximo 5 MB)")`.
+5. `types.rs`: añade a `Message` el campo `images` de *Firmas* (con `#[serde(default, skip_serializing_if = "Vec::is_empty")]`),
+   `images: vec![]` en `Message::new` y el constructor `Message::user_with_images`.
+6. `anthropic.rs`, `Role::User`: sin imágenes, igual que ahora; con imágenes, `content` es una lista: primero un
+   bloque por imagen `{"type":"image","source":{"type":"base64","media_type":…,"data":…}}` y después
+   `{"type":"text","text":…}`.
+'''
+firmas = '''
+// crates/pcode-models/src/image.rs
+//! Imágenes en los mensajes (para modelos con visión).
+use serde::{Deserialize, Serialize};
+
+/// Tamaño máximo de una imagen: 5 MB.
+pub const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+
+/// Una imagen adjunta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImagePart { pub media_type: String, pub data_base64: String }
+
+impl ImagePart {
+    pub fn from_bytes(media_type: &str, bytes: &[u8]) -> Result<ImagePart, String>;
+}
+
+pub fn base64_encode(bytes: &[u8]) -> String;
+pub fn media_type_for(path: &std::path::Path) -> Option<&'static str>;
+
+// crates/pcode-models/src/types.rs, en `pub struct Message`
+    /// Imágenes adjuntas (solo en mensajes de usuario).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<crate::image::ImagePart>,
+
+impl Message {
+    /// Mensaje de usuario con imágenes.
+    pub fn user_with_images(text: impl Into<String>, images: Vec<crate::image::ImagePart>) -> Self;
+}
+'''
+tests = [
+  "image_base64_vectores: ``, `f`, `fo`, `foo`, `foob` → ``, `Zg==`, `Zm8=`, `Zm9v`, `Zm9vYg==`",
+  "image_tipo_por_extension: `a.PNG` → image/png; `b.jpeg` → image/jpeg; `c.txt` → None",
+  "image_demasiado_grande: 5 MB + 1 byte → Err con `demasiado grande`",
+  "image_anthropic_con_imagen: usuario con una imagen → `content[0].type == \"image\"`, `source.data` y el texto en `content[1]`",
+  "image_mensaje_sin_imagenes_no_cambia: `Message::user(\"a\")` serializado no contiene `images`",
+]
+
+[[tarea]]
+id = "F8.21b"
+nombre = "imagenes-gemini-openai"
+titulo = "Imágenes en Gemini (`inline_data`) y en OpenAI-compatible (`image_url` con data URL)"
+fase = "F8"
+hito = "1.3"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F8.21a"]
+toca = ["crates/pcode-models/src/gemini.rs", "crates/pcode-models/src/openai.rs"]
+acepta = "cargo test -p pcode-models image_"
+contexto = [
+  "crates/pcode-models/src/gemini.rs (`to_request_body`, brazo `Role::User`)",
+  "crates/pcode-models/src/openai.rs (`to_request_body`)",
+  "crates/pcode-models/src/image.rs (de F8.21a)",
+]
+objetivo = '''
+Solo cambia el mensaje de usuario con imágenes; sin imágenes, el cuerpo es idéntico al de ahora.
+1. `gemini.rs`: `parts` = un `{"inline_data":{"mime_type":…,"data":…}}` por imagen y después `{"text":…}`.
+2. `openai.rs`: `content` pasa a ser una lista: `{"type":"text","text":…}` y después un
+   `{"type":"image_url","image_url":{"url":"data:<media_type>;base64,<data>"}}` por imagen.
+3. Tests en los módulos de tests de cada archivo.
+'''
+sin_firmas = "solo cambia dos conversiones existentes"
+tests = [
+  "image_gemini_inline_data: usuario con imagen → `contents[0].parts[0].inline_data.mime_type` es el tipo y el texto va después",
+  "image_openai_image_url_base64: usuario con imagen → `messages[0].content[1].image_url.url` empieza por `data:image/png;base64,`",
+  "image_openai_sin_imagen_sigue_siendo_texto: `Message::user(\"a\")` → `content` es la cadena `a`",
+]
+
+[[tarea]]
+id = "F8.21c"
+nombre = "imagenes-adjuntar"
+titulo = "Agente con imágenes y `@captura.png` en la TUI y el chat"
+fase = "F8"
+hito = "1.3"
+talla = "M"
+ejecutor = "haiku"
+depende = ["F8.21a"]
+toca = ["crates/pcode-core/src/agent.rs", "crates/pcode-tui/src/run.rs", "crates/pcode-cli/src/chat.rs"]
+acepta = "cargo test -p pcode-core run_turn_with_images && cargo test -p pcode-tui image"
+contexto = [
+  "crates/pcode-core/src/agent.rs (`run_turn`)",
+  "crates/pcode-tui/src/run.rs (`expand_message`: cómo se adjuntan los `@archivo`; y la llamada a `run_turn`)",
+  "crates/pcode-models/src/image.rs (`ImagePart`, `media_type_for`, de F8.21a)",
+]
+objetivo = '''
+1. `agent.rs`: añade `run_turn_with_images` (*Firmas*): igual que `run_turn` pero empuja
+   `Message::user_with_images(user, images)`. Haz que `run_turn` llame a `run_turn_with_images(history, user, vec![])`.
+2. `run.rs`: añade `pub fn mentioned_images(root, text)`: por cada mención de `crate::app::mentions(text)` (sin
+   repetir) con `media_type_for` `Some`, resuelta con `pcode_tools::resolve_in_root` y leída: `ImagePart::from_bytes`;
+   las que fallan se saltan. En `expand_message`, salta las menciones con `media_type_for` `Some` (no se pegan como
+   texto). En la llamada de la TUI usa `run_turn_with_images(h, &full, mentioned_images(&root, &text))`.
+3. `chat.rs`, en `chat` y `chat_jsonl`: igual, `run_turn_with_images(…, mentioned_images(&root, &input))`.
+'''
+firmas = '''
+// crates/pcode-core/src/agent.rs, en `impl Agent`
+    /// Como `run_turn`, con imágenes adjuntas al mensaje del usuario.
+    pub async fn run_turn_with_images(&mut self, history: Vec<Message>, user: &str, images: Vec<pcode_models::ImagePart>) -> RunReport;
+
+// crates/pcode-tui/src/run.rs
+/// Imágenes mencionadas con `@ruta` (png, jpg, gif, webp) dentro de `root`.
+pub fn mentioned_images(root: &std::path::Path, text: &str) -> Vec<pcode_models::ImagePart>;
+'''
+tests = [
+  "run_turn_with_images_envia_la_imagen: MockProvider con una respuesta → la última petición tiene un mensaje de usuario con 1 imagen",
+  "image_mencion_se_adjunta: tempdir con `c.png` (bytes `\\x89PNG`) y texto `mira @c.png` → 1 imagen `image/png`",
+  "image_mencion_no_se_pega_como_texto: `expand_message` de `mira @c.png` → no contiene `# Archivo c.png`",
+]
+
+[[tarea]]
+id = "F8.22"
+nombre = "modelos-locales"
+titulo = "Modelos locales: sin clave, usar Ollama o LM Studio si están en marcha"
+fase = "F8"
+hito = "1.7"
+talla = "S"
+ejecutor = "haiku"
+depende = ["F1.26"]
+toca = ["crates/pcode-cli/src/provider.rs", "crates/pcode-cli/src/chat.rs", "crates/pcode-cli/src/ask.rs", "crates/pcode-cli/src/run.rs"]
+acepta = "cargo test -p pcode-cli local_"
+contexto = [
+  "crates/pcode-cli/src/provider.rs (`build_provider`: el `bail!` final cuando no hay modelo)",
+  "crates/pcode-models/src/discover.rs (`detect_local`, `LOCAL_CANDIDATES`, `LocalServer`; y el servidor falso de sus tests)",
+]
+objetivo = '''
+Detectar Ollama, LM Studio y vLLM ya existe (`pcode config proveedores --detectar`) y `/modelos` en la TUI es F8.24.
+Falta lo más útil para empezar sin cuenta: si no hay ningún modelo configurado ni clave, usar uno local.
+1. `provider.rs`: añade `local_provider_cfg` (*Firmas*): el primer servidor con algún modelo →
+   `(name, ProviderCfg { kind: "openai-compatible", url, model: Some(primer modelo), ..Default })`; ninguno → `None`.
+2. `provider.rs`: añade `build_provider_or_local` y su variante con candidatos: llama a `build_provider`; si da
+   error, `name` es `None` y `cfg.providers` está vacío, prueba `detect_local(candidates, 300 ms)`; con
+   `local_provider_cfg` `Some((n, p))` → escribe por stderr «Sin clave de API: uso <modelo> de <n> en este equipo» y
+   devuelve `from_cfg(&n, &p)`; si no, devuelve el error original.
+3. En `chat.rs` (`prepare`), `ask.rs` y `run.rs` cambia `build_provider(…)?` por
+   `build_provider_or_local(…).await?` (las tres funciones ya son `async`).
+4. Tests unitarios en `provider.rs` con un servidor falso en 127.0.0.1 (copia el de `discover.rs`) y candidatos
+   `[("ollama", "Ollama", "<url del falso>/v1")]`. Aísla el entorno: quita `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+   `GOOGLE_API_KEY`, `OPENAI_API_KEY` y `PCODE_MOCK_SCRIPT` con `unsafe { std::env::remove_var(..) }` y un comentario
+   `// SAFETY de la prueba:`; si alguna estaba definida al empezar, el test termina sin comprobar (la CI no las tiene).
+'''
+firmas = '''
+// crates/pcode-cli/src/provider.rs
+/// Proveedor para el primer servidor local que ofrece algún modelo.
+pub fn local_provider_cfg(servers: &[pcode_models::discover::LocalServer]) -> Option<(String, ProviderCfg)>;
+
+/// `build_provider` y, si no hay ningún modelo configurado, un servidor local.
+pub async fn build_provider_or_local(cfg: &Config, name: Option<&str>) -> anyhow::Result<Selected>;
+
+/// Igual, con los servidores candidatos y el tiempo máximo de cada sonda (para las pruebas).
+pub async fn build_provider_or_local_with(cfg: &Config, name: Option<&str>, candidates: &[(&str, &str, &str)], timeout: std::time::Duration) -> anyhow::Result<Selected>;
+'''
+tests = [
+  "local_elige_el_primero_con_modelos: servidores `a` sin modelos y `b` con `[\"q\"]` → `(\"b\", url de b, modelo q)`",
+  "local_ninguno_es_none: lista vacía → None",
+  "local_detecta_ollama_falso: config vacía, sin claves y servidor falso con `{\"data\":[{\"id\":\"qwen3\"}]}` → `Selected` con `default_model == Some(\"qwen3\")`",
+  "local_sin_servidor_no_espera: config vacía, sin claves y candidato en un puerto cerrado → Err en menos de 2 s",
+]
